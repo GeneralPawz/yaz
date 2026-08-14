@@ -97,7 +97,7 @@ jobs:
       # only as a CI secret and never on a developer machine. Losing it means no
       # existing installation can ever be updated again (ADR-0013).
       - name: Build and publish
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
