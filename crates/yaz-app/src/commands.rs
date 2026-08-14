@@ -1,0 +1,260 @@
+//! The Tauri command surface.
+//!
+//! Thin wiring only: these translate between the frontend's DTOs and the domain
+//! crates, and hold no logic of their own ([ADR-0017]).
+//!
+//! Every one of them is a privileged operation. The frontend has no filesystem
+//! access of its own, and neither will plugins — the Rust process is the
+//! security boundary ([ADR-0006]). The path handling here is the first sketch of
+//! what the capability broker will enforce properly in phase 3: everything is
+//! canonicalised and checked against the project root *before* it is used.
+//!
+//! [ADR-0017]: https://github.com/GeneralPawz/yaz/blob/main/docs/adr/0017-repository-layout.md
+//! [ADR-0006]: https://github.com/GeneralPawz/yaz/blob/main/docs/adr/0006-plugin-runtime-and-capabilities.md
+
+use camino::{Utf8Path, Utf8PathBuf};
+use serde::Serialize;
+use yaz_compile::{CompileEngine, SystemEngine};
+use yaz_core::project::{EngineChoice, Project};
+
+/// Errors crossing the IPC boundary.
+///
+/// Carries a message key rather than English prose so the frontend renders it in
+/// the active locale ([ADR-0011]). The `detail` is diagnostic text for a log or
+/// a disclosure triangle, never the primary message shown to a user.
+///
+/// [ADR-0011]: https://github.com/GeneralPawz/yaz/blob/main/docs/adr/0011-localisation.md
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandError {
+    message_key: String,
+    detail: String,
+}
+
+impl From<yaz_core::Error> for CommandError {
+    fn from(error: yaz_core::Error) -> Self {
+        Self {
+            message_key: error.message_key().to_owned(),
+            detail: error.to_string(),
+        }
+    }
+}
+
+impl CommandError {
+    fn new(message_key: &str, detail: impl std::fmt::Display) -> Self {
+        Self {
+            message_key: message_key.to_owned(),
+            detail: detail.to_string(),
+        }
+    }
+}
+
+type Result<T> = std::result::Result<T, CommandError>;
+
+/// A file inside the open project.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectFile {
+    relative_path: String,
+    is_entry: bool,
+}
+
+/// The open project as the frontend sees it.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectInfo {
+    root: String,
+    entry: String,
+    files: Vec<ProjectFile>,
+}
+
+/// The outcome of a compile.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompileResult {
+    succeeded: bool,
+    pdf_path: Option<String>,
+    diagnostics: Vec<yaz_compile::diagnostics::Diagnostic>,
+    engine_id: String,
+    elapsed_ms: u128,
+}
+
+/// Resolve a project-relative path and refuse anything outside the root.
+///
+/// Canonicalisation happens *before* the comparison, so `..` traversal and
+/// symlink escapes are refused rather than followed. This is the invariant the
+/// capability broker will inherit, and it is why the check cannot be a simple
+/// `starts_with` on the untouched input.
+fn resolve_in_root(root: &Utf8Path, relative: &str) -> Result<Utf8PathBuf> {
+    let root_canonical = dunce_canonicalize(root)?;
+    let joined = root.join(relative);
+
+    // A file being written may not exist yet, so canonicalise the parent and
+    // re-attach the final component.
+    let candidate = if joined.exists() {
+        dunce_canonicalize(&joined)?
+    } else {
+        let parent = joined
+            .parent()
+            .ok_or_else(|| CommandError::new("error-fs-outside-root", "path has no parent"))?;
+        let file_name = joined.file_name().ok_or_else(|| {
+            CommandError::new("error-fs-outside-root", "path has no final component")
+        })?;
+        dunce_canonicalize(parent)?.join(file_name)
+    };
+
+    if !candidate.starts_with(&root_canonical) {
+        return Err(CommandError::new(
+            "error-fs-outside-root",
+            format!("{candidate} is outside {root_canonical}"),
+        ));
+    }
+
+    Ok(candidate)
+}
+
+/// Canonicalise, keeping the result UTF-8 and free of Windows `\\?\` prefixes.
+fn dunce_canonicalize(path: &Utf8Path) -> Result<Utf8PathBuf> {
+    let canonical = std::fs::canonicalize(path)
+        .map_err(|error| CommandError::new("error-fs-not-found", format!("{path}: {error}")))?;
+    // Windows canonicalisation yields a `\\?\C:\…` extended-length path, which
+    // compares badly against ordinary paths and looks alarming in the UI.
+    let text = canonical.to_string_lossy();
+    let trimmed = text.strip_prefix(r"\\?\").unwrap_or(&text);
+    Ok(Utf8PathBuf::from(trimmed))
+}
+
+/// Open a directory as a project and list its LaTeX sources.
+#[tauri::command]
+pub fn open_project(root: String) -> Result<ProjectInfo> {
+    let root = dunce_canonicalize(Utf8Path::new(&root))?;
+
+    let mut files: Vec<String> = walkdir::WalkDir::new(root.as_std_path())
+        .max_depth(8)
+        .into_iter()
+        .filter_entry(|entry| {
+            // Build output and VCS metadata are noise in a file list, and
+            // descending into them on a large project is slow for no benefit.
+            let name = entry.file_name().to_string_lossy();
+            !(name.starts_with('.') || name == "build" || name == "node_modules")
+        })
+        .filter_map(std::result::Result::ok)
+        .filter(|entry| entry.file_type().is_file())
+        .filter(|entry| {
+            matches!(
+                entry.path().extension().and_then(|e| e.to_str()),
+                Some("tex" | "bib" | "cls" | "sty")
+            )
+        })
+        .filter_map(|entry| {
+            let path = Utf8PathBuf::from_path_buf(entry.into_path()).ok()?;
+            let relative = path.strip_prefix(&root).ok()?;
+            Some(relative.as_str().replace('\\', "/"))
+        })
+        .collect();
+
+    files.sort();
+
+    // Entry heuristic, deliberately dumb for now: main.tex, else the first .tex.
+    // Phase 4 replaces this with the \documentclass scan in yaz-latex, which can
+    // tell a root document from an \input fragment.
+    let entry = files
+        .iter()
+        .find(|f| f.as_str() == "main.tex")
+        .or_else(|| files.iter().find(|f| f.ends_with(".tex")))
+        .cloned()
+        .unwrap_or_default();
+
+    Ok(ProjectInfo {
+        root: root.to_string(),
+        entry: entry.clone(),
+        files: files
+            .into_iter()
+            .map(|relative_path| ProjectFile {
+                is_entry: relative_path == entry,
+                relative_path,
+            })
+            .collect(),
+    })
+}
+
+/// Read a project-relative file as text.
+#[tauri::command]
+pub fn read_file(root: String, relative_path: String) -> Result<String> {
+    let path = resolve_in_root(Utf8Path::new(&root), &relative_path)?;
+    std::fs::read_to_string(&path)
+        .map_err(|error| CommandError::new("error-fs-undecodable", format!("{path}: {error}")))
+}
+
+/// Write a project-relative file.
+#[tauri::command]
+pub fn write_file(root: String, relative_path: String, contents: String) -> Result<()> {
+    let path = resolve_in_root(Utf8Path::new(&root), &relative_path)?;
+    // TODO(phase-2): atomic write via a temp file plus rename, and an mtime
+    // check so an external modification is not silently clobbered
+    // (yaz_core::Error::ConflictingWrite exists for exactly this).
+    std::fs::write(&path, contents)
+        .map_err(|error| CommandError::new("error-fs-io", format!("{path}: {error}")))
+}
+
+/// Compile the project's entry document.
+#[tauri::command]
+pub fn compile_project(root: String) -> Result<CompileResult> {
+    let root = dunce_canonicalize(Utf8Path::new(&root))?;
+    let info = open_project(root.to_string())?;
+
+    if info.entry.is_empty() {
+        return Err(CommandError::new(
+            "error-fs-not-found",
+            "no .tex file in this project",
+        ));
+    }
+
+    let engine = SystemEngine::detect_all()
+        .into_iter()
+        .next()
+        .ok_or_else(|| {
+            CommandError::new(
+                "compile-engine-unavailable",
+                "no system TeX distribution found; the embedded engine is not in this build",
+            )
+        })?;
+
+    let project = Project {
+        root: root.clone(),
+        entry: Utf8PathBuf::from(&info.entry),
+        engine: EngineChoice::System {
+            engine: engine.engine.clone(),
+        },
+        document_locale: None,
+    };
+
+    let started = std::time::Instant::now();
+    let output = engine.compile(&project)?;
+    let elapsed_ms = started.elapsed().as_millis();
+
+    Ok(CompileResult {
+        succeeded: output.succeeded,
+        pdf_path: output.pdf.map(|p| p.to_string()),
+        diagnostics: output.diagnostics,
+        engine_id: engine.id().to_owned(),
+        elapsed_ms,
+    })
+}
+
+/// Typesetters available on this machine.
+#[tauri::command]
+pub fn available_engines() -> Vec<String> {
+    SystemEngine::detect_all()
+        .into_iter()
+        .map(|e| e.engine)
+        .collect()
+}
+
+/// Read a produced artefact as bytes, for handing the PDF to pdf.js.
+#[tauri::command]
+pub fn read_artefact(path: String) -> Result<Vec<u8>> {
+    let path = Utf8PathBuf::from(path);
+    std::fs::read(&path)
+        .map_err(|error| CommandError::new("error-fs-io", format!("{path}: {error}")))
+}

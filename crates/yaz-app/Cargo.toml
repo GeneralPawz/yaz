@@ -14,6 +14,9 @@ publish = false
 name = "yaz"
 path = "src/main.rs"
 
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
 [dependencies]
 yaz-core.workspace = true
 yaz-latex.workspace = true
@@ -22,13 +25,17 @@ yaz-plugin.workspace = true
 yaz-zotero.workspace = true
 yaz-obsidian.workspace = true
 
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+
 anyhow.workspace = true
+camino.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+walkdir.workspace = true
 
-# NOTE(phase-2): tauri, tauri-build and the plugin crates are added here, along
-# with build.rs and the icon set. Deliberately absent for now so the workspace
-# builds without a full Tauri bundling setup.
-#
 # yaz-app stays THIN: it wires the domain crates to Tauri commands and holds no
-# domain logic of its own (ADR-0017).
+# domain logic of its own (ADR-0017). Anything here that starts to look like a
+# decision about LaTeX, projects, or plugins belongs in a domain crate.

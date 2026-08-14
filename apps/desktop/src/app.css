@@ -1,0 +1,41 @@
+/*
+ * Global reset and defaults.
+ *
+ * Every colour here is a token — a literal colour in a component or in this
+ * file is a bug (ADR-0010). Layout uses logical properties throughout so an RTL
+ * interface is a `dir` attribute rather than a rewrite (ADR-0011).
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  block-size: 100%;
+  background: var(--yaz-bg-primary);
+  color: var(--yaz-text-primary);
+  font-family: var(--yaz-font-ui);
+  font-size: var(--yaz-font-size-base);
+  line-height: var(--yaz-line-height);
+}
+
+/* A document editor is not a web page: text selection is meaningful in the
+   editor and the PDF, and nowhere else. */
+body {
+  user-select: none;
+  overflow: hidden;
+}
+
+:focus-visible {
+  outline: 2px solid var(--yaz-focus-ring);
+  outline-offset: 1px;
+}
+
+::selection {
+  background: var(--yaz-bg-selection);
+}

@@ -4,7 +4,7 @@
   "version": "0.2.0",
   "identifier": "dev.yaz.app",
   "build": {
-    "frontendDist": "../../apps/desktop/build",
+    "frontendDist": "../../apps/desktop/dist",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "pnpm --filter @yaz/desktop dev",
     "beforeBuildCommand": "pnpm --filter @yaz/desktop build"
@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "yaz",
         "width": 1400,
         "height": 900,
@@ -23,8 +24,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' asset: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost",
-      "capabilities": []
+      "csp": "default-src 'self'; img-src 'self' asset: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost"
     }
   },
   "bundle": {

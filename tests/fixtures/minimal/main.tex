@@ -1,0 +1,38 @@
+\documentclass[11pt]{article}
+
+\usepackage{amsmath}
+
+\title{A Minimal yaz Document}
+\author{yaz}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+\label{sec:intro}
+
+This document exists so the compile pipeline has something small and boring to
+chew on. It deliberately uses only what every TeX distribution ships, so it
+compiles identically under Tectonic and under a system engine.
+
+\section{Some Mathematics}
+
+Section~\ref{sec:intro} said nothing interesting, so here is Euler's identity:
+
+\begin{equation}
+  e^{i\pi} + 1 = 0.
+\end{equation}
+
+And an inline fragment, $\alpha + \beta = \gamma$, to exercise inline maths.
+
+\section{A List}
+
+\begin{itemize}
+  \item Cross-references, to exercise the multi-pass logic.
+  \item Mathematics, to exercise font loading.
+  \item Nothing else.
+\end{itemize}
+
+\end{document}

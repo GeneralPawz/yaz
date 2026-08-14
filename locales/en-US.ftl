@@ -22,9 +22,11 @@ error-fs-io = Something went wrong reading or writing { $path }.
 
 ## Compilation
 
+compile-run = Compile
 compile-running = Compiling…
 compile-succeeded = Compiled in { $seconds }s.
 compile-failed = Compilation failed.
+compile-diagnostics-count = { $count } error(s)
 compile-diagnostics =
     { $count ->
         [one] 1 problem
@@ -64,10 +66,23 @@ plugin-update-new-capabilities = { $name } is asking for permissions it did not 
 plugin-error = { $name } stopped working.
 plugin-error-disable = Disable { $name }
 
+## Workspace
+
+workspace-open-project = Open folder…
+workspace-no-project = No folder open yet.
+workspace-no-files = No .tex files in this folder.
+workspace-no-file-open = Choose a file to start writing.
+workspace-entry = entry
+
 ## Editor
 
 editor-mode-source = Source
 editor-mode-visual = Visual
+editor-vim-mode = Vim
+
+## PDF
+
+pdf-empty = Compile to see your document here.
 
 ## Settings
 

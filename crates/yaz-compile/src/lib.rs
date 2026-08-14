@@ -18,5 +18,7 @@
 
 pub mod diagnostics;
 pub mod engine;
+pub mod system_engine;
 
-pub use engine::CompileEngine;
+pub use engine::{CompileEngine, CompileOutput};
+pub use system_engine::SystemEngine;

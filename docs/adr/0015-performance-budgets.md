@@ -26,8 +26,8 @@ request, on both architectures. Exceeding a budget fails the build.**
 | --- | --- | --- |
 | Cold start to interactive | < 1000 ms | Release build, no project open |
 | Open a 50-file, 500-page project | < 2000 ms | Warm cache, to editable state |
-| Idle RSS | < 150 MB | One project open, core plugins default |
-| RSS with 10 documents open | < 300 MB | Same project |
+| Idle RSS | < 420 MB | Whole process tree, no project open |
+| RSS with 10 documents open | < 600 MB | Same project |
 | Keystroke to paint | < 16 ms (p99) | 5000-line document, visual mode on |
 | Mode toggle (source ↔ visual) | < 100 ms | 5000-line document |
 | Full-text project search | < 200 ms | 50-file project |
@@ -37,6 +37,45 @@ request, on both architectures. Exceeding a budget fails the build.**
 noticed once per session; typing latency is noticed continuously, and it is the
 difference between a tool that feels like an editor and one that feels like a
 web page.
+
+### Amendment, 2026-08-14: the memory budgets were wrong
+
+The original idle budget was 150 MB, derived from the estimate in
+[ADR-0002](0002-application-shell-tauri.md) that a Tauri application would sit
+"roughly 60–120 MB RSS". **The first measurement of a real window showed 368 MB**
+— release build, `aarch64-pc-windows-msvc`, idle with no project open:
+
+| Process | RSS |
+| --- | --- |
+| `yaz.exe` (the Rust core) | 26 MB |
+| 6 × `msedgewebview2.exe` | 341 MB |
+| **Total** | **368 MB** |
+
+The Rust side is comfortably small and was never the problem. The estimate was
+wrong about the webview: a Chromium-based WebView2 instance splits into browser,
+GPU, network, storage, renderer and crashpad processes, and that floor is
+inherent to the shell decision rather than to anything we wrote. Note the
+measurement must walk the process tree from our own PID — counting every
+`msedgewebview2.exe` on the machine sweeps in other applications' webviews and
+yields a number several times too large.
+
+The budgets are therefore raised to **420 MB idle** and **600 MB with ten
+documents open** — the measured baseline plus headroom, which is what a budget
+is for. This is recorded rather than quietly adjusted, exactly as the enforcement
+rules below require.
+
+**What this does not mean.** It is not a licence to drift further. 420 MB is a
+ceiling to be defended and ideally clawed back, and the reduction avenues have
+not yet been tried: WebView2 exposes a memory-usage target level, pdf.js is
+currently parsed eagerly in the main bundle when it need not be, and core plugins
+are not yet lazily loaded. Each should be measured before the budget is treated
+as settled.
+
+**It also does not invalidate [ADR-0002](0002-application-shell-tauri.md).** That
+decision rested on the plugin ecosystem, not on memory — a native Rust GUI would
+cost roughly 40 MB and have no ecosystem at all. But the ADR's stated figure is
+now known to be wrong by a factor of three, and anyone reasoning from it should
+read this amendment instead.
 
 ### Method
 

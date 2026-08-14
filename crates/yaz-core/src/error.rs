@@ -62,14 +62,15 @@ impl Error {
     /// The stable message key for this error, for localised rendering.
     ///
     /// Keys are part of the message catalogue contract and must not be changed
-    /// without updating `locales/`.
+    /// without updating `locales/`. They are kebab-case with no dots or colons,
+    /// because Fluent identifiers permit neither.
     pub fn message_key(&self) -> &'static str {
         match self {
-            Error::NotFound { .. } => "error.fs.not-found",
-            Error::OutsideRoot { .. } => "error.fs.outside-root",
-            Error::Undecodable { .. } => "error.fs.undecodable",
-            Error::ConflictingWrite { .. } => "error.fs.conflicting-write",
-            Error::Io { .. } => "error.fs.io",
+            Error::NotFound { .. } => "error-fs-not-found",
+            Error::OutsideRoot { .. } => "error-fs-outside-root",
+            Error::Undecodable { .. } => "error-fs-undecodable",
+            Error::ConflictingWrite { .. } => "error-fs-conflicting-write",
+            Error::Io { .. } => "error-fs-io",
         }
     }
 }

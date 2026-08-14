@@ -42,11 +42,11 @@ impl ActiveSource {
     /// Message key describing this source in the connection indicator.
     pub fn status_key(&self) -> &'static str {
         match self {
-            ActiveSource::BetterBibTeX => "zotero.source.better-bibtex",
-            ActiveSource::LocalApi => "zotero.source.local-api",
-            ActiveSource::ExportedBib => "zotero.source.exported-bib",
-            ActiveSource::Sqlite => "zotero.source.sqlite",
-            ActiveSource::None => "zotero.source.none",
+            ActiveSource::BetterBibTeX => "zotero-source-better-bibtex",
+            ActiveSource::LocalApi => "zotero-source-local-api",
+            ActiveSource::ExportedBib => "zotero-source-exported-bib",
+            ActiveSource::Sqlite => "zotero-source-sqlite",
+            ActiveSource::None => "zotero-source-none",
         }
     }
 
