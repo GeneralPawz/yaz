@@ -102,13 +102,28 @@ emulation — fine for correctness testing, meaningless for performance numbers.
 
 ```bash
 cargo fmt --all --check
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace --all-features
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
 
 pnpm check          # types
 pnpm lint           # includes the i18n and theme-token rules
 pnpm test
 ```
+
+Note the absence of `--all-features`. Features that pull in system C libraries —
+currently `tectonic-engine`, which needs vcpkg on Windows — are excluded
+deliberately: enabling them without their prerequisites fails as a build-script
+panic inside a dependency, which tells you nothing about the real cause. To
+exercise the embedded LaTeX engine, install its prerequisites and ask for it:
+
+```bash
+cargo test -p yaz-compile --features tectonic-engine
+```
+
+On Windows, do not reach for `cargo install cargo-vcpkg` — it does not build on
+ARM64 at all (it depends on `winapi` 0.3.5, which does not compile for aarch64).
+Clone and bootstrap vcpkg and invoke it directly, as
+`.github/workflows/tectonic-probe.yml` does.
 
 CI additionally runs the performance budgets
 ([ADR-0015](../adr/0015-performance-budgets.md)) on native x86_64 **and** ARM64

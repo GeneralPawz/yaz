@@ -105,10 +105,12 @@ impl CompileEngine for TectonicEngine {
             // SyncTeX is what makes click-to-source work in the PDF pane.
             .synctex(true);
 
-        let mut session = builder.create(&mut status).map_err(|_| yaz_core::Error::Io {
-            path: entry.clone(),
-            source: std::io::Error::other("could not create a Tectonic session"),
-        })?;
+        let mut session = builder
+            .create(&mut status)
+            .map_err(|_| yaz_core::Error::Io {
+                path: entry.clone(),
+                source: std::io::Error::other("could not create a Tectonic session"),
+            })?;
 
         // A non-zero result does not mean "no PDF": LaTeX routinely emits errors
         // and a usable document at the same time, so the outcome is reported
