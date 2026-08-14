@@ -15,7 +15,7 @@
 use camino::{Utf8Path, Utf8PathBuf};
 use serde::Serialize;
 use yaz_compile::{CompileEngine, SystemEngine};
-use yaz_core::project::{EngineChoice, Project};
+use yaz_core::project::{EngineChoice, Project, ProjectSettings};
 
 /// Errors crossing the IPC boundary.
 ///
@@ -210,23 +210,24 @@ pub fn compile_project(root: String) -> Result<CompileResult> {
         ));
     }
 
-    let engine = SystemEngine::detect_all()
-        .into_iter()
-        .next()
-        .ok_or_else(|| {
-            CommandError::new(
-                "compile-engine-unavailable",
-                "no system TeX distribution found; the embedded engine is not in this build",
-            )
-        })?;
+    // An explicit choice in yaz.toml wins. Without one, fall back to whatever
+    // this machine actually has — a project that has never been configured
+    // should still compile.
+    let settings = ProjectSettings::load(&root)?;
+    let choice = match settings.engine {
+        Some(choice) => choice,
+        None => default_engine_choice().ok_or_else(|| {
+            CommandError::new("compile-engine-unavailable", "no engine available")
+        })?,
+    };
+
+    let engine = build_engine(&choice)?;
 
     let project = Project {
         root: root.clone(),
         entry: Utf8PathBuf::from(&info.entry),
-        engine: EngineChoice::System {
-            engine: engine.engine.clone(),
-        },
-        document_locale: None,
+        engine: choice,
+        document_locale: settings.document_locale,
     };
 
     let started = std::time::Instant::now();
@@ -242,13 +243,213 @@ pub fn compile_project(root: String) -> Result<CompileResult> {
     })
 }
 
-/// Typesetters available on this machine.
+/// The engine to use when a project has expressed no preference.
+///
+/// Prefers embedded Tectonic when this build has it, since it needs nothing
+/// installed; otherwise the first detected system typesetter.
+fn default_engine_choice() -> Option<EngineChoice> {
+    #[cfg(feature = "tectonic-engine")]
+    {
+        return Some(EngineChoice::Tectonic);
+    }
+    #[cfg(not(feature = "tectonic-engine"))]
+    {
+        SystemEngine::detect_all()
+            .into_iter()
+            .next()
+            .map(|engine| EngineChoice::System {
+                engine: engine.engine,
+            })
+    }
+}
+
+/// Turn a stored choice into something that can actually run.
+///
+/// Refuses rather than substituting. A project pinned to `lualatex` because its
+/// journal template needs it must not quietly compile with something else — a
+/// silently different engine produces a subtly different PDF, which is far worse
+/// than an error saying the engine is missing.
+fn build_engine(choice: &EngineChoice) -> Result<Box<dyn CompileEngine>> {
+    match choice {
+        EngineChoice::Tectonic => {
+            #[cfg(feature = "tectonic-engine")]
+            {
+                Ok(Box::new(yaz_compile::TectonicEngine::new()))
+            }
+            #[cfg(not(feature = "tectonic-engine"))]
+            {
+                Err(CommandError::new(
+                    "engine-tectonic-not-built",
+                    "this build does not include the embedded Tectonic engine",
+                ))
+            }
+        }
+        EngineChoice::System { engine } => {
+            let system = SystemEngine::new(engine.clone());
+            if system.is_available() {
+                Ok(Box::new(system))
+            } else {
+                Err(CommandError::new(
+                    "engine-system-not-installed",
+                    format!("{engine} is not installed on this machine"),
+                ))
+            }
+        }
+        // EngineChoice is #[non_exhaustive], so a variant added in yaz-core
+        // lands here rather than failing to compile. Refusing is right: an
+        // engine this function has not been taught to construct must not fall
+        // through to some default.
+        other => Err(CommandError::new(
+            "compile-engine-unavailable",
+            format!("engine {} is not supported by this build", other.to_id()),
+        )),
+    }
+}
+
+/// An engine the user could choose, and whether they actually can.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EngineInfo {
+    /// Stable identifier, e.g. `tectonic` or `system:xelatex`.
+    id: String,
+    /// What to show in the picker. Engine binary names are not translated.
+    label: String,
+    /// Whether this build can actually run it.
+    available: bool,
+    /// Message key explaining why not, when unavailable.
+    unavailable_reason_key: Option<String>,
+}
+
+/// Every engine yaz knows about, available or not.
+///
+/// Unavailable engines are listed rather than hidden. Tectonic is a *compile
+/// time* feature: a build without it cannot be made to have it by changing a
+/// setting, and silently omitting it from the picker would leave a user
+/// wondering where the advertised engine went. Saying "not in this build"
+/// is the honest answer, and it is also the actionable one.
 #[tauri::command]
-pub fn available_engines() -> Vec<String> {
-    SystemEngine::detect_all()
-        .into_iter()
-        .map(|e| e.engine)
-        .collect()
+pub fn list_engines() -> Vec<EngineInfo> {
+    let mut engines = Vec::new();
+
+    engines.push(EngineInfo {
+        id: "tectonic".to_owned(),
+        label: "Tectonic (embedded)".to_owned(),
+        available: cfg!(feature = "tectonic-engine"),
+        unavailable_reason_key: if cfg!(feature = "tectonic-engine") {
+            None
+        } else {
+            Some("engine-tectonic-not-built".to_owned())
+        },
+    });
+
+    let detected = SystemEngine::detect_all();
+    for name in ["xelatex", "lualatex", "pdflatex"] {
+        let available = detected.iter().any(|e| e.engine == name);
+        engines.push(EngineInfo {
+            id: format!("system:{name}"),
+            label: name.to_owned(),
+            available,
+            unavailable_reason_key: if available {
+                None
+            } else {
+                Some("engine-system-not-installed".to_owned())
+            },
+        });
+    }
+
+    engines
+}
+
+/// Read the persisted per-project settings.
+#[tauri::command]
+pub fn get_project_settings(root: String) -> Result<ProjectSettingsDto> {
+    let root = dunce_canonicalize(Utf8Path::new(&root))?;
+    let settings = ProjectSettings::load(&root)?;
+    Ok(ProjectSettingsDto {
+        engine_id: settings.engine.map(|e| e.to_id()),
+        entry: settings.entry.map(|p| p.to_string()),
+    })
+}
+
+/// Persist the engine choice for a project, writing `yaz.toml`.
+#[tauri::command]
+pub fn set_project_engine(root: String, engine_id: String) -> Result<()> {
+    let root = dunce_canonicalize(Utf8Path::new(&root))?;
+
+    let choice = EngineChoice::from_id(&engine_id).ok_or_else(|| {
+        CommandError::new(
+            "compile-engine-unavailable",
+            format!("unknown engine {engine_id}"),
+        )
+    })?;
+
+    let mut settings = ProjectSettings::load(&root)?;
+    settings.engine = Some(choice);
+    settings.save(&root)?;
+    Ok(())
+}
+
+/// Per-project settings, as the frontend sees them.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectSettingsDto {
+    engine_id: Option<String>,
+    entry: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tectonic_availability_tracks_the_build_feature() {
+        let engines = list_engines();
+        let tectonic = engines
+            .iter()
+            .find(|e| e.id == "tectonic")
+            .expect("tectonic is always listed, available or not");
+
+        // The point of listing it regardless: a build without the feature must
+        // say so rather than omit it.
+        assert_eq!(tectonic.available, cfg!(feature = "tectonic-engine"));
+        assert_eq!(
+            tectonic.unavailable_reason_key.is_some(),
+            !cfg!(feature = "tectonic-engine")
+        );
+    }
+
+    #[test]
+    fn every_engine_carries_a_reason_when_unavailable() {
+        for engine in list_engines() {
+            assert_eq!(
+                engine.available,
+                engine.unavailable_reason_key.is_none(),
+                "{} must explain itself when unavailable",
+                engine.id
+            );
+        }
+    }
+
+    #[test]
+    fn engine_ids_parse_back_into_choices() {
+        for engine in list_engines() {
+            assert!(
+                EngineChoice::from_id(&engine.id).is_some(),
+                "{} is offered to the user but cannot be stored",
+                engine.id
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_engine_is_refused_rather_than_substituted() {
+        // A project pinned to a missing engine must fail loudly: silently
+        // compiling with a different one produces a subtly different PDF.
+        let result = build_engine(&EngineChoice::System {
+            engine: "definitely-not-a-real-typesetter".to_owned(),
+        });
+        assert!(result.is_err());
+    }
 }
 
 /// Report that the frontend has mounted and is interactive.

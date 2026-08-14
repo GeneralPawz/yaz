@@ -34,6 +34,14 @@ compile-diagnostics =
     }
 compile-engine-unavailable = This project is set to use { $engine }, which is not installed. Install a TeX distribution, or switch this project to the built-in Tectonic engine.
 
+## Engines
+
+settings-engine = Engine
+settings-engine-help = Saved in yaz.toml, so co-authors compile the same way you do.
+engine-tectonic-not-built = Not included in this build of yaz. It has to be compiled in — a setting cannot add it.
+engine-system-not-installed = Not installed on this computer.
+engine-unavailable-suffix = unavailable
+
 ## Zotero — keys come from yaz-zotero::ActiveSource::status_key()
 
 zotero-source-better-bibtex = Zotero: connected via Better BibTeX

@@ -56,7 +56,9 @@ fn main() {
             commands::read_file,
             commands::write_file,
             commands::compile_project,
-            commands::available_engines,
+            commands::list_engines,
+            commands::get_project_settings,
+            commands::set_project_engine,
             commands::read_artefact,
             commands::report_ready,
         ])

@@ -14,6 +14,10 @@
   let pdfData = $state<Uint8Array | null>(null);
   let vimMode = $state(false);
   let failure = $state<string | null>(null);
+  let engines = $state<ipc.EngineInfo[]>([]);
+  let selectedEngine = $state<string | null>(null);
+
+  const selectedEngineInfo = $derived(engines.find((e) => e.id === selectedEngine) ?? null);
 
   const errorCount = $derived(
     result?.diagnostics.filter((d) => d.severity === "error").length ?? 0,
@@ -25,7 +29,25 @@
     void ipc.reportReady().catch(() => {
       /* measurement only; never worth surfacing to the user */
     });
+    void ipc
+      .listEngines()
+      .then((found) => {
+        engines = found;
+      })
+      .catch((error) => {
+        failure = String(error);
+      });
   });
+
+  async function chooseEngine(id: string) {
+    if (!project) return;
+    selectedEngine = id;
+    try {
+      await ipc.setProjectEngine(project.root, id);
+    } catch (error) {
+      failure = String(error);
+    }
+  }
 
   async function chooseProject() {
     const picked = await open({ directory: true, multiple: false });
@@ -36,6 +58,10 @@
       project = info;
       result = null;
       pdfData = null;
+      const settings = await ipc.getProjectSettings(info.root);
+      // No stored choice means "whatever this machine has"; show the first
+      // available engine rather than an empty picker.
+      selectedEngine = settings.engineId ?? engines.find((e) => e.available)?.id ?? null;
       await openFile(info.entry);
     } catch (error) {
       failure = String(error);
@@ -88,6 +114,28 @@
       <input type="checkbox" bind:checked={vimMode} />
       {t("editor-vim-mode")}
     </label>
+
+    <label class="engine" title={t("settings-engine-help")}>
+      {t("settings-engine")}
+      <select
+        disabled={!project}
+        value={selectedEngine ?? ""}
+        onchange={(event) => chooseEngine((event.currentTarget as HTMLSelectElement).value)}
+      >
+        {#each engines as engine (engine.id)}
+          <!-- Unavailable engines stay visible but unselectable. Hiding them
+               would leave someone hunting for an engine the docs promised. -->
+          <option value={engine.id} disabled={!engine.available}>
+            {engine.label}{#if !engine.available} — {t("engine-unavailable-suffix")}{/if}
+          </option>
+        {/each}
+      </select>
+    </label>
+
+    {#if selectedEngineInfo && !selectedEngineInfo.available && selectedEngineInfo.unavailableReasonKey}
+      <span class="warn">{t(selectedEngineInfo.unavailableReasonKey)}</span>
+    {/if}
+
     <span class="spacer"></span>
     {#if project}
       <span class="path" title={project.root}>{project.root}</span>
@@ -218,11 +266,31 @@
     cursor: default;
   }
 
-  .toggle {
+  .toggle,
+  .engine {
     display: flex;
     align-items: center;
     gap: var(--yaz-space-1);
     color: var(--yaz-text-secondary);
+  }
+
+  select {
+    font: inherit;
+    color: var(--yaz-text-primary);
+    background: var(--yaz-bg-tertiary);
+    border: 1px solid var(--yaz-border);
+    border-radius: var(--yaz-radius-md);
+    padding: var(--yaz-space-1) var(--yaz-space-2);
+  }
+
+  select:disabled {
+    opacity: 0.5;
+  }
+
+  .warn {
+    color: var(--yaz-warning);
+    font-size: 0.85em;
+    max-inline-size: 24rem;
   }
 
   .body {

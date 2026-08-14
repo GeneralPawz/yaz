@@ -18,6 +18,7 @@
   "scripts": {
     "dev": "tauri dev",
     "app:build": "tauri build",
+    "app:build:tectonic": "tauri build -- --features tectonic-engine",
     "tauri": "tauri",
     "web:dev": "pnpm --filter @yaz/desktop dev",
     "web:build": "pnpm --filter @yaz/desktop build",

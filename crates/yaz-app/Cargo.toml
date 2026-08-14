@@ -14,6 +14,15 @@ publish = false
 name = "yaz"
 path = "src/main.rs"
 
+[features]
+default = []
+
+# Forwards to yaz-compile's feature of the same name. yaz-app needs its own
+# declaration because `cfg!(feature = ...)` only sees features of the crate it
+# is compiled in — without this, the check silently reads false and the engine
+# picker would report Tectonic as missing from a build that actually has it.
+tectonic-engine = ["yaz-compile/tectonic-engine"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

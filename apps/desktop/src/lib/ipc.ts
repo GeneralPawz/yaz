@@ -67,9 +67,41 @@ export function compile(root: string): Promise<CompileResult> {
   return invoke<CompileResult>("compile_project", { root });
 }
 
-/** Which engines this build can actually run. */
-export function availableEngines(): Promise<string[]> {
-  return invoke<string[]>("available_engines");
+/** An engine the user could pick, and whether they actually can. */
+export interface EngineInfo {
+  /** Stable identifier, e.g. `tectonic` or `system:xelatex`. */
+  id: string;
+  /** Display label. Engine binary names are not translated. */
+  label: string;
+  available: boolean;
+  /** Message key explaining why not, when unavailable. */
+  unavailableReasonKey: string | null;
+}
+
+/** Per-project settings, as persisted in `yaz.toml`. */
+export interface ProjectSettings {
+  engineId: string | null;
+  entry: string | null;
+}
+
+/**
+ * Every engine yaz knows about, available or not.
+ *
+ * Unavailable ones are listed rather than hidden, because "Tectonic is not in
+ * this build" is actionable and its silent absence is not.
+ */
+export function listEngines(): Promise<EngineInfo[]> {
+  return invoke<EngineInfo[]>("list_engines");
+}
+
+/** Read the project's persisted settings. */
+export function getProjectSettings(root: string): Promise<ProjectSettings> {
+  return invoke<ProjectSettings>("get_project_settings", { root });
+}
+
+/** Persist the engine choice, writing `yaz.toml` into the project. */
+export function setProjectEngine(root: string, engineId: string): Promise<void> {
+  return invoke<void>("set_project_engine", { root, engineId });
 }
 
 /**
