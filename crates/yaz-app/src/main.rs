@@ -45,6 +45,9 @@ fn main() {
         arch = std::env::consts::ARCH,
         os = std::env::consts::OS,
         dev_mode = is_dev_mode(),
+        // Which certificate roots are in play. ADR-0019 makes this
+        // machine-dependent, so a TLS failure is not reproducible without it.
+        tls_roots = yaz_core::net::trust_roots().as_str(),
         "yaz starting"
     );
 

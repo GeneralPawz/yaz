@@ -56,7 +56,16 @@ walkdir = "2"
 semver = { version = "1", features = ["serde"] }
 url = { version = "2", features = ["serde"] }
 sha2 = "0.10"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+# Both root sources are compiled in, but only one is used at a time — see
+# yaz_core::net and ADR-0019. Enabling both features alone would make reqwest
+# trust the *union* of the OS store and Mozilla's list, which silently defeats
+# the ability to honour an administrator distrusting a CA.
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "rustls-tls-native-roots",
+    "rustls-tls-webpki-roots",
+] }
+rustls-native-certs = "0.8"
 
 # Dev
 pretty_assertions = "1"

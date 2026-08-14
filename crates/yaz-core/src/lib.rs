@@ -14,6 +14,7 @@
 
 pub mod document;
 pub mod error;
+pub mod net;
 pub mod project;
 pub mod settings;
 pub mod workspace;

@@ -21,6 +21,11 @@ notify-debouncer-full.workspace = true
 walkdir.workspace = true
 semver.workspace = true
 
+# yaz-core owns the single HTTP client constructor (see src/net.rs), so the TLS
+# trust policy in ADR-0019 has one implementation rather than one per caller.
+reqwest.workspace = true
+rustls-native-certs.workspace = true
+
 [dev-dependencies]
 pretty_assertions.workspace = true
 tempfile.workspace = true

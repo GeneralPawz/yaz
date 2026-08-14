@@ -19,6 +19,15 @@
 //!
 //! See [ADR-0008](https://github.com/GeneralPawz/yaz/blob/main/docs/adr/0008-zotero-integration.md).
 
+//! # Constructing the HTTP client
+//!
+//! Use [`yaz_core::net::http_client`], never `reqwest::Client::new`. The trust
+//! policy in
+//! [ADR-0019](https://github.com/GeneralPawz/yaz/blob/main/docs/adr/0019-tls-trust-store.md)
+//! has one implementation on purpose: a client built here with reqwest's
+//! defaults would trust a different set of roots than the rest of the
+//! application, and the difference would only show up on a user's network.
+
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
 #![warn(clippy::all)]

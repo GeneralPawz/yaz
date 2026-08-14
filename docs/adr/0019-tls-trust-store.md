@@ -1,6 +1,6 @@
 # 0019 — TLS trust: bundled roots or the operating system store
 
-- **Status:** **Proposed** — awaiting the project owner's decision.
+- **Status:** Accepted
 - **Date:** 2026-08-14
 
 ## Context
@@ -96,10 +96,10 @@ choice, which removes the main reason to prefer bundled roots. What remains on
 that side is determinism, which is a debugging convenience, against connectivity,
 which is whether the product works at all for a large share of its users.
 
-## Decision (proposed)
+## Decision
 
-**Option B: `rustls-tls-native-roots`, with the bundled set as a fallback when
-the platform store is empty or unreadable.**
+**Option B: the platform store, with the bundled set as a fallback when it is
+empty or unreadable.**
 
 Keeps rustls — pure Rust, no OpenSSL on Linux, no new C dependency — while
 sourcing roots from the OS. The fallback matters for minimal Linux containers,
@@ -109,6 +109,33 @@ using Mozilla's list.
 The determinism loss is real but bounded: when a TLS failure is suspected, it can
 be diagnosed by comparing against the bundled set, and the failure mode is a
 connection error rather than silent acceptance of a bad certificate.
+
+### It is not enough to enable both features
+
+Worth stating, because it is the obvious implementation and it is wrong.
+`reqwest` treats each root source independently and merges them, so switching on
+both `rustls-tls-native-roots` and `rustls-tls-webpki-roots` produces a client
+trusting the **union** of the OS store and Mozilla's list.
+
+That looks like a harmless superset and quietly destroys half of what this ADR is
+for: a CA the administrator *removed* would still be trusted through the bundled
+copy, so institutional policy is not honoured after all.
+
+Both are therefore compiled in, and exactly one is switched on per client —
+`tls_built_in_native_certs` and `tls_built_in_webpki_certs` set to opposite
+values, decided by probing whether the platform store returned any usable roots.
+
+### One implementation, in one place
+
+Every HTTP client in the application is built by `yaz_core::net::http_client`.
+A caller reaching for `reqwest::Client::new` gets reqwest's defaults and a
+different set of roots to the rest of the application, and the divergence would
+only show up on a user's network — which is precisely where it cannot be
+debugged.
+
+The selected source is reported at startup (`tls_roots="platform"`) and is
+available as `yaz_core::net::trust_roots`, because a TLS bug report is not
+reproducible without it.
 
 ## Consequences
 
