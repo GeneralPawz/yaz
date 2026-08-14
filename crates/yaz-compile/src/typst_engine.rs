@@ -14,10 +14,15 @@
 //! # Why it is worth having
 //!
 //! For someone writing from their own notes rather than filling in a
-//! publisher's template, Typst is plausibly the better tool: a fraction of the
-//! size, much faster, and with incremental compilation. It is also pure Rust,
-//! so it needs no vcpkg, no ICU4C and no half-hour dependency build, and it is
-//! native on every architecture without effort.
+//! publisher's template, Typst is plausibly the better tool: much faster, with
+//! incremental compilation, and pure Rust — no vcpkg, no ICU4C, no system C
+//! libraries, and native on every architecture without effort.
+//!
+//! It is **not** meaningfully smaller, which is the intuitive claim and the
+//! wrong one. Measured on `aarch64-pc-windows-msvc`, a Typst build is a 40.4 MB
+//! binary against Tectonic's 50.5 MB, and its installer is marginally *larger* —
+//! about 9.5 MB of it is the embedded font set that Tectonic instead fetches on
+//! demand. The argument is speed and buildability, not disk.
 //!
 //! It buys none of that for anyone who needs `elsarticle.cls`, which is why it
 //! is an addition rather than a replacement. See the

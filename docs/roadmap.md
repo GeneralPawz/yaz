@@ -51,7 +51,7 @@ possible without disturbing anything else.
 Typst is a complete typesetting system written in Rust, and it is available as an
 embeddable library exactly as Tectonic is. For a researcher writing from their
 own notes — rather than filling in a publisher's template — it is plausibly the
-better tool: far smaller, far faster, and with incremental compilation.
+better tool: much faster, with incremental compilation, and buildable anywhere.
 
 It is not a LaTeX engine and does not pretend to be. **Typst documents are `.typ`
 files in a different language.** So this is not a drop-in third choice for an
@@ -60,8 +60,35 @@ to share the editor, the Zotero bridge and the Obsidian bridge. That distinction
 is the main thing to get right in the user interface, and the reason the engine
 is behind a feature flag while it is evaluated.
 
-What it buys, if it works out: no vcpkg, no ICU4C, no half-hour dependency build,
-a far smaller binary, and a pure-Rust path that is trivially native on ARM64.
+### What it actually buys — measured, not assumed
+
+The obvious pitch is "much smaller", and **that turned out to be wrong**. Built
+on `aarch64-pc-windows-msvc`:
+
+| Build | Binary | Installer | Build time |
+| --- | ---: | ---: | ---: |
+| slim, no embedded engine | 6.5 MB | 2.9 MB | ~3 min |
+| **Typst** | **40.4 MB** | **14.3 MB** | **~12 min** |
+| Tectonic | 50.5 MB | 13.8 MB | ~34 min, plus vcpkg |
+
+Typst's binary is about 20% smaller, and its **installer is slightly *larger***.
+Roughly 9.5 MB of it is the embedded font set — New Computer Modern and friends —
+which Tectonic instead fetches on demand into a cache.
+
+So size is not the argument. What is:
+
+- **Buildability.** No vcpkg, no ICU4C, no system C libraries of any kind. Twelve
+  minutes against thirty-four plus a vcpkg bootstrap that has to be retried
+  because it treats a failed TLS handshake as non-transient.
+- **Compilation speed.** The Typst fixture suite runs in 0.03 s against 8.21 s
+  for the LaTeX equivalent — comparable documents, three orders of magnitude.
+  Incremental compilation on top of that.
+- **Portability.** Pure Rust cross-compiles to every target we ship without
+  ceremony, which is a real saving on ARM64 in particular.
+
+A useful correction to carry forward: the pure-Rust stack is *faster and far
+easier to build*, not meaningfully smaller. Anyone reaching for it to save disk
+space is reaching for the wrong reason.
 
 ## The open question: a lean Rust engine
 

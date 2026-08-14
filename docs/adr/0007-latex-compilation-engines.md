@@ -66,10 +66,15 @@ rather than attempted. A parse error is not a useful answer to "why did my
 document stop building".
 
 The reason to have it: for someone writing from their own notes rather than
-filling in a publisher's template, Typst is plausibly the better tool — far
-smaller, far faster, with incremental compilation. It buys nothing for anyone who
-needs `elsarticle.cls`, which is exactly why it is an addition and the LaTeX path
-is untouched.
+filling in a publisher's template, Typst is plausibly the better tool — much
+faster, with incremental compilation, and buildable anywhere. It buys nothing for
+anyone who needs `elsarticle.cls`, which is exactly why it is an addition and the
+LaTeX path is untouched.
+
+It is **not** smaller, which was the intuitive expectation and is measurably
+wrong: 40.4 MB against Tectonic's 50.5 MB, with a marginally larger installer,
+because Typst embeds its fonts where Tectonic fetches them on demand. The
+[roadmap](https://generalpawz.github.io/yaz/roadmap) carries the figures.
 
 This also closes off a question that would otherwise keep being asked: whether to
 reimplement the whole stack in Rust. Every *supporting* library has a credible
