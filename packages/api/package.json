@@ -1,6 +1,6 @@
 {
   "name": "@yaz/api",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "The public plugin API for yaz. Stable, semver-strict, MIT licensed so plugins may be licensed however their authors choose.",
   "license": "MIT",
   "type": "module",
