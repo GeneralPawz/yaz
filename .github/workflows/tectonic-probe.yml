@@ -89,13 +89,11 @@ jobs:
       # vcpkg.exe itself may run emulated on ARM64. That is irrelevant to
       # ADR-0014: what matters is that the libraries it produces are arm64,
       # which the triplet guarantees.
-      - name: Cache vcpkg
-        if: startsWith(matrix.runner, 'windows')
-        uses: actions/cache@v4
-        with:
-          path: ${{ runner.temp }}/vcpkg/installed
-          key: vcpkg-${{ matrix.triplet }}-${{ hashFiles('dist/vcpkg-triplets/*') }}
-
+      # Bootstrap BEFORE restoring the cache. The cache lives at
+      # <temp>/vcpkg/installed, so restoring it first creates that directory and
+      # `git clone` then fails with "destination path already exists and is not
+      # an empty directory" — which only shows up on the second run, once there
+      # is a cache to restore.
       - name: Bootstrap vcpkg
         if: startsWith(matrix.runner, 'windows')
         shell: pwsh
@@ -103,6 +101,13 @@ jobs:
           git clone --depth 1 https://github.com/microsoft/vcpkg "$env:RUNNER_TEMP\vcpkg"
           & "$env:RUNNER_TEMP\vcpkg\bootstrap-vcpkg.bat" -disableMetrics
           "VCPKG_ROOT=$env:RUNNER_TEMP\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Cache vcpkg packages
+        if: startsWith(matrix.runner, 'windows')
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/vcpkg/installed
+          key: vcpkg-${{ matrix.triplet }}-${{ hashFiles('dist/vcpkg-triplets/*') }}
 
       # ICU4C dominates this step and can take the better part of an hour on a
       # cold cache. Whether it builds for arm64-windows is the open question
@@ -150,8 +155,30 @@ jobs:
           VCPKGRS_TRIPLET: ${{ matrix.triplet }}
           RUSTFLAGS: ${{ startsWith(matrix.runner, 'windows') && '-Ctarget-feature=+crt-static' || '' }}
         run: |
+          # Baseline first (no embedded engine), then the same crate with it.
+          # The difference is what Tectonic actually costs us on disk.
+          cargo build --release -p yaz-compile --example size_baseline
           cargo build --release -p yaz-compile --features tectonic-engine --example size_probe
-          cargo build --release -p yaz-compile --example size_probe 2>/dev/null || true
-          echo "--- release artefact sizes (${{ matrix.name }}) ---"
-          find target/release/examples -maxdepth 1 -type f \( -name 'size_probe' -o -name 'size_probe.exe' \) \
-            -exec ls -lh {} \; || echo "no example binary found"
+
+          ext=""; [ "${RUNNER_OS}" = "Windows" ] && ext=".exe"
+          base=$(stat -c%s "target/release/examples/size_baseline${ext}")
+          with=$(stat -c%s "target/release/examples/size_probe${ext}")
+
+          # awk rather than bc: bc is not present in Git Bash on the Windows
+          # runners, and this step must behave identically on all four targets.
+          mb() { awk -v b="$1" 'BEGIN { printf "%.2f", b/1048576 }'; }
+
+          {
+            echo "### Tectonic size impact — ${{ matrix.name }}"
+            echo ""
+            echo "| build | bytes | MB |"
+            echo "| --- | ---: | ---: |"
+            echo "| without Tectonic | $base | $(mb "$base") |"
+            echo "| with Tectonic | $with | $(mb "$with") |"
+            echo "| **added** | $((with-base)) | **$(mb $((with-base)))** |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "--- ${{ matrix.name }} ---"
+          echo "without Tectonic : $base bytes ($(mb "$base") MB)"
+          echo "with Tectonic    : $with bytes ($(mb "$with") MB)"
+          echo "added            : $((with-base)) bytes ($(mb $((with-base))) MB)"

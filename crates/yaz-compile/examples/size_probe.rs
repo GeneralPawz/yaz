@@ -11,6 +11,10 @@
 //!
 //! [ADR-0007]: https://github.com/GeneralPawz/yaz/blob/main/docs/adr/0007-latex-compilation-engines.md
 
+// `id` and `is_available` are CompileEngine methods, so the trait has to be in
+// scope even though the concrete type is what we construct.
+use yaz_compile::CompileEngine;
+
 fn main() {
     let engine = yaz_compile::TectonicEngine::new();
     // Printed so the call cannot be optimised away.
