@@ -47,7 +47,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 # Filesystem
 camino = { version = "1", features = ["serde1"] }
 notify = "7"
-notify-debouncer-full = "0.4"
+notify-debouncer-full = "0.7"
 walkdir = "2"
 
 # Misc
