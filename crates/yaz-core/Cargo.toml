@@ -1,0 +1,27 @@
+[package]
+name = "yaz-core"
+description = "Project, document, workspace and settings model for yaz."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+thiserror.workspace = true
+camino.workspace = true
+tracing.workspace = true
+notify.workspace = true
+notify-debouncer-full.workspace = true
+walkdir.workspace = true
+semver.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+tempfile.workspace = true
+insta.workspace = true

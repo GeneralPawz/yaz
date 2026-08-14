@@ -1,0 +1,56 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "yaz",
+  "version": "0.1.0",
+  "identifier": "dev.yaz.app",
+  "build": {
+    "frontendDist": "../../apps/desktop/build",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "pnpm --filter @yaz/desktop dev",
+    "beforeBuildCommand": "pnpm --filter @yaz/desktop build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "yaz",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 800,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "dragDropEnabled": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' asset: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost",
+      "capabilities": []
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "deb", "appimage"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "Office",
+    "shortDescription": "A modern LaTeX writing environment.",
+    "longDescription": "yaz turns collected ideas and sources into scientific papers: a LaTeX editor with source and visual modes over one buffer, Zotero and Obsidian integration, and a TypeScript plugin ecosystem.",
+    "licenseFile": "../../LICENSE"
+  },
+  "plugins": {
+    "updater": {
+      "active": false,
+      "_comment": "Enabled in phase 3 with the minisign public key and per-target endpoints. Never active in dev mode — see docs/adr/0013-update-distribution.md.",
+      "endpoints": [
+        "https://github.com/GeneralPawz/yaz/releases/latest/download/latest.json"
+      ],
+      "dialog": true,
+      "pubkey": ""
+    }
+  }
+}

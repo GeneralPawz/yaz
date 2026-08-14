@@ -1,0 +1,26 @@
+[package]
+name = "yaz-plugin"
+description = "Plugin manifests, lifecycle, and the capability broker for yaz."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+
+[dependencies]
+yaz-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+camino.workspace = true
+tracing.workspace = true
+semver.workspace = true
+url.workspace = true
+sha2.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+tempfile.workspace = true
+insta.workspace = true

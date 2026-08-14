@@ -1,0 +1,94 @@
+/*
+ * The theming contract.
+ *
+ * Every custom property declared here is supported API: setting it is
+ * guaranteed to work across versions. A theme that instead targets internal
+ * selectors is permitted but explicitly unsupported, and we will not treat
+ * breaking such a theme as a regression.
+ *
+ * A literal colour anywhere in a component is a bug, caught by lint. Components
+ * consume these tokens and nothing else, which is what makes adding a theme
+ * require touching no component code.
+ *
+ * See docs/adr/0010-theming.md
+ */
+
+:root {
+  /* ---- Contract version -------------------------------------------------
+   * Bumped when tokens are added. Token names, once published, are effectively
+   * permanent: renaming one breaks every theme.
+   */
+  --yaz-tokens-version: 1;
+
+  /* ---- Surfaces --------------------------------------------------------- */
+  --yaz-bg-primary: #ffffff;
+  --yaz-bg-secondary: #f6f7f9;
+  --yaz-bg-tertiary: #eceef1;
+  --yaz-bg-overlay: #ffffff;
+  --yaz-bg-hover: rgba(0, 0, 0, 0.04);
+  --yaz-bg-active: rgba(0, 0, 0, 0.08);
+  --yaz-bg-selection: rgba(47, 108, 226, 0.18);
+
+  /* ---- Text ------------------------------------------------------------- */
+  --yaz-text-primary: #1a1d21;
+  --yaz-text-secondary: #4a5058;
+  --yaz-text-muted: #767d87;
+  --yaz-text-on-accent: #ffffff;
+
+  /* ---- Accent and state ------------------------------------------------- */
+  --yaz-accent: #2f6ce2;
+  --yaz-accent-hover: #2559c4;
+  --yaz-success: #1f8b4c;
+  --yaz-warning: #b8770b;
+  --yaz-error: #c1322b;
+  --yaz-info: #2f6ce2;
+
+  /* ---- Borders and separation ------------------------------------------- */
+  --yaz-border: #d8dce1;
+  --yaz-border-strong: #b9bfc7;
+  --yaz-focus-ring: var(--yaz-accent);
+
+  /* ---- Editor -----------------------------------------------------------
+   * Syntax tokens are separate from UI tokens so a theme can restyle the
+   * interface without touching highlighting, and vice versa.
+   */
+  --yaz-editor-bg: var(--yaz-bg-primary);
+  --yaz-editor-text: var(--yaz-text-primary);
+  --yaz-editor-gutter-bg: var(--yaz-bg-secondary);
+  --yaz-editor-gutter-text: var(--yaz-text-muted);
+  --yaz-editor-cursor: var(--yaz-accent);
+  --yaz-editor-active-line: rgba(0, 0, 0, 0.03);
+
+  --yaz-syntax-command: #8250df;
+  --yaz-syntax-environment: #0550ae;
+  --yaz-syntax-math: #0f7b6c;
+  --yaz-syntax-comment: #767d87;
+  --yaz-syntax-string: #b8770b;
+  --yaz-syntax-reference: #2f6ce2;
+  --yaz-syntax-error: var(--yaz-error);
+
+  /* ---- PDF viewer ------------------------------------------------------- */
+  --yaz-pdf-bg: #52565c;
+  --yaz-pdf-page-shadow: rgba(0, 0, 0, 0.3);
+
+  /* ---- Typography ------------------------------------------------------- */
+  --yaz-font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --yaz-font-mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  --yaz-font-prose: Georgia, "Times New Roman", serif;
+  --yaz-font-size-base: 14px;
+  --yaz-line-height: 1.55;
+
+  /* ---- Spacing scale ---------------------------------------------------- */
+  --yaz-space-1: 4px;
+  --yaz-space-2: 8px;
+  --yaz-space-3: 12px;
+  --yaz-space-4: 16px;
+  --yaz-space-6: 24px;
+  --yaz-space-8: 32px;
+
+  /* ---- Shape ------------------------------------------------------------ */
+  --yaz-radius-sm: 3px;
+  --yaz-radius-md: 6px;
+  --yaz-radius-lg: 10px;
+  --yaz-shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.16);
+}

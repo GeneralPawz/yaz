@@ -1,0 +1,62 @@
+# Rust
+/target
+**/target
+Cargo.lock.bak
+
+# Node
+node_modules/
+.pnpm-store/
+dist/
+.svelte-kit/
+.vite/
+*.tsbuildinfo
+
+# Tauri
+/crates/yaz-app/gen/schemas/
+/crates/yaz-app/target/
+
+# Docs site
+/docs/.vitepress/dist/
+/docs/.vitepress/cache/
+/docs/api/generated/
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.shared.json
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local dev state — see docs/adr/0013-update-distribution.md
+/.yaz-dev/
+/dev-vault/
+/dev-plugins/
+*.local
+.env
+.env.*
+!.env.example
+
+# Signing keys must never be committed
+*.key
+*.pem
+tauri-private.key*
+
+# Build/test artefacts
+*.pdf
+!assets/**/*.pdf
+!docs/**/*.pdf
+*.aux
+*.log
+*.out
+*.synctex.gz
+*.fdb_latexmk
+*.fls
+*.bbl
+*.blg
+coverage/

@@ -1,0 +1,27 @@
+[package]
+name = "yaz-compile"
+description = "LaTeX compilation engine abstraction for yaz: embedded Tectonic and system TeX."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+
+[dependencies]
+yaz-core.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+camino.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+
+# NOTE(phase-2): tectonic is added here as an embedded engine. It is a large
+# dependency tree; verify it builds natively for every target in
+# rust-toolchain.toml before pinning (ADR-0014).
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+tempfile.workspace = true
+insta.workspace = true

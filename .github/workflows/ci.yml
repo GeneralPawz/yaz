@@ -1,0 +1,148 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # Cheap gates first, so an obviously-wrong PR fails in under a minute rather
+  # than after a four-way build matrix.
+  lint-commits:
+    name: Conventional Commits
+    runs-on: ubuntu-24.04
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install --frozen-lockfile
+      # Hooks can be skipped locally; CI is where this is actually enforced.
+      # See docs/adr/0012-versioning-and-changelog.md
+      - name: Lint commit messages
+        run: pnpm exec commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
+
+  format:
+    name: Formatting
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  # ADR-0014: ARM64 is tier 1. These run on NATIVE ARM runners, never
+  # cross-compiled and never under QEMU — emulated CI hides exactly the problems
+  # the policy exists to catch.
+  rust:
+    name: Rust — ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            runner: ubuntu-24.04
+          - name: linux-aarch64
+            runner: ubuntu-24.04-arm
+          - name: windows-x86_64
+            runner: windows-2022
+          - name: windows-aarch64
+            runner: windows-11-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.name }}
+
+      - name: Install Linux dependencies
+        if: startsWith(matrix.runner, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      # ARM64 Windows runners do not ship the ARM64 MSVC target libraries by
+      # default. Without this the link fails with LNK1181 on kernel32.lib, which
+      # does not mention ARM64 anywhere. See docs/contributing/setup.md.
+      - name: Install ARM64 MSVC toolchain
+        if: matrix.name == 'windows-aarch64'
+        shell: pwsh
+        run: |
+          $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
+          $path = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -format value -property installationPath
+          & $installer modify --installPath "$path" --add Microsoft.VisualStudio.Component.VC.Tools.ARM64 --quiet --norestart --nocache | Out-Null
+          Write-Output "exit: $LASTEXITCODE"
+
+      - name: Verify the build is genuinely native
+        shell: bash
+        run: |
+          echo "host triple: $(rustc -vV | grep '^host:')"
+          echo "runner arch: $(uname -m 2>/dev/null || echo $PROCESSOR_ARCHITECTURE)"
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --all-features
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install --frozen-lockfile
+      - name: Types
+        run: pnpm check
+      # Includes the rules from ADR-0010 (no literal colours), ADR-0011 (no
+      # hardcoded strings, logical CSS properties) and ADR-0005 (plugins may not
+      # import internal frontend modules).
+      - name: Lint
+        run: pnpm lint
+      - name: Test
+        run: pnpm test
+      - name: i18n catalogue
+        run: pnpm i18n:check
+
+  docs:
+    name: Docs
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install --frozen-lockfile
+      - name: Generate reference from code
+        run: pnpm docs:generate
+      # ADR-0016: generated pages are never hand-edited. If regeneration
+      # produces a diff, someone edited generated output and it would have been
+      # silently reverted.
+      - name: Fail if generated docs are stale
+        run: git diff --exit-code -- docs/api/generated || (echo "::error::Generated docs are out of date or were hand-edited. Run 'pnpm docs:generate'." && exit 1)
+      - name: Build site
+        run: pnpm docs:build

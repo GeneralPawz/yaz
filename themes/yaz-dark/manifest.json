@@ -1,0 +1,10 @@
+{
+  "id": "yaz-dark",
+  "name": "yaz Dark",
+  "version": "1.0.0",
+  "minAppVersion": "0.1.0",
+  "author": "yaz contributors",
+  "description": "The default dark theme.",
+  "modes": ["dark"],
+  "tokensVersion": 1
+}

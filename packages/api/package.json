@@ -1,0 +1,32 @@
+{
+  "name": "@yaz/api",
+  "version": "0.1.0",
+  "description": "The public plugin API for yaz. Stable, semver-strict, MIT licensed so plugins may be licensed however their authors choose.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GeneralPawz/yaz.git",
+    "directory": "packages/api"
+  },
+  "homepage": "https://generalpawz.github.io/yaz/plugins/",
+  "keywords": ["yaz", "latex", "plugin", "api"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

@@ -1,0 +1,81 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/yaz-core",
+    "crates/yaz-latex",
+    "crates/yaz-compile",
+    "crates/yaz-plugin",
+    "crates/yaz-zotero",
+    "crates/yaz-obsidian",
+    "crates/yaz-app",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/GeneralPawz/yaz"
+homepage = "https://generalpawz.github.io/yaz"
+authors = ["yaz contributors"]
+
+[workspace.dependencies]
+# Internal
+yaz-core = { path = "crates/yaz-core", version = "0.1.0" }
+yaz-latex = { path = "crates/yaz-latex", version = "0.1.0" }
+yaz-compile = { path = "crates/yaz-compile", version = "0.1.0" }
+yaz-plugin = { path = "crates/yaz-plugin", version = "0.1.0" }
+yaz-zotero = { path = "crates/yaz-zotero", version = "0.1.0" }
+yaz-obsidian = { path = "crates/yaz-obsidian", version = "0.1.0" }
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# Async
+tokio = { version = "1", features = ["rt-multi-thread", "fs", "process", "sync", "time", "macros"] }
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# Filesystem
+camino = { version = "1", features = ["serde1"] }
+notify = "7"
+notify-debouncer-full = "0.4"
+walkdir = "2"
+
+# Misc
+semver = { version = "1", features = ["serde"] }
+url = { version = "2", features = ["serde"] }
+sha2 = "0.10"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# Dev
+pretty_assertions = "1"
+tempfile = "3"
+insta = { version = "1", features = ["yaml"] }
+
+# Release profile: optimise for a desktop app that must not be RAM hungry
+# (see docs/adr/0015-performance-budgets.md)
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+
+# Keep debug builds fast to iterate on, but not painfully slow at runtime.
+[profile.dev]
+opt-level = 0
+debug = 1
+
+# Dependencies are rarely re-compiled; optimise them even in dev so the
+# editor stays responsive when running a debug build.
+[profile.dev.package."*"]
+opt-level = 2

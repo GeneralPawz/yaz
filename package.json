@@ -1,0 +1,42 @@
+{
+  "name": "yaz-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A modern LaTeX writing environment that connects Zotero and Obsidian to publishable papers.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GeneralPawz/yaz.git"
+  },
+  "homepage": "https://generalpawz.github.io/yaz",
+  "bugs": "https://github.com/GeneralPawz/yaz/issues",
+  "license": "AGPL-3.0-or-later",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @yaz/desktop dev",
+    "build": "pnpm --filter @yaz/desktop build",
+    "tauri": "pnpm --filter @yaz/desktop tauri",
+    "check": "pnpm -r check",
+    "lint": "pnpm -r lint",
+    "format": "prettier --write . && cargo fmt --all",
+    "format:check": "prettier --check . && cargo fmt --all --check",
+    "test": "pnpm -r test",
+    "test:rust": "cargo test --workspace --all-features",
+    "lint:rust": "cargo clippy --workspace --all-targets --all-features -- -D warnings",
+    "docs:dev": "pnpm --filter @yaz/docs dev",
+    "docs:build": "pnpm --filter @yaz/docs build",
+    "docs:generate": "node scripts/generate-docs.mjs",
+    "i18n:check": "node scripts/check-i18n.mjs",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.6.0",
+    "@commitlint/config-conventional": "^19.6.0",
+    "husky": "^9.1.7",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2"
+  }
+}

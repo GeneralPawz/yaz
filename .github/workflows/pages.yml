@@ -1,0 +1,63 @@
+# Publishes the docs site to GitHub Pages on every push to main, so the site is
+# never stale relative to the code. See docs/adr/0016-documentation-strategy.md.
+name: Docs site
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install --frozen-lockfile
+
+      # Everything enumerable is generated from the code: the command reference,
+      # the settings reference, the keymap, the capability vocabulary, and the
+      # plugin API. There is no second copy of these facts to drift.
+      - name: Generate reference from code
+        run: pnpm docs:generate
+
+      - name: Build rustdoc
+        run: cargo doc --workspace --no-deps
+
+      - name: Stage rustdoc under /rust/
+        run: |
+          mkdir -p docs/.vitepress/dist/rust
+          cp -r target/doc/* docs/.vitepress/dist/rust/ || true
+
+      - name: Build site
+        run: pnpm docs:build
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/.vitepress/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

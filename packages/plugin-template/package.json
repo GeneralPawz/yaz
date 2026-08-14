@@ -1,0 +1,20 @@
+{
+  "name": "@yaz/plugin-template",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "Starter template for a yaz plugin. MIT so that what you build from it is yours to license.",
+  "scripts": {
+    "build": "tsc && node ../../scripts/bundle-plugin.mjs",
+    "check": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@yaz/api": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

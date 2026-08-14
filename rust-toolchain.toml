@@ -1,0 +1,12 @@
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
+# Targets we ship. All are native — see docs/adr/0014-target-platforms-and-arm64.md.
+# ARM64 is a first-class target, never an emulated x86_64 fallback.
+targets = [
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+]
+profile = "default"

@@ -1,0 +1,10 @@
+{
+  "id": "com.example.my-plugin",
+  "name": "My Plugin",
+  "version": "0.1.0",
+  "minAppVersion": "0.1.0",
+  "author": "Your Name",
+  "description": "One sentence describing what this does. Shown in the plugin list.",
+  "repository": "https://github.com/you/my-yaz-plugin",
+  "capabilities": []
+}

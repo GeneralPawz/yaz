@@ -1,0 +1,9 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+  - "plugins/*"
+  - "docs"
+
+# Keep the dependency graph honest: a package must declare what it imports.
+# See docs/adr/0017-repository-layout.md.
+linkWorkspacePackages: true
