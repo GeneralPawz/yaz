@@ -68,11 +68,22 @@ themes/     yaz-light, yaz-dark
 
 ```bash
 pnpm install          # workspace deps
-pnpm tauri dev        # run the app (dev mode: no updater, no live registry)
+pnpm dev              # run the app (dev mode: no updater, no live registry)
+pnpm app:build        # release binary + installer
 pnpm test             # frontend tests
 pnpm test:rust        # cargo test --workspace
 pnpm lint:rust        # clippy, warnings denied
 pnpm format           # prettier + cargo fmt
+node scripts/check-i18n.mjs   # message-key check (ADR-0011)
 ```
+
+**Never build the app with `cargo build --release`.** tauri-build defaults to
+dev mode without the CLI's environment, so the frontend is not embedded and the
+window shows a "cannot reach this page" error. `build.rs` warns about it. Bare
+`cargo` is fine for the non-`yaz-app` crates.
+
+**Do not use `--all-features`.** It switches on `tectonic-engine`, whose system
+C dependencies are not present, and the failure surfaces as a build-script panic
+deep in a dependency.
 
 Use `cargo` from `D:\packages\cargo\bin` if it is not on PATH in a fresh shell.

@@ -80,8 +80,12 @@ impl Capability {
     }
 
     /// Message key for the human-readable explanation shown at install time.
+    ///
+    /// Derived from [`Capability::id`] with `:` replaced by `-`, because Fluent
+    /// identifiers permit neither colons nor dots. `fs:project` therefore
+    /// resolves against `capability-fs-project-description`.
     pub fn description_key(&self) -> String {
-        format!("capability.{}.description", self.id())
+        format!("capability-{}-description", self.id().replace(':', "-"))
     }
 
     /// Whether granting this is high-risk and warrants extra emphasis in the

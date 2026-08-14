@@ -30,7 +30,7 @@ jobs:
       - id: check
         shell: bash
         run: |
-          if [ -f pnpm-lock.yaml ] && [ -f docs/.vitepress/config.ts ]; then
+          if [ -f pnpm-lock.yaml ] && [ -f docs/.vitepress/config.ts ] && [ -f scripts/generate-docs.mjs ]; then
             echo "site=true" >> "$GITHUB_OUTPUT"
           else
             echo "site=false" >> "$GITHUB_OUTPUT"

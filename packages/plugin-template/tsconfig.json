@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    // Resolve @yaz/api to its sources rather than to built output, so the
+    // template type-checks in a fresh clone without building the API first.
+    // A real out-of-tree plugin resolves it from node_modules as normal.
+    "paths": {
+      "@yaz/api": ["../api/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

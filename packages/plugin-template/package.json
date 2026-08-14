@@ -6,10 +6,9 @@
   "type": "module",
   "description": "Starter template for a yaz plugin. MIT so that what you build from it is yours to license.",
   "scripts": {
-    "build": "tsc && node ../../scripts/bundle-plugin.mjs",
-    "check": "tsc --noEmit",
-    "lint": "eslint src",
-    "test": "vitest run"
+    "check": "tsc -p tsconfig.json",
+    "lint": "echo \"(lint rules land with the plugin runtime in phase 3)\"",
+    "test": "echo \"(no template tests yet)\""
   },
   "dependencies": {
     "@yaz/api": "workspace:*"

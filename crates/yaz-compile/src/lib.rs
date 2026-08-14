@@ -18,11 +18,13 @@
 
 pub mod diagnostics;
 pub mod engine;
+pub mod system_engine;
 
 #[cfg(feature = "tectonic-engine")]
 pub mod tectonic_engine;
 
-pub use engine::CompileEngine;
+pub use engine::{CompileEngine, CompileOutput};
+pub use system_engine::SystemEngine;
 
 #[cfg(feature = "tectonic-engine")]
 pub use tectonic_engine::TectonicEngine;

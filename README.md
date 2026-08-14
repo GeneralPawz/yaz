@@ -95,11 +95,18 @@ exact public API a community author gets, with no privileged access.**
 | Phase | Goal | Status |
 | --- | --- | --- |
 | 1 | Architecture decided and recorded, repository, CI, release automation | ✅ done |
-| 2 | Walking skeleton — open a folder, edit a `.tex`, compile, see the PDF | in progress |
-| 3 | Plugin runtime, capability broker, theme engine, i18n runtime | |
+| 2 | Walking skeleton — open a folder, edit a `.tex`, compile, see the PDF | ✅ done |
+| 3 | Plugin runtime, capability broker, theme engine, i18n runtime | next |
 | 4 | Editor depth — Lezer grammar, completion, diagnostics, Vim, visual mode | |
 | 5 | Zotero and Obsidian bridges | |
 | 6 | Templates, export, community registry | |
+
+**What phase 2 actually does today:** opens a folder, lists its `.tex`/`.bib`
+sources, edits them in CodeMirror with line numbers, LaTeX highlighting and
+optional Vim keys, saves with `Mod+S`, compiles through a detected system TeX
+distribution, and renders the resulting PDF with pdf.js. What it does *not* do
+yet: the embedded Tectonic engine (in review), visual mode, plugins, themes
+beyond the bundled dark one, and the real i18n runtime.
 
 Phase 3 comes before feature work deliberately: every feature after it is built
 on the public plugin API, the theme tokens, and the message catalogue, rather
@@ -116,8 +123,14 @@ default and the error it produces is not self-explanatory.
 git clone https://github.com/GeneralPawz/yaz.git
 cd yaz
 pnpm install
-pnpm tauri dev
+pnpm dev           # run it
+pnpm app:build     # build a release binary and installer
 ```
+
+Both run from the repository root. **Do not build the app with
+`cargo build --release`** — that yields a dev binary whose window shows a
+"cannot reach this page" error, because the frontend is never embedded. See
+[docs/contributing/setup.md](docs/contributing/setup.md).
 
 Development mode never contacts the update server or the live plugin registry.
 ([ADR-0013](docs/adr/0013-update-distribution.md))

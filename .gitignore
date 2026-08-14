@@ -59,4 +59,6 @@ tauri-private.key*
 *.fls
 *.bbl
 *.blg
+*.xdv
+tests/fixtures/**/build/
 coverage/
