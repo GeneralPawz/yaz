@@ -75,24 +75,42 @@ jobs:
           & $installer modify --installPath "$path" --add Microsoft.VisualStudio.Component.VC.Tools.ARM64 --quiet --norestart --nocache | Out-Null
           Write-Output "vs_installer exit: $LASTEXITCODE"
 
+      # vcpkg is driven directly rather than through cargo-vcpkg, because
+      # `cargo install cargo-vcpkg` cannot even build on ARM64 Windows: it
+      # depends on winapi 0.3.5, whose UNION! macro does not compile for
+      # aarch64. cargo-vcpkg is only a convenience wrapper around these two
+      # commands anyway; the `vcpkg` crate that Tectonic's build scripts use to
+      # *find* the libraries is unrelated and works fine.
+      #
+      # vcpkg.exe itself may run emulated on ARM64. That is irrelevant to
+      # ADR-0014: what matters is that the libraries it produces are arm64,
+      # which the triplet guarantees.
       - name: Cache vcpkg
         if: startsWith(matrix.runner, 'windows')
         uses: actions/cache@v4
         with:
-          path: ~/.cargo/vcpkg
-          key: vcpkg-${{ matrix.name }}-${{ hashFiles('crates/yaz-compile/Cargo.toml') }}
+          path: ${{ runner.temp }}/vcpkg/installed
+          key: vcpkg-${{ matrix.triplet }}-${{ hashFiles('dist/vcpkg-triplets/*') }}
 
-      - name: Install cargo-vcpkg
+      - name: Bootstrap vcpkg
         if: startsWith(matrix.runner, 'windows')
-        run: cargo install cargo-vcpkg --locked
+        shell: pwsh
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg "$env:RUNNER_TEMP\vcpkg"
+          & "$env:RUNNER_TEMP\vcpkg\bootstrap-vcpkg.bat" -disableMetrics
+          "VCPKG_ROOT=$env:RUNNER_TEMP\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       # ICU4C dominates this step and can take the better part of an hour on a
-      # cold cache. The arm64 triplet is the open question.
+      # cold cache. Whether it builds for arm64-windows is the open question
+      # this whole workflow exists to answer.
       - name: Build vcpkg dependencies
         if: startsWith(matrix.runner, 'windows')
-        run: cargo vcpkg --verbose build
-        env:
-          VCPKGRS_TRIPLET: ${{ matrix.triplet }}
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_ROOT\vcpkg.exe" install `
+            --overlay-triplets=dist/vcpkg-triplets `
+            --triplet ${{ matrix.triplet }} `
+            freetype graphite2 icu libpng zlib
 
       - name: Build with the Tectonic engine
         shell: bash

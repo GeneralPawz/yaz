@@ -76,7 +76,7 @@ impl CompileEngine for TectonicEngine {
         })?;
 
         let bundle = config
-            .default_bundle(false, &mut status)
+            .default_bundle(false)
             .map_err(|_| yaz_core::Error::Io {
                 path: entry.clone(),
                 source: std::io::Error::other("could not open the Tectonic support bundle"),

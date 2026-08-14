@@ -46,6 +46,11 @@ insta.workspace = true
 # The custom `-release` triplets in dist/vcpkg-triplets build release artefacts
 # only. ICU4C dominates this build, so not also building it in debug roughly
 # halves a very long step.
+#
+# This block is for `cargo vcpkg build` on a developer machine. CI drives vcpkg
+# directly, because `cargo install cargo-vcpkg` does not build on ARM64 Windows
+# at all — it depends on winapi 0.3.5, which does not compile for aarch64. ARM64
+# contributors should use the same two commands the probe workflow runs.
 [package.metadata.vcpkg]
 git = "https://github.com/microsoft/vcpkg"
 branch = "master"
