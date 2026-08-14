@@ -1,0 +1,17 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question or help
+    url: https://github.com/GeneralPawz/yaz/discussions/categories/q-a
+    about: Ask how to do something. Questions get better answers in Discussions, where they stay findable for the next person.
+
+  - name: Feature idea
+    url: https://github.com/GeneralPawz/yaz/discussions/categories/ideas
+    about: Propose something. Ideas start here so they can be discussed before anyone writes code against them.
+
+  - name: Show what you built
+    url: https://github.com/GeneralPawz/yaz/discussions/categories/show-and-tell
+    about: A plugin, a theme, a template, a paper you wrote with it.
+
+  - name: Security vulnerability
+    url: https://github.com/GeneralPawz/yaz/security/advisories/new
+    about: Report privately, never as a public issue. See SECURITY.md for what is in scope.
