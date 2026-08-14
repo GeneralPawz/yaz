@@ -22,6 +22,12 @@ default = []
 # CI proves aarch64-pc-windows-msvc and aarch64-unknown-linux-gnu both build.
 tectonic-engine = ["dep:tectonic"]
 
+# Embeds Typst. Unlike Tectonic this is pure Rust with no system C libraries, so
+# it needs no vcpkg and builds on every target without ceremony — but it is a
+# different document language rather than another LaTeX engine, so it is gated
+# while that distinction is worked through in the interface.
+typst-engine = ["dep:typst", "dep:typst-pdf", "dep:typst-kit", "dep:typst-layout"]
+
 [[example]]
 name = "size_probe"
 required-features = ["tectonic-engine"]
@@ -35,6 +41,19 @@ tracing.workspace = true
 tokio.workspace = true
 
 tectonic = { version = "0.17", optional = true }
+
+typst = { version = "0.15", optional = true }
+typst-pdf = { version = "0.15", optional = true }
+# PagedDocument lives here and is not re-exported through `typst`.
+typst-layout = { version = "0.15", optional = true }
+# Embedded fonts only, deliberately. `scan-fonts` pulls fontdb with fontconfig,
+# which would reintroduce a system dependency on Linux and undercut the reason
+# for trying Typst at all. It also guarantees a document typesets on a machine
+# with no usable system fonts. System font discovery can be added later, on
+# evidence that it is wanted.
+typst-kit = { version = "0.15", optional = true, default-features = false, features = [
+    "embedded-fonts",
+] }
 
 [dev-dependencies]
 pretty_assertions.workspace = true

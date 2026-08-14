@@ -19,6 +19,8 @@
     "dev": "tauri dev",
     "app:build": "tauri build",
     "app:build:tectonic": "tauri build -- --features tectonic-engine",
+    "app:build:typst": "tauri build -- --features typst-engine",
+    "app:build:all-engines": "tauri build -- --features tectonic-engine,typst-engine",
     "tauri": "tauri",
     "web:dev": "pnpm --filter @yaz/desktop dev",
     "web:build": "pnpm --filter @yaz/desktop build",

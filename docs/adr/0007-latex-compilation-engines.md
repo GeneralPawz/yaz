@@ -49,6 +49,36 @@ default and system TeX distributions supported as first-class peers.**
 - `--shell-escape` is **off by default and requires explicit per-project opt-in
   with a warning**, since it grants arbitrary code execution to a document.
 
+### A third engine, and why it is not a third LaTeX engine
+
+**Typst** is being trialled behind the `typst-engine` feature. It is a complete
+typesetting system in Rust, embeddable exactly as Tectonic is, and it needs no
+system C libraries at all — no vcpkg, no ICU4C, no half-hour dependency build,
+and it is native on every architecture without effort.
+
+It is not, however, interchangeable with the other two. **Typst is a different
+document language.** Tectonic and the system engines are two ways to typeset the
+same `.tex`; a Typst project is written in `.typ`. Presenting all three as
+equivalent options in one picker would be the single easiest way to make this
+feature incomprehensible, so `EngineChoice::language` exists and selecting an
+engine whose language does not match the project's entry document is **refused**
+rather than attempted. A parse error is not a useful answer to "why did my
+document stop building".
+
+The reason to have it: for someone writing from their own notes rather than
+filling in a publisher's template, Typst is plausibly the better tool — far
+smaller, far faster, with incremental compilation. It buys nothing for anyone who
+needs `elsarticle.cls`, which is exactly why it is an addition and the LaTeX path
+is untouched.
+
+This also closes off a question that would otherwise keep being asked: whether to
+reimplement the whole stack in Rust. Every *supporting* library has a credible
+Rust replacement — Typst ships them all in production — but the TeX engine itself
+does not, and bit-compatible macro semantics are the entire requirement for
+journal templates. The [roadmap](https://generalpawz.github.io/yaz/roadmap)
+records the analysis. Adding Typst gets the lean pure-Rust path without a
+reimplementation the ecosystem has repeatedly attempted and abandoned.
+
 ### Two published builds
 
 Because the trade is genuine rather than a default with a workaround, both are

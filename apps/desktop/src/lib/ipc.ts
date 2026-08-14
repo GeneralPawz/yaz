@@ -76,6 +76,16 @@ export interface EngineInfo {
   available: boolean;
   /** Message key explaining why not, when unavailable. */
   unavailableReasonKey: string | null;
+  /**
+   * The source language this engine compiles.
+   *
+   * The engines are **not** interchangeable. Tectonic and the system engines are
+   * two ways to typeset the same `.tex`; Typst is a different language whose
+   * projects are `.typ`. Picking one whose language does not match the project
+   * is refused by the backend, so the picker groups by this rather than
+   * presenting a flat list.
+   */
+  language: "latex" | "typst";
 }
 
 /** Per-project settings, as persisted in `yaz.toml`. */

@@ -45,6 +45,13 @@ pub enum EngineChoice {
         /// The engine binary to invoke, e.g. `pdflatex` or `lualatex`.
         engine: String,
     },
+    /// Typst — a different document language, not another LaTeX engine.
+    ///
+    /// Unlike the other two this does not compile `.tex` at all: a Typst project
+    /// is written in `.typ`. Selecting it for an existing LaTeX project is
+    /// therefore not a preference but a category error, and the caller is
+    /// expected to refuse rather than try.
+    Typst,
 }
 
 impl EngineChoice {
@@ -56,7 +63,20 @@ impl EngineChoice {
     pub fn to_id(&self) -> String {
         match self {
             EngineChoice::Tectonic => "tectonic".to_owned(),
+            EngineChoice::Typst => "typst".to_owned(),
             EngineChoice::System { engine } => format!("system:{engine}"),
+        }
+    }
+
+    /// The source language this engine compiles.
+    ///
+    /// Not cosmetic: a `.tex` project cannot be built by Typst, and offering the
+    /// choice as though it were interchangeable would produce a baffling
+    /// syntax error rather than a useful refusal.
+    pub fn language(&self) -> DocumentLanguage {
+        match self {
+            EngineChoice::Tectonic | EngineChoice::System { .. } => DocumentLanguage::Latex,
+            EngineChoice::Typst => DocumentLanguage::Typst,
         }
     }
 
@@ -68,6 +88,7 @@ impl EngineChoice {
     pub fn from_id(id: &str) -> Option<Self> {
         match id {
             "tectonic" => Some(EngineChoice::Tectonic),
+            "typst" => Some(EngineChoice::Typst),
             other => other
                 .strip_prefix("system:")
                 .filter(|binary| !binary.is_empty())
@@ -89,6 +110,37 @@ impl<'de> Deserialize<'de> for EngineChoice {
         let id = String::deserialize(deserializer)?;
         EngineChoice::from_id(&id)
             .ok_or_else(|| serde::de::Error::custom(format!("unknown engine {id:?}")))
+    }
+}
+
+/// The source language a project is written in.
+///
+/// yaz supports two, and they are not interchangeable — this is the difference
+/// between "which engine typesets my LaTeX" and "which language am I writing".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DocumentLanguage {
+    /// LaTeX. `.tex`, plus `.bib`, `.cls` and `.sty`.
+    Latex,
+    /// Typst. `.typ`.
+    Typst,
+}
+
+impl DocumentLanguage {
+    /// File extensions belonging to this language's projects.
+    pub fn extensions(&self) -> &'static [&'static str] {
+        match self {
+            DocumentLanguage::Latex => &["tex", "bib", "cls", "sty"],
+            DocumentLanguage::Typst => &["typ", "bib"],
+        }
+    }
+
+    /// The extension of a document this language can be asked to compile.
+    pub fn entry_extension(&self) -> &'static str {
+        match self {
+            DocumentLanguage::Latex => "tex",
+            DocumentLanguage::Typst => "typ",
+        }
     }
 }
 

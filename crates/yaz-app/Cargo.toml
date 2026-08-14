@@ -23,6 +23,10 @@ default = []
 # picker would report Tectonic as missing from a build that actually has it.
 tectonic-engine = ["yaz-compile/tectonic-engine"]
 
+# Typst. Pure Rust, so unlike tectonic-engine this needs no vcpkg and builds
+# anywhere — but it compiles a different document language, not .tex.
+typst-engine = ["yaz-compile/typst-engine"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -44,6 +48,9 @@ serde_json.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 walkdir.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 # yaz-app stays THIN: it wires the domain crates to Tauri commands and holds no
 # domain logic of its own (ADR-0017). Anything here that starts to look like a
