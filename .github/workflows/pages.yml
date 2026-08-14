@@ -58,16 +58,29 @@ jobs:
       - name: Generate reference from code
         run: pnpm docs:generate
 
+      # yaz-app is excluded on purpose. It depends on Tauri, so documenting it
+      # would drag the whole GTK/WebKit stack into a docs job (the failure is
+      # "system library glib-2.0 not found") — and it is a binary-only crate of
+      # deliberately thin wiring, so its rustdoc is close to empty anyway.
+      # The domain crates are where the documented API actually lives.
       - name: Build rustdoc
-        run: cargo doc --workspace --no-deps
+        # Broken intra-doc links fail the build. A reference page whose links
+        # dead-end is worse than no page, and rustdoc only warns by default.
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps --exclude yaz-app
+
+      # Site first, rustdoc second. VitePress empties its output directory on
+      # build, so staging rustdoc into dist/ beforehand silently deleted it.
+      - name: Build site
+        run: pnpm docs:build
 
       - name: Stage rustdoc under /rust/
         run: |
           mkdir -p docs/.vitepress/dist/rust
-          cp -r target/doc/* docs/.vitepress/dist/rust/ || true
-
-      - name: Build site
-        run: pnpm docs:build
+          cp -r target/doc/. docs/.vitepress/dist/rust/
+          test -f docs/.vitepress/dist/rust/yaz_core/index.html \
+            || (echo "::error::rustdoc output missing after staging" && exit 1)
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

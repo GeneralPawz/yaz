@@ -1,6 +1,9 @@
 //! The capability broker — the enforcement point.
 //!
-//! Every privileged request from a plugin passes through [`Broker::authorise`].
+//! Every privileged request from a plugin passes through `Broker::authorise`.
+//! (Not a doc link: the method arrives with the runtime in phase 3, and a link
+//! to something that does not exist is a broken link, which now fails the docs
+//! build rather than quietly shipping.)
 //! There is no other path to the filesystem, the network, or a subprocess.
 //!
 //! # Invariants
