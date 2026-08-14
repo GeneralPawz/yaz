@@ -34,3 +34,4 @@ useful than a tidy directory.
 | [0016 — Self-documenting project and the docs site](/adr/0016-documentation-strategy) | Accepted |
 | [0017 — Repository layout and monorepo tooling](/adr/0017-repository-layout) | Accepted |
 | [0018 — Licensing: AGPL-3.0 application, MIT plugin API](/adr/0018-licensing) | Accepted |
+| [0019 — TLS trust: bundled roots or the operating system store](/adr/0019-tls-trust-store) | Proposed — awaiting the project owner's decision. |

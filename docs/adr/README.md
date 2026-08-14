@@ -44,3 +44,4 @@ decision we later reversed is more valuable than a tidy directory.
 | [0016](0016-documentation-strategy.md) | Self-documenting project and the docs site | Accepted |
 | [0017](0017-repository-layout.md) | Repository layout and monorepo tooling | Accepted |
 | [0018](0018-licensing.md) | Licensing: AGPL-3.0 app, MIT plugin API | Accepted |
+| [0019](0019-tls-trust-store.md) | TLS trust: bundled roots or the OS store | **Proposed** |
