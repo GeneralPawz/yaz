@@ -49,6 +49,26 @@ default and system TeX distributions supported as first-class peers.**
 - `--shell-escape` is **off by default and requires explicit per-project opt-in
   with a warning**, since it grants arbitrary code execution to a document.
 
+### Two published builds
+
+Because the trade is genuine rather than a default with a workaround, both are
+released for every platform:
+
+| Build | Contains | Installer | For |
+| --- | --- | ---: | --- |
+| **yaz** (`full`) | Tectonic embedded | ~14 MB | Almost everyone. Compiles immediately, nothing to install |
+| **yaz-slim** | No embedded engine | ~3 MB | People who already have TeX Live or MiKTeX, or who need `pdflatex`/`lualatex` |
+
+`full` carries the plain name deliberately: it is what someone downloading yaz
+for the first time should get, because it works without first installing a
+gigabyte of TeX. `slim` is the informed choice, not the default.
+
+Both share a product identifier, so a machine has one yaz rather than two. That
+places a requirement on the updater, recorded in
+[0013](0013-update-distribution.md): update manifests are keyed by **variant as
+well as architecture**, because updating a `full` installation to a `slim` build
+would silently remove the user's LaTeX engine.
+
 ## Consequences
 
 - The default path is: install, open, compile. No TeX distribution required.

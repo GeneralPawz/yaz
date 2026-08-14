@@ -33,6 +33,22 @@ capabilities in an update.
   `linux-x86_64`, `linux-aarch64`. **An installation only ever sees updates for
   its own architecture** — an ARM64 install must never be offered an x86_64
   build ([0014](0014-target-platforms-and-arm64.md)).
+
+- **…and only for its own variant.** Two builds ship per platform: `full`, with
+  the LaTeX engine embedded, and `slim`, which uses a TeX distribution already on
+  the machine ([0007](0007-latex-compilation-engines.md)). They share a product
+  identifier, so nothing but the manifest keeps them apart.
+
+  Crossing that line is not cosmetic. Updating a `full` installation to a `slim`
+  build **silently removes the user's LaTeX engine**: projects that compiled
+  yesterday stop compiling, with an error about a missing engine and no
+  indication that an update caused it. Manifests are therefore keyed by variant
+  as well as architecture, and the running binary knows which it is at compile
+  time — `cfg!(feature = "tectonic-engine")` is the variant.
+
+  The reverse direction, slim to full, is merely wasteful rather than harmful,
+  but it is gated the same way: a user who chose the 3 MB download should not be
+  handed a 14 MB one without asking.
 - Update checks are **opt-in on first run**, with a clear explanation. Checking
   is a network request that reveals an install exists; the user decides.
 - Release channels: `stable` and `beta`. A user opts into `beta` explicitly and

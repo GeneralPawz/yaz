@@ -5,6 +5,30 @@ already have**. Neither is a fallback for the other, and the choice is per
 project rather than global, because journal templates frequently require a
 specific typesetter.
 
+## Which download do I want?
+
+Two builds ship for every platform. The difference is only whether the LaTeX
+engine is inside the application.
+
+| Download | Installer | Take this if |
+| --- | ---: | --- |
+| **yaz** | ~14 MB | You want it to work. No TeX installation needed |
+| **yaz-slim** | ~3 MB | You already have TeX Live or MiKTeX, or you need `pdflatex` or `lualatex` |
+
+::: tip Not sure? Take **yaz**.
+It compiles the moment you open it. `yaz-slim` saves about 11 MB of download and
+in exchange requires a TeX distribution that is typically a gigabyte or more.
+:::
+
+They are the same application and install to the same place, so you have one yaz
+rather than two — and the updater keeps you on the build you chose, because
+moving a `yaz` installation to `yaz-slim` would take your LaTeX engine away.
+
+`yaz-slim` is also the answer when a journal template specifically requires
+pdfTeX or LuaTeX, since the embedded engine is XeTeX-based and cannot be either.
+Nothing stops you installing a TeX distribution alongside the full build and
+using both — the engine picker will simply list more options.
+
 ## The two options
 
 ### Tectonic (embedded)

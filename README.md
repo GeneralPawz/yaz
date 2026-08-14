@@ -18,8 +18,22 @@ ARM64 rather than an x86_64 build under emulation.
 
 > [!WARNING]
 > **Pre-alpha.** The architecture is decided and recorded; the application is
-> being built. There are no released binaries yet — see [Status](#status-) for
-> what actually works today.
+> being built. See [Status](#status-) for what actually works today.
+
+## Two downloads 📦
+
+| Download | Installer | Take this if |
+| --- | ---: | --- |
+| **yaz** | ~14 MB | You want it to work. LaTeX engine included, nothing else to install |
+| **yaz-slim** | ~3 MB | You already have TeX Live or MiKTeX, or you need `pdflatex` / `lualatex` |
+
+Same application, same install location — the only difference is whether the
+LaTeX engine is inside it. **Unsure? Take `yaz`.** It compiles the moment you
+open it; `yaz-slim` saves 11 MB of download in exchange for a TeX distribution
+that is usually a gigabyte or more.
+
+The updater keeps you on the build you chose, because moving a `yaz` install to
+`yaz-slim` would take your engine away.
 
 ## Write however you think ✍️
 

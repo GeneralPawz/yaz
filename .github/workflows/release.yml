@@ -36,8 +36,18 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
+  # Two variants ship for every platform, because the engine decision in
+  # ADR-0007 is a genuine trade rather than a default with a workaround:
+  #
+  #   full — Tectonic embedded. Compiles out of the box, nothing to install,
+  #          native on every architecture. ~50 MB binary, ~14 MB installer.
+  #   slim — uses a TeX distribution already on the machine. ~6 MB binary,
+  #          ~3 MB installer, and the only way to get pdflatex or lualatex.
+  #
+  # `full` carries the plain name because it is what most people should take:
+  # it works without first installing a gigabyte of TeX.
   build:
-    name: Build — ${{ matrix.name }}
+    name: Build — ${{ matrix.name }} ${{ matrix.variant }}
     needs: release-please
     if: needs.release-please.outputs.released == 'true'
     runs-on: ${{ matrix.runner }}
@@ -47,6 +57,7 @@ jobs:
       # publishing half a matrix.
       fail-fast: true
       matrix:
+        variant: [full, slim]
         include:
           - name: linux-x86_64
             runner: ubuntu-24.04
@@ -57,9 +68,11 @@ jobs:
           - name: windows-x86_64
             runner: windows-2022
             target: x86_64-pc-windows-msvc
+            triplet: x64-windows-static-release
           - name: windows-aarch64
             runner: windows-11-arm
             target: aarch64-pc-windows-msvc
+            triplet: arm64-windows-static-release
     steps:
       - uses: actions/checkout@v4
 
@@ -91,23 +104,103 @@ jobs:
           $path = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -format value -property installationPath
           & $installer modify --installPath "$path" --add Microsoft.VisualStudio.Component.VC.Tools.ARM64 --quiet --norestart --nocache | Out-Null
 
+      # Tectonic's C dependencies. Linux gets them from apt above; Windows has
+      # no system package manager, so vcpkg builds them. ICU4C dominates and
+      # takes roughly half an hour on a cold cache.
+      - name: Bootstrap vcpkg
+        if: matrix.variant == 'full' && startsWith(matrix.runner, 'windows')
+        shell: pwsh
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg "$env:RUNNER_TEMP\vcpkg"
+          & "$env:RUNNER_TEMP\vcpkg\bootstrap-vcpkg.bat" -disableMetrics
+          if (-not (Test-Path "$env:RUNNER_TEMP\vcpkg\vcpkg.exe")) {
+            # bootstrap downloads over WinHTTP and fails transiently without
+            # stopping the script, so the next step would run a missing binary.
+            $tag = (Select-String -Path "$env:RUNNER_TEMP\vcpkg\scripts\vcpkg-tool-metadata.txt" `
+                    -Pattern 'VCPKG_TOOL_RELEASE_TAG=(.+)').Matches.Groups[1].Value
+            $arch = if ("${{ matrix.target }}" -like 'aarch64*') { 'arm64' } else { 'x64' }
+            Invoke-WebRequest -UseBasicParsing `
+              -Uri "https://github.com/microsoft/vcpkg-tool/releases/download/$tag/vcpkg-$arch.exe" `
+              -OutFile "$env:RUNNER_TEMP\vcpkg\vcpkg.exe"
+          }
+          "VCPKG_ROOT=$env:RUNNER_TEMP\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Cache vcpkg packages
+        if: matrix.variant == 'full' && startsWith(matrix.runner, 'windows')
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/vcpkg/installed
+          key: vcpkg-release-${{ matrix.triplet }}-${{ hashFiles('dist/vcpkg-triplets/*') }}
+
+      - name: Build vcpkg dependencies
+        if: matrix.variant == 'full' && startsWith(matrix.runner, 'windows')
+        shell: pwsh
+        run: |
+          # vcpkg downloads through curl and classifies a failed TLS handshake
+          # (error 35) as "not transient", refusing to retry — but the same URL
+          # succeeds on a second attempt, and whatever downloaded stays cached.
+          # So retry the install; it converges.
+          $attempt = 0
+          do {
+            $attempt++
+            Write-Output "vcpkg install attempt $attempt"
+            & "$env:VCPKG_ROOT\vcpkg.exe" install `
+              --overlay-triplets=dist/vcpkg-triplets `
+              --triplet ${{ matrix.triplet }} `
+              fontconfig freetype graphite2 icu libpng zlib
+            $code = $LASTEXITCODE
+            if ($code -eq 0) { break }
+            Start-Sleep -Seconds 10
+          } while ($attempt -lt 8)
+          if ($code -ne 0) { throw "vcpkg install failed after $attempt attempts" }
+
       - run: pnpm install --frozen-lockfile
 
       # Every artefact is signed with the minisign key. The private key exists
       # only as a CI secret and never on a developer machine. Losing it means no
       # existing installation can ever be updated again (ADR-0013).
-      - name: Build and publish
-        uses: tauri-apps/tauri-action@v0
+      - name: Build
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          tagName: ${{ needs.release-please.outputs.tag }}
-          releaseName: yaz ${{ needs.release-please.outputs.tag }}
-          releaseDraft: true
-          prerelease: false
-          args: --target ${{ matrix.target }}
+          TECTONIC_DEP_BACKEND: ${{ startsWith(matrix.runner, 'windows') && 'vcpkg' || 'pkg-config' }}
+          VCPKGRS_TRIPLET: ${{ matrix.triplet }}
+          RUSTFLAGS: ${{ (matrix.variant == 'full' && startsWith(matrix.runner, 'windows')) && '-Ctarget-feature=+crt-static' || '' }}
+        run: |
+          if [ "${{ matrix.variant }}" = "full" ]; then
+            pnpm exec tauri build --target ${{ matrix.target }} -- --features tectonic-engine
+          else
+            pnpm exec tauri build --target ${{ matrix.target }}
+          fi
+
+      # Both variants are the same product with the same identifier, so an
+      # installer name is the only thing distinguishing them. `full` keeps the
+      # plain name; `slim` is suffixed.
+      - name: Collect and label artefacts
+        shell: bash
+        run: |
+          mkdir -p artefacts
+          bundle="target/${{ matrix.target }}/release/bundle"
+          found=0
+          for file in $(find "$bundle" -type f \( -name '*.exe' -o -name '*.deb' -o -name '*.AppImage' \) 2>/dev/null); do
+            base=$(basename "$file")
+            if [ "${{ matrix.variant }}" = "slim" ]; then
+              # yaz_0.2.0_arm64-setup.exe -> yaz-slim_0.2.0_arm64-setup.exe
+              base="${base/yaz/yaz-slim}"
+            fi
+            cp "$file" "artefacts/$base"
+            found=$((found+1))
+          done
+          # A release that silently ships nothing is worse than one that fails.
+          [ "$found" -gt 0 ] || { echo "::error::no installers produced for ${{ matrix.name }} ${{ matrix.variant }}"; exit 1; }
+          ls -lh artefacts
+
+      - name: Upload to the release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: gh release upload "${{ needs.release-please.outputs.tag }}" artefacts/* --clobber
 
   publish-api:
     name: Publish @yaz/api
