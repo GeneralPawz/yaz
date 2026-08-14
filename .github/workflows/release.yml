@@ -30,7 +30,7 @@ jobs:
       released: ${{ steps.release.outputs.release_created }}
       tag: ${{ steps.release.outputs.tag_name }}
     steps:
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
         id: release
         with:
           config-file: release-please-config.json
@@ -74,7 +74,7 @@ jobs:
             target: aarch64-pc-windows-msvc
             triplet: arm64-windows-static-release
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -84,10 +84,10 @@ jobs:
         with:
           key: release-${{ matrix.name }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
       - name: Install Linux dependencies
         if: startsWith(matrix.runner, 'ubuntu')
@@ -127,7 +127,7 @@ jobs:
 
       - name: Cache vcpkg packages
         if: matrix.variant == 'full' && startsWith(matrix.runner, 'windows')
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/vcpkg/installed
           key: vcpkg-release-${{ matrix.triplet }}-${{ hashFiles('dist/vcpkg-triplets/*') }}
@@ -208,12 +208,12 @@ jobs:
     if: needs.release-please.outputs.released == 'true'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @yaz/api build
       # @yaz/api versions independently and its semver contract is strict —
