@@ -1,6 +1,6 @@
 {
   "name": "yaz-monorepo",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "A modern LaTeX writing environment that connects Zotero and Obsidian to publishable papers.",
   "repository": {
