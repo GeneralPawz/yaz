@@ -1,0 +1,184 @@
+# Probes whether the embedded Tectonic engine builds natively on every target we
+# ship. This exists because ADR-0014 makes a dependency without a native aarch64
+# path a blocker rather than a caveat, and Tectonic is the largest native
+# dependency in the project by a wide margin.
+#
+# Tectonic vendors Harfbuzz statically but still needs freetype2, graphite2,
+# ICU4C, libpng and zlib from the system, plus fontconfig and OpenSSL on Linux.
+# On Windows that means vcpkg, and building ICU4C for arm64-windows is the
+# specific thing this workflow exists to find out about.
+#
+# Deliberately separate from CI: it is slow, it is expected to fail while being
+# brought up, and a red CI badge on main is worse than an honest amber probe.
+# fail-fast is off so one broken target still yields a full picture.
+
+name: Tectonic probe
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "crates/yaz-compile/**"
+      - ".github/workflows/tectonic-probe.yml"
+
+concurrency:
+  group: tectonic-probe-${{ github.ref }}
+  # Deliberately NOT cancel-in-progress. A cold vcpkg build of ICU4C runs for
+  # the better part of an hour and the cache is only written when the job
+  # finishes, so cancelling on every push throws away all of it and learns
+  # nothing.
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  probe:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            runner: ubuntu-24.04
+          - name: linux-aarch64
+            runner: ubuntu-24.04-arm
+          - name: windows-x86_64
+            runner: windows-2022
+            triplet: x64-windows-static-release
+          - name: windows-aarch64
+            runner: windows-11-arm
+            triplet: arm64-windows-static-release
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: tectonic-${{ matrix.name }}
+
+      # Only Harfbuzz is vendored; the rest come from the distribution. All of
+      # these have native aarch64 builds, so the Linux side should be clean.
+      - name: Install Linux dependencies
+        if: startsWith(matrix.runner, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libfontconfig1-dev libfreetype-dev libgraphite2-dev \
+            libicu-dev libpng-dev libssl-dev zlib1g-dev pkg-config
+
+      - name: Install ARM64 MSVC toolchain
+        if: matrix.name == 'windows-aarch64'
+        shell: pwsh
+        run: |
+          $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
+          $path = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -format value -property installationPath
+          & $installer modify --installPath "$path" --add Microsoft.VisualStudio.Component.VC.Tools.ARM64 --quiet --norestart --nocache | Out-Null
+          Write-Output "vs_installer exit: $LASTEXITCODE"
+
+      # vcpkg is driven directly rather than through cargo-vcpkg, because
+      # `cargo install cargo-vcpkg` cannot even build on ARM64 Windows: it
+      # depends on winapi 0.3.5, whose UNION! macro does not compile for
+      # aarch64. cargo-vcpkg is only a convenience wrapper around these two
+      # commands anyway; the `vcpkg` crate that Tectonic's build scripts use to
+      # *find* the libraries is unrelated and works fine.
+      #
+      # vcpkg.exe itself may run emulated on ARM64. That is irrelevant to
+      # ADR-0014: what matters is that the libraries it produces are arm64,
+      # which the triplet guarantees.
+      # Bootstrap BEFORE restoring the cache. The cache lives at
+      # <temp>/vcpkg/installed, so restoring it first creates that directory and
+      # `git clone` then fails with "destination path already exists and is not
+      # an empty directory" — which only shows up on the second run, once there
+      # is a cache to restore.
+      - name: Bootstrap vcpkg
+        if: startsWith(matrix.runner, 'windows')
+        shell: pwsh
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg "$env:RUNNER_TEMP\vcpkg"
+          & "$env:RUNNER_TEMP\vcpkg\bootstrap-vcpkg.bat" -disableMetrics
+          "VCPKG_ROOT=$env:RUNNER_TEMP\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Cache vcpkg packages
+        if: startsWith(matrix.runner, 'windows')
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/vcpkg/installed
+          key: vcpkg-${{ matrix.triplet }}-${{ hashFiles('dist/vcpkg-triplets/*') }}
+
+      # ICU4C dominates this step and can take the better part of an hour on a
+      # cold cache. Whether it builds for arm64-windows is the open question
+      # this whole workflow exists to answer.
+      - name: Build vcpkg dependencies
+        if: startsWith(matrix.runner, 'windows')
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_ROOT\vcpkg.exe" install `
+            --overlay-triplets=dist/vcpkg-triplets `
+            --triplet ${{ matrix.triplet }} `
+            fontconfig freetype graphite2 icu libpng zlib
+
+      - name: Build with the Tectonic engine
+        shell: bash
+        run: cargo build -p yaz-compile --features tectonic-engine --verbose
+        env:
+          TECTONIC_DEP_BACKEND: ${{ startsWith(matrix.runner, 'windows') && 'vcpkg' || 'pkg-config' }}
+          VCPKGRS_TRIPLET: ${{ matrix.triplet }}
+          RUSTFLAGS: ${{ startsWith(matrix.runner, 'windows') && '-Ctarget-feature=+crt-static' || '' }}
+
+      - name: Test
+        shell: bash
+        run: cargo test -p yaz-compile --features tectonic-engine
+        env:
+          TECTONIC_DEP_BACKEND: ${{ startsWith(matrix.runner, 'windows') && 'vcpkg' || 'pkg-config' }}
+          VCPKGRS_TRIPLET: ${{ matrix.triplet }}
+          RUSTFLAGS: ${{ startsWith(matrix.runner, 'windows') && '-Ctarget-feature=+crt-static' || '' }}
+
+      - name: Confirm the artefact is genuinely native
+        shell: bash
+        run: |
+          rustc -vV | grep '^host:'
+          uname -m 2>/dev/null || echo "$PROCESSOR_ARCHITECTURE"
+
+      # How much does embedding Tectonic actually cost on disk? A release-linked
+      # example answers it; a library build cannot, since rlibs are not linked
+      # and dead-code elimination happens at link time. Disk footprint is a real
+      # consideration for making this the default engine (ADR-0007), and it
+      # should be a measurement rather than a guess.
+      - name: Measure the linked size of the embedded engine
+        shell: bash
+        env:
+          TECTONIC_DEP_BACKEND: ${{ startsWith(matrix.runner, 'windows') && 'vcpkg' || 'pkg-config' }}
+          VCPKGRS_TRIPLET: ${{ matrix.triplet }}
+          RUSTFLAGS: ${{ startsWith(matrix.runner, 'windows') && '-Ctarget-feature=+crt-static' || '' }}
+        run: |
+          # Baseline first (no embedded engine), then the same crate with it.
+          # The difference is what Tectonic actually costs us on disk.
+          cargo build --release -p yaz-compile --example size_baseline
+          cargo build --release -p yaz-compile --features tectonic-engine --example size_probe
+
+          ext=""; [ "${RUNNER_OS}" = "Windows" ] && ext=".exe"
+          base=$(stat -c%s "target/release/examples/size_baseline${ext}")
+          with=$(stat -c%s "target/release/examples/size_probe${ext}")
+
+          # awk rather than bc: bc is not present in Git Bash on the Windows
+          # runners, and this step must behave identically on all four targets.
+          mb() { awk -v b="$1" 'BEGIN { printf "%.2f", b/1048576 }'; }
+
+          {
+            echo "### Tectonic size impact — ${{ matrix.name }}"
+            echo ""
+            echo "| build | bytes | MB |"
+            echo "| --- | ---: | ---: |"
+            echo "| without Tectonic | $base | $(mb "$base") |"
+            echo "| with Tectonic | $with | $(mb "$with") |"
+            echo "| **added** | $((with-base)) | **$(mb $((with-base)))** |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "--- ${{ matrix.name }} ---"
+          echo "without Tectonic : $base bytes ($(mb "$base") MB)"
+          echo "with Tectonic    : $with bytes ($(mb "$with") MB)"
+          echo "added            : $((with-base)) bytes ($(mb $((with-base))) MB)"
