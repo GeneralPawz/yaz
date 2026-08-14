@@ -1,7 +1,6 @@
 # 0018 — Licensing: AGPL-3.0 application, MIT plugin API
 
-- **Status:** **Proposed** — requires the project owner's decision before the
-  first external contribution is accepted.
+- **Status:** Accepted
 - **Date:** 2026-08-14
 
 ## Context
@@ -24,7 +23,7 @@ Three distinct concerns pull differently:
    which demonstrates the combination works. Obsidian is proprietary. Overleaf
    is AGPL-3.0 for its community edition.
 
-## Decision (proposed)
+## Decision
 
 **Split licensing:**
 
@@ -40,6 +39,36 @@ application: it is what prevents a hosted Overleaf-style competitor built on thi
 code from keeping its changes private. Without it, GPL-3.0 would be equivalent
 for all local use.
 
+### What this does and does not prevent
+
+Stated precisely, because the distinction decided this ADR:
+
+**AGPL does not forbid selling yaz.** Anyone may charge money for copies — the
+licence explicitly permits it. What they cannot do is keep their modifications
+private, and that is what removes the commercial advantage in forking: a
+competitor must hand their improvements, and their source, to every user they
+sell or host it for.
+
+**Forbidding sale outright would require a non-commercial licence** such as
+PolyForm Noncommercial. That is not open source, excludes companies entirely,
+and measurably deters contributors. It was rejected because contributor
+friction was judged the larger cost — see the decision record below.
+
+### The open-core option remains available, without a CLA
+
+If commercial revenue is ever wanted, the route that stays open is OpenProject's:
+an open core plus **proprietary add-ons written by the project owner**. This
+project is unusually well-shaped for it, because the plugin architecture in
+[0005](0005-extensibility-tiers.md) already makes add-ons a first-class concept,
+and the **MIT licence on `@yaz/api` is what makes a proprietary plugin legally
+clean** — a plugin links against permissively-licensed API code, not against the
+AGPL application.
+
+That route requires no CLA, because the paid components would be new code the
+owner already holds copyright in. **Selling commercial licences to the existing
+codebase does not stay available**, since that would require owning every
+contributor's copyright. That trade was made deliberately.
+
 ### Contributor terms
 
 Inbound licence matches outbound — contributions are made under the licence of
@@ -49,7 +78,9 @@ would permit future relicensing but deters casual contributors and concentrates
 control; we prefer the former cost to the latter.
 
 The consequence to be clear-eyed about: without a CLA, this decision is
-effectively permanent from the first external contribution onward.
+effectively permanent from the first external contribution onward. This was
+chosen knowingly — lowering the barrier for drive-by contributors was valued
+above retaining the ability to relicense or dual-licence later.
 
 ## Consequences
 
@@ -88,8 +119,27 @@ Rejected because plugin authors would face real uncertainty about whether their
 plugin must be AGPL. Even if the answer is favourable, the doubt suppresses
 contribution, and no ecosystem is worth that argument.
 
-## Decision required
+**PolyForm Noncommercial, with commercial licences sold separately.** The literal
+reading of "free for the community, companies pay": companies cannot use it at
+all without buying a licence. Rejected because it is not open source, and because
+selling those licences requires owning all contributor copyright — that is, a
+CLA. Contributor friction was judged the larger cost, and the CLA was explicitly
+declined.
 
-Until this ADR is `Accepted`, the repository ships the licence files described
-above **provisionally**. Confirm or change before merging the first external
-contribution.
+**PolyForm Small Business.** Free for noncommercial use and for companies under
+roughly 100 employees. Rejected for the same reasons: not open source, and it
+still needs a CLA to monetise the larger tier.
+
+**Functional Source License (FSL).** Free for everything except building a
+competing product, converting to Apache-2.0 after two years. Genuinely attractive
+and lower-friction than AGPL for corporate users. Rejected because the two-year
+conversion means a competitor need only wait, and because AGPL is a known
+quantity that contributors and lawyers already understand.
+
+## Dependency constraint this creates
+
+AGPL is incompatible with linking some permissively-licensed-but-restricted
+code, so every dependency must be licence-checked before adoption. In particular
+the embedded LaTeX engine ([0007](0007-latex-compilation-engines.md)) vendors TeX
+engine sources with their own terms, and needs an explicit audit rather than an
+assumption that "Tectonic is MIT" settles it.

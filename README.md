@@ -135,9 +135,15 @@ is enforced, and it drives versioning and the changelog automatically.
 
 The application is **AGPL-3.0-or-later**. The plugin API package
 (`packages/api`) and the plugin template are **MIT**, so plugins may be licensed
-however their authors choose. Documentation is **CC BY-SA 4.0**.
+however their authors choose — including proprietary. Documentation is
+**CC BY-SA 4.0**.
 
-> ⚠️ This split is recorded as **proposed** in
-> [ADR-0018](docs/adr/0018-licensing.md) and must be confirmed before the first
-> external contribution is merged — after that point it cannot practically be
-> changed.
+There is **no CLA**; contributions are made under the licence of the files they
+touch, certified with a [DCO](https://developercertificate.org/) `Signed-off-by`
+line.
+
+What the AGPL buys, precisely: nobody can ship a closed-source fork of yaz, and
+nobody can run it as a hosted service without publishing their changes. It does
+*not* forbid selling copies — it forbids selling them closed. The reasoning, and
+the alternatives that were rejected, are in
+[ADR-0018](docs/adr/0018-licensing.md).
