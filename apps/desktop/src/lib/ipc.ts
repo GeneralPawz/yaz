@@ -72,6 +72,17 @@ export function availableEngines(): Promise<string[]> {
   return invoke<string[]>("available_engines");
 }
 
+/**
+ * Tell the backend the UI has mounted, and get milliseconds since process start.
+ *
+ * "The window appeared" is not "the application is usable", and only the second
+ * is what ADR-0015 budgets — measured from outside the process, window creation
+ * reports ~90 ms while nothing is yet on screen.
+ */
+export function reportReady(): Promise<number> {
+  return invoke<number>("report_ready");
+}
+
 /** Read a produced artefact as bytes — used to hand the PDF to pdf.js. */
 export async function readArtefact(path: string): Promise<Uint8Array> {
   const bytes = await invoke<number[]>("read_artefact", { path });

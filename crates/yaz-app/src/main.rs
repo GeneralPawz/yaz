@@ -27,6 +27,12 @@ fn is_dev_mode() -> bool {
 }
 
 fn main() {
+    // Taken first thing, so the startup measurement covers process start rather
+    // than starting from whenever the window happened to be created.
+    let clock = commands::StartupClock {
+        started: std::time::Instant::now(),
+    };
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_env("YAZ_LOG")
@@ -44,6 +50,7 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .manage(clock)
         .invoke_handler(tauri::generate_handler![
             commands::open_project,
             commands::read_file,
@@ -51,6 +58,7 @@ fn main() {
             commands::compile_project,
             commands::available_engines,
             commands::read_artefact,
+            commands::report_ready,
         ])
         .setup(|_app| {
             if is_dev_mode() {

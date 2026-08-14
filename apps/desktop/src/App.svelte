@@ -19,6 +19,14 @@
     result?.diagnostics.filter((d) => d.severity === "error").length ?? 0,
   );
 
+  // Reported once, after mount, so the startup budget is measured against the
+  // moment the UI is actually usable rather than when the window appeared.
+  $effect(() => {
+    void ipc.reportReady().catch(() => {
+      /* measurement only; never worth surfacing to the user */
+    });
+  });
+
   async function chooseProject() {
     const picked = await open({ directory: true, multiple: false });
     if (typeof picked !== "string") return;

@@ -251,6 +251,45 @@ pub fn available_engines() -> Vec<String> {
         .collect()
 }
 
+/// Report that the frontend has mounted and is interactive.
+///
+/// This exists because "the window appeared" is not the same thing as "the
+/// application is usable", and only the second one is what
+/// [ADR-0015](https://github.com/GeneralPawz/yaz/blob/main/docs/adr/0015-performance-budgets.md)
+/// budgets. Measuring window-handle creation from outside the process reports
+/// around 90 ms and is meaningless: at that point the webview has not loaded,
+/// the bundle has not parsed, and nothing is on screen.
+///
+/// The frontend calls this once it has mounted, and the elapsed time since
+/// process start is the number the budget is about.
+#[tauri::command]
+pub fn report_ready(state: tauri::State<'_, StartupClock>) -> u128 {
+    let elapsed = state.started.elapsed().as_millis();
+    tracing::info!(startup_ms = elapsed, "frontend interactive");
+
+    // Release builds are GUI-subsystem binaries with no stdout or stderr, so a
+    // benchmark harness cannot read the tracing output. When YAZ_STARTUP_LOG
+    // names a file, the measurement is appended there instead.
+    if let Some(path) = std::env::var_os("YAZ_STARTUP_LOG") {
+        use std::io::Write as _;
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        {
+            let _ = writeln!(file, "startup_ms={elapsed}");
+        }
+    }
+
+    elapsed
+}
+
+/// Process start time, for the startup measurement above.
+pub struct StartupClock {
+    /// When `main` began.
+    pub started: std::time::Instant,
+}
+
 /// Read a produced artefact as bytes, for handing the PDF to pdf.js.
 #[tauri::command]
 pub fn read_artefact(path: String) -> Result<Vec<u8>> {
