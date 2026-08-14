@@ -15,7 +15,7 @@
 use camino::{Utf8Path, Utf8PathBuf};
 use serde::Serialize;
 use yaz_compile::{CompileEngine, SystemEngine};
-use yaz_core::project::{EngineChoice, Project, ProjectSettings};
+use yaz_core::project::{DocumentLanguage, EngineChoice, Project, ProjectSettings};
 
 /// Errors crossing the IPC boundary.
 ///
@@ -133,6 +133,13 @@ pub fn open_project(root: String) -> Result<ProjectInfo> {
         .max_depth(8)
         .into_iter()
         .filter_entry(|entry| {
+            // The root is at depth 0 and must never be pruned. filter_entry
+            // applies to it as well, so a project living in a dot-directory —
+            // `~/.papers/thesis`, or a temp dir, which is how this was found —
+            // would otherwise appear completely empty.
+            if entry.depth() == 0 {
+                return true;
+            }
             // Build output and VCS metadata are noise in a file list, and
             // descending into them on a large project is slow for no benefit.
             let name = entry.file_name().to_string_lossy();
@@ -140,10 +147,13 @@ pub fn open_project(root: String) -> Result<ProjectInfo> {
         })
         .filter_map(std::result::Result::ok)
         .filter(|entry| entry.file_type().is_file())
+        // Both languages, because which one a directory holds is discovered by
+        // looking rather than declared in advance. Listing only `.tex` would
+        // make a Typst project appear empty and its engine unreachable.
         .filter(|entry| {
             matches!(
                 entry.path().extension().and_then(|e| e.to_str()),
-                Some("tex" | "bib" | "cls" | "sty")
+                Some("tex" | "bib" | "cls" | "sty" | "typ")
             )
         })
         .filter_map(|entry| {
@@ -155,14 +165,19 @@ pub fn open_project(root: String) -> Result<ProjectInfo> {
 
     files.sort();
 
-    // Entry heuristic, deliberately dumb for now: main.tex, else the first .tex.
+    // Entry heuristic, deliberately dumb for now: a conventionally named main
+    // document, else the first compilable file of either language. LaTeX is
+    // preferred when a directory somehow holds both, since that is the case yaz
+    // was built for.
+    //
     // Phase 4 replaces this with the \documentclass scan in yaz-latex, which can
     // tell a root document from an \input fragment.
-    let entry = files
+    let entry = ["main.tex", "main.typ"]
         .iter()
-        .find(|f| f.as_str() == "main.tex")
-        .or_else(|| files.iter().find(|f| f.ends_with(".tex")))
-        .cloned()
+        .find(|name| files.iter().any(|f| f == *name))
+        .map(|name| (*name).to_owned())
+        .or_else(|| files.iter().find(|f| f.ends_with(".tex")).cloned())
+        .or_else(|| files.iter().find(|f| f.ends_with(".typ")).cloned())
         .unwrap_or_default();
 
     Ok(ProjectInfo {
@@ -284,6 +299,19 @@ fn build_engine(choice: &EngineChoice) -> Result<Box<dyn CompileEngine>> {
                 ))
             }
         }
+        EngineChoice::Typst => {
+            #[cfg(feature = "typst-engine")]
+            {
+                Ok(Box::new(yaz_compile::TypstEngine::new()))
+            }
+            #[cfg(not(feature = "typst-engine"))]
+            {
+                Err(CommandError::new(
+                    "engine-typst-not-built",
+                    "this build does not include the embedded Typst engine",
+                ))
+            }
+        }
         EngineChoice::System { engine } => {
             let system = SystemEngine::new(engine.clone());
             if system.is_available() {
@@ -318,6 +346,14 @@ pub struct EngineInfo {
     available: bool,
     /// Message key explaining why not, when unavailable.
     unavailable_reason_key: Option<String>,
+    /// The source language this engine compiles — `latex` or `typst`.
+    ///
+    /// Exposed because the engines are **not** interchangeable. Tectonic and the
+    /// system engines are two ways to typeset the same `.tex`; Typst is a
+    /// different language entirely. The interface has to say so, or someone
+    /// picks Typst for a LaTeX project and gets a parse error they cannot
+    /// explain.
+    language: String,
 }
 
 /// Every engine yaz knows about, available or not.
@@ -340,6 +376,7 @@ pub fn list_engines() -> Vec<EngineInfo> {
         } else {
             Some("engine-tectonic-not-built".to_owned())
         },
+        language: language_id(&EngineChoice::Tectonic),
     });
 
     let detected = SystemEngine::detect_all();
@@ -354,10 +391,34 @@ pub fn list_engines() -> Vec<EngineInfo> {
             } else {
                 Some("engine-system-not-installed".to_owned())
             },
+            language: language_id(&EngineChoice::System {
+                engine: name.to_owned(),
+            }),
         });
     }
 
+    engines.push(EngineInfo {
+        id: "typst".to_owned(),
+        label: "Typst (embedded)".to_owned(),
+        available: cfg!(feature = "typst-engine"),
+        unavailable_reason_key: if cfg!(feature = "typst-engine") {
+            None
+        } else {
+            Some("engine-typst-not-built".to_owned())
+        },
+        language: language_id(&EngineChoice::Typst),
+    });
+
     engines
+}
+
+/// Stable identifier for a source language, for the frontend.
+fn language_id(choice: &EngineChoice) -> String {
+    match choice.language() {
+        DocumentLanguage::Latex => "latex",
+        DocumentLanguage::Typst => "typst",
+    }
+    .to_owned()
 }
 
 /// Read the persisted per-project settings.
@@ -382,6 +443,25 @@ pub fn set_project_engine(root: String, engine_id: String) -> Result<()> {
             format!("unknown engine {engine_id}"),
         )
     })?;
+
+    // Refuse a language change disguised as an engine change. Typst does not
+    // compile `.tex`, so selecting it for a LaTeX project would trade a working
+    // build for a parse error the user cannot act on. Tectonic and the system
+    // engines are interchangeable with each other; Typst is not interchangeable
+    // with either.
+    let info = open_project(root.to_string())?;
+    if !info.entry.is_empty() {
+        let wanted = choice.language().entry_extension();
+        if !info.entry.ends_with(&format!(".{wanted}")) {
+            return Err(CommandError::new(
+                "engine-wrong-language",
+                format!(
+                    "{engine_id} compiles .{wanted} but this project's entry is {}",
+                    info.entry
+                ),
+            ));
+        }
+    }
 
     let mut settings = ProjectSettings::load(&root)?;
     settings.engine = Some(choice);
@@ -416,6 +496,74 @@ mod tests {
             tectonic.unavailable_reason_key.is_some(),
             !cfg!(feature = "tectonic-engine")
         );
+    }
+
+    #[test]
+    fn typst_availability_tracks_the_build_feature() {
+        let engines = list_engines();
+        let typst = engines
+            .iter()
+            .find(|e| e.id == "typst")
+            .expect("typst is always listed, available or not");
+
+        assert_eq!(typst.available, cfg!(feature = "typst-engine"));
+        assert_eq!(
+            typst.unavailable_reason_key.is_some(),
+            !cfg!(feature = "typst-engine")
+        );
+    }
+
+    #[test]
+    fn engine_languages_match_the_domain_model() {
+        // The picker greys out engines whose language does not match the open
+        // project, so a wrong label here would offer Typst for a .tex project —
+        // which the backend then refuses, leaving a dead option and no
+        // explanation.
+        for engine in list_engines() {
+            let choice = EngineChoice::from_id(&engine.id).expect("offered ids must parse");
+            assert_eq!(
+                engine.language,
+                language_id(&choice),
+                "{} reports the wrong language",
+                engine.id
+            );
+        }
+    }
+
+    #[test]
+    fn a_typst_project_is_discovered_and_gets_a_typ_entry() {
+        // Regression: the file walker originally listed only LaTeX extensions,
+        // so a Typst directory appeared completely empty and its engine could
+        // never be reached from the interface.
+        let dir = tempfile::tempdir().expect("temp dir");
+        let root = camino::Utf8Path::from_path(dir.path()).expect("utf8 path");
+        std::fs::write(root.join("main.typ"), "= Hello\n").expect("write");
+
+        let info = open_project(root.to_string()).expect("project opens");
+        assert_eq!(info.entry, "main.typ");
+        assert!(info.files.iter().any(|f| f.relative_path == "main.typ"));
+    }
+
+    #[test]
+    fn a_latex_project_still_prefers_its_tex_entry() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let root = camino::Utf8Path::from_path(dir.path()).expect("utf8 path");
+        std::fs::write(root.join("main.tex"), "\\documentclass{article}").expect("write");
+        std::fs::write(root.join("notes.typ"), "= Notes\n").expect("write");
+
+        let info = open_project(root.to_string()).expect("project opens");
+        assert_eq!(info.entry, "main.tex", "LaTeX wins when both are present");
+    }
+
+    #[test]
+    fn typst_and_latex_engines_disagree_about_language() {
+        // Guards the whole reason the language field exists: if these ever
+        // matched, the two would look interchangeable and they are not.
+        assert_ne!(
+            EngineChoice::Typst.language(),
+            EngineChoice::Tectonic.language()
+        );
+        assert_eq!(EngineChoice::Typst.language().entry_extension(), "typ");
     }
 
     #[test]

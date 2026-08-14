@@ -49,6 +49,41 @@ default and system TeX distributions supported as first-class peers.**
 - `--shell-escape` is **off by default and requires explicit per-project opt-in
   with a warning**, since it grants arbitrary code execution to a document.
 
+### A third engine, and why it is not a third LaTeX engine
+
+**Typst** is being trialled behind the `typst-engine` feature. It is a complete
+typesetting system in Rust, embeddable exactly as Tectonic is, and it needs no
+system C libraries at all — no vcpkg, no ICU4C, no half-hour dependency build,
+and it is native on every architecture without effort.
+
+It is not, however, interchangeable with the other two. **Typst is a different
+document language.** Tectonic and the system engines are two ways to typeset the
+same `.tex`; a Typst project is written in `.typ`. Presenting all three as
+equivalent options in one picker would be the single easiest way to make this
+feature incomprehensible, so `EngineChoice::language` exists and selecting an
+engine whose language does not match the project's entry document is **refused**
+rather than attempted. A parse error is not a useful answer to "why did my
+document stop building".
+
+The reason to have it: for someone writing from their own notes rather than
+filling in a publisher's template, Typst is plausibly the better tool — much
+faster, with incremental compilation, and buildable anywhere. It buys nothing for
+anyone who needs `elsarticle.cls`, which is exactly why it is an addition and the
+LaTeX path is untouched.
+
+It is **not** smaller, which was the intuitive expectation and is measurably
+wrong: 40.4 MB against Tectonic's 50.5 MB, with a marginally larger installer,
+because Typst embeds its fonts where Tectonic fetches them on demand. The
+[roadmap](https://generalpawz.github.io/yaz/roadmap) carries the figures.
+
+This also closes off a question that would otherwise keep being asked: whether to
+reimplement the whole stack in Rust. Every *supporting* library has a credible
+Rust replacement — Typst ships them all in production — but the TeX engine itself
+does not, and bit-compatible macro semantics are the entire requirement for
+journal templates. The [roadmap](https://generalpawz.github.io/yaz/roadmap)
+records the analysis. Adding Typst gets the lean pure-Rust path without a
+reimplementation the ecosystem has repeatedly attempted and abandoned.
+
 ### Two published builds
 
 Because the trade is genuine rather than a default with a workaround, both are
@@ -84,17 +119,37 @@ would silently remove the user's LaTeX engine.
   increases build times and artefact size. Accepted: it is what removes the
   install barrier.
 
-  **Measured, 2026-08-14, `aarch64-pc-windows-msvc`:**
+  **Measured, `aarch64-pc-windows-msvc`, whole application:**
 
   | Artefact | Without Tectonic | With Tectonic | Added |
   | --- | ---: | ---: | ---: |
   | `yaz.exe` | 6.27 MB | 50.46 MB | **+44.19 MB** |
   | Installer (NSIS) | 2.84 MB | 13.82 MB | **+10.98 MB** |
 
-  So the embedded engine costs roughly **44 MB in the binary and 11 MB in the
-  download**, the latter being smaller because the installer compresses. Still
-  comfortably inside the 40 MB installer budget in
+  Still comfortably inside the 40 MB installer budget in
   [0015](0015-performance-budgets.md).
+
+  **The cost is overwhelmingly a Windows one.** The CI probe links the engine on
+  every shipping target:
+
+  | Target | Tectonic adds |
+  | --- | ---: |
+  | `windows-x86_64` | 46.34 MB |
+  | `windows-aarch64` | 45.51 MB |
+  | `linux-x86_64` | 14.28 MB |
+  | `linux-aarch64` | 12.55 MB |
+
+  A factor of three and a half, and the reason is linkage rather than anything
+  about the engine. On Windows there is no system package manager, so vcpkg
+  builds ICU4C, FreeType, HarfBuzz, Graphite2, libpng and zlib and they are
+  linked **statically** into the binary. On Linux they are the distribution's own
+  shared libraries, so the binary carries only Tectonic's own code.
+
+  Two consequences worth holding onto. A Linux packager sees a far smaller
+  artefact than the Windows figures suggest — and Typst, being pure Rust and
+  therefore always statically linked, will *not* enjoy the same discount there.
+  The engines' relative sizes are platform-dependent, so any comparison has to
+  name its platform.
 
   For context on what that buys: a minimal TeX Live is several hundred megabytes
   and a full one is multiple gigabytes, so 44 MB for a self-contained engine is a

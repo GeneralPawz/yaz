@@ -32,6 +32,13 @@
 
   const selectedEngineInfo = $derived(engines.find((e) => e.id === selectedEngine) ?? null);
 
+  // Which language this project is written in, inferred from its entry document.
+  // Engines for the other language are shown but not selectable: hiding them
+  // would be confusing, and offering them would only produce a parse error.
+  const projectLanguage = $derived<"latex" | "typst">(
+    project?.entry.endsWith(".typ") ? "typst" : "latex",
+  );
+
   const errorCount = $derived(
     result?.diagnostics.filter((d) => d.severity === "error").length ?? 0,
   );
@@ -150,9 +157,19 @@
       >
         {#each engines as engine (engine.id)}
           <!-- Unavailable engines stay visible but unselectable. Hiding them
-               would leave someone hunting for an engine the docs promised. -->
-          <option value={engine.id} disabled={!engine.available}>
-            {engine.label}{#if !engine.available} — {t("engine-unavailable-suffix")}{/if}
+               would leave someone hunting for an engine the docs promised.
+               Engines for the other document language are likewise shown and
+               disabled: Typst cannot compile .tex, and silently omitting it
+               explains nothing. -->
+          <option
+            value={engine.id}
+            disabled={!engine.available || engine.language !== projectLanguage}
+          >
+            {engine.label}{#if !engine.available}
+              — {t("engine-unavailable-suffix")}
+            {:else if engine.language !== projectLanguage}
+              — {t(`engine-language-${engine.language}`)}
+            {/if}
           </option>
         {/each}
       </select>

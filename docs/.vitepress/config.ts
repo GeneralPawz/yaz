@@ -63,6 +63,7 @@ export default defineConfig({
     nav: [
       { text: "Guide", link: "/guide/getting-started" },
       { text: "Plugins", link: "/plugins/writing-a-plugin" },
+      { text: "Roadmap", link: "/roadmap" },
       { text: "Reference", link: "/reference/generated/capabilities" },
       { text: "Decisions", link: "/reference/generated/adr-index" },
     ],
@@ -93,6 +94,10 @@ export default defineConfig({
         },
       ],
       "/": [
+        {
+          text: "Project",
+          items: [{ text: "Roadmap", link: "/roadmap" }],
+        },
         {
           text: "Reference",
           items: [

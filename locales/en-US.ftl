@@ -39,6 +39,10 @@ compile-engine-unavailable = This project is set to use { $engine }, which is no
 settings-engine = Engine
 settings-engine-help = Saved in yaz.toml, so co-authors compile the same way you do.
 engine-tectonic-not-built = Not included in this build of yaz. It has to be compiled in — a setting cannot add it.
+engine-typst-not-built = Not included in this build of yaz. It has to be compiled in — a setting cannot add it.
+engine-wrong-language = { $engine } writes a different document language than this project. Typst projects use .typ files; LaTeX projects use .tex.
+engine-language-latex = LaTeX
+engine-language-typst = Typst
 engine-system-not-installed = Not installed on this computer.
 engine-unavailable-suffix = unavailable
 
