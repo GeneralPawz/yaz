@@ -197,6 +197,6 @@ jobs:
       # produces a diff, someone edited generated output and it would have been
       # silently reverted.
       - name: Fail if generated docs are stale
-        run: git diff --exit-code -- docs/api/generated || (echo "::error::Generated docs are out of date or were hand-edited. Run 'pnpm docs:generate'." && exit 1)
+        run: git diff --exit-code -- docs/reference/generated || (echo "::error::Generated docs are out of date or were hand-edited. Run 'pnpm docs:generate'." && exit 1)
       - name: Build site
         run: pnpm docs:build

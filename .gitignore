@@ -18,7 +18,10 @@ dist/
 # Docs site
 /docs/.vitepress/dist/
 /docs/.vitepress/cache/
-/docs/api/generated/
+
+# NOTE: docs/reference/generated/ is deliberately NOT ignored. ADR-0016 requires
+# CI to fail when regenerating produces a diff, which only works if the
+# generated output is committed and therefore comparable.
 
 # Editors
 .vscode/*
