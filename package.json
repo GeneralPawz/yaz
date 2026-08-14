@@ -16,9 +16,11 @@
     "pnpm": ">=9.0.0"
   },
   "scripts": {
-    "dev": "pnpm --filter @yaz/desktop dev",
-    "build": "pnpm --filter @yaz/desktop build",
-    "tauri": "pnpm --filter @yaz/desktop tauri",
+    "dev": "tauri dev",
+    "app:build": "tauri build",
+    "tauri": "tauri",
+    "web:dev": "pnpm --filter @yaz/desktop dev",
+    "web:build": "pnpm --filter @yaz/desktop build",
     "check": "pnpm -r check",
     "lint": "pnpm -r lint",
     "format": "prettier --write . && cargo fmt --all",
@@ -35,6 +37,7 @@
   "devDependencies": {
     "@commitlint/cli": "^19.6.0",
     "@commitlint/config-conventional": "^19.6.0",
+    "@tauri-apps/cli": "^2.1.0",
     "husky": "^9.1.7",
     "prettier": "^3.4.2",
     "typescript": "^5.7.2"

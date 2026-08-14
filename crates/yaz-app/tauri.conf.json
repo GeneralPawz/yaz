@@ -41,7 +41,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "category": "Office",
+    "category": "Productivity",
     "shortDescription": "A modern LaTeX writing environment.",
     "longDescription": "yaz turns collected ideas and sources into scientific papers: a LaTeX editor with source and visual modes over one buffer, Zotero and Obsidian integration, and a TypeScript plugin ecosystem.",
     "licenseFile": "../../LICENSE"

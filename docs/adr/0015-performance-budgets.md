@@ -42,14 +42,21 @@ web page.
 
 The original idle budget was 150 MB, derived from the estimate in
 [ADR-0002](0002-application-shell-tauri.md) that a Tauri application would sit
-"roughly 60–120 MB RSS". **The first measurement of a real window showed 368 MB**
-— release build, `aarch64-pc-windows-msvc`, idle with no project open:
+"roughly 60–120 MB RSS". **Measurement of a real window showed 384 MB** —
+production build, `aarch64-pc-windows-msvc`, idle with no project open:
 
 | Process | RSS |
 | --- | --- |
-| `yaz.exe` (the Rust core) | 26 MB |
-| 6 × `msedgewebview2.exe` | 341 MB |
-| **Total** | **368 MB** |
+| `yaz.exe` (the Rust core) | 28 MB |
+| 6 × `msedgewebview2.exe` | 356 MB |
+| **Total** | **384 MB** |
+
+The first attempt at this measurement read 368 MB and was invalid: it was taken
+against a binary built with bare `cargo build --release`, which produces a *dev*
+Tauri binary that never embeds the frontend, so the webview was rendering an
+error page rather than the application. Measure only what `pnpm app:build`
+produces, and confirm the binary is a production one before trusting a number
+from it — `docs/contributing/setup.md` describes the check.
 
 The Rust side is comfortably small and was never the problem. The estimate was
 wrong about the webview: a Chromium-based WebView2 instance splits into browser,

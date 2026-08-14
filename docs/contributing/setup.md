@@ -16,7 +16,41 @@ build.
 git clone https://github.com/GeneralPawz/yaz.git
 cd yaz
 pnpm install
-pnpm tauri dev     # dev mode: no updater, no live plugin registry
+pnpm dev           # dev mode: no updater, no live plugin registry
+```
+
+## Building the application
+
+> **Do not build the app with `cargo build --release`.** It produces a binary
+> that opens a window showing the webview's *"cannot reach this page"* error, and
+> nothing about the message suggests a build problem.
+>
+> `tauri-build` distinguishes dev from production using environment the Tauri CLI
+> sets. Run bare, it defaults to **dev**: `devUrl` is compiled in and
+> `frontendDist` is never embedded, so the binary looks for a Vite dev server
+> that is not running. `crates/yaz-app/build.rs` prints a warning when it detects
+> this, but cargo warnings are easy to miss in a long build.
+
+```bash
+pnpm app:build     # tauri build — embeds the frontend, produces an installer
+pnpm dev           # tauri dev — hot reload against the Vite server
+```
+
+`cargo build` is still the right tool for the Rust crates on their own — it is
+only `yaz-app` that needs the CLI.
+
+Both commands run from the **repository root**, not from `apps/desktop`. The
+Tauri config lives at `crates/yaz-app/tauri.conf.json`
+([ADR-0017](../adr/0017-repository-layout.md)) and the CLI locates it by
+searching downward from the working directory.
+
+To confirm a binary is a production build, put a listener on the dev port and
+check that it is never contacted:
+
+```powershell
+$l = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 5173); $l.Start()
+Start-Process target\release\yaz.exe
+# a production binary never connects; a dev binary does
 ```
 
 ## Platform prerequisites

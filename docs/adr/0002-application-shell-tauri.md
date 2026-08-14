@@ -43,8 +43,8 @@ engine; we borrow the one the OS already loaded. Budgets are set and enforced in
 [0015](0015-performance-budgets.md).
 
 > **Correction, 2026-08-14.** This section originally predicted "roughly
-> 60–120 MB RSS". The first measurement of a real window was **368 MB** on
-> Windows ARM64 — 26 MB for the Rust core and 341 MB across six WebView2
+> 60–120 MB RSS". Measurement of a real window was **384 MB** on Windows
+> ARM64 — 28 MB for the Rust core and 356 MB across six WebView2
 > processes. The prediction was wrong by roughly a factor of three, and
 > [ADR-0015](0015-performance-budgets.md) carries the measured figures and the
 > revised budgets.
@@ -52,7 +52,7 @@ engine; we borrow the one the OS already loaded. Budgets are set and enforced in
 > This does not change the decision, because the decision was never made on
 > memory — it was made on the plugin ecosystem, and that reasoning is unaffected.
 > It does mean the comparison above should read: ~40 MB for a native Rust GUI
-> with no plugin ecosystem, ~368 MB here, and more again for Electron. Anyone
+> with no plugin ecosystem, ~384 MB here, and more again for Electron. Anyone
 > weighing a future shell change should start from the measurement, not from the
 > estimate this paragraph used to contain.
 

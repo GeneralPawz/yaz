@@ -123,8 +123,14 @@ default and the error it produces is not self-explanatory.
 git clone https://github.com/GeneralPawz/yaz.git
 cd yaz
 pnpm install
-pnpm tauri dev
+pnpm dev           # run it
+pnpm app:build     # build a release binary and installer
 ```
+
+Both run from the repository root. **Do not build the app with
+`cargo build --release`** — that yields a dev binary whose window shows a
+"cannot reach this page" error, because the frontend is never embedded. See
+[docs/contributing/setup.md](docs/contributing/setup.md).
 
 Development mode never contacts the update server or the live plugin registry.
 ([ADR-0013](docs/adr/0013-update-distribution.md))
