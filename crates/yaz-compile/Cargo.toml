@@ -22,6 +22,10 @@ default = []
 # CI proves aarch64-pc-windows-msvc and aarch64-unknown-linux-gnu both build.
 tectonic-engine = ["dep:tectonic"]
 
+[[example]]
+name = "size_probe"
+required-features = ["tectonic-engine"]
+
 [dependencies]
 yaz-core.workspace = true
 serde.workspace = true

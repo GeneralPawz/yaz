@@ -137,3 +137,21 @@ jobs:
         run: |
           rustc -vV | grep '^host:'
           uname -m 2>/dev/null || echo "$PROCESSOR_ARCHITECTURE"
+
+      # How much does embedding Tectonic actually cost on disk? A release-linked
+      # example answers it; a library build cannot, since rlibs are not linked
+      # and dead-code elimination happens at link time. Disk footprint is a real
+      # consideration for making this the default engine (ADR-0007), and it
+      # should be a measurement rather than a guess.
+      - name: Measure the linked size of the embedded engine
+        shell: bash
+        env:
+          TECTONIC_DEP_BACKEND: ${{ startsWith(matrix.runner, 'windows') && 'vcpkg' || 'pkg-config' }}
+          VCPKGRS_TRIPLET: ${{ matrix.triplet }}
+          RUSTFLAGS: ${{ startsWith(matrix.runner, 'windows') && '-Ctarget-feature=+crt-static' || '' }}
+        run: |
+          cargo build --release -p yaz-compile --features tectonic-engine --example size_probe
+          cargo build --release -p yaz-compile --example size_probe 2>/dev/null || true
+          echo "--- release artefact sizes (${{ matrix.name }}) ---"
+          find target/release/examples -maxdepth 1 -type f \( -name 'size_probe' -o -name 'size_probe.exe' \) \
+            -exec ls -lh {} \; || echo "no example binary found"
