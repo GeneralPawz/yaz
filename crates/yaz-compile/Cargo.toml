@@ -9,6 +9,19 @@ repository.workspace = true
 homepage.workspace = true
 authors.workspace = true
 
+[features]
+default = []
+
+# Embeds the Tectonic typesetting engine in-process.
+#
+# Off by default while its build is being proven on every target in
+# rust-toolchain.toml. Tectonic vendors Harfbuzz statically but still needs
+# freetype2, graphite2, ICU4C, libpng and zlib from the system (plus fontconfig
+# and OpenSSL on Linux), which on Windows means vcpkg. ADR-0014 makes a
+# dependency without a native aarch64 path a blocker, so this stays gated until
+# CI proves aarch64-pc-windows-msvc and aarch64-unknown-linux-gnu both build.
+tectonic-engine = ["dep:tectonic"]
+
 [dependencies]
 yaz-core.workspace = true
 serde.workspace = true
@@ -17,11 +30,39 @@ camino.workspace = true
 tracing.workspace = true
 tokio.workspace = true
 
-# NOTE(phase-2): tectonic is added here as an embedded engine. It is a large
-# dependency tree; verify it builds natively for every target in
-# rust-toolchain.toml before pinning (ADR-0014).
+tectonic = { version = "0.17", optional = true }
 
 [dev-dependencies]
 pretty_assertions.workspace = true
 tempfile.workspace = true
 insta.workspace = true
+
+# Windows has no system package manager Tectonic can discover, so its C
+# dependencies come from vcpkg. Linux uses pkg-config and needs none of this.
+#
+# harfbuzz is absent deliberately: Tectonic vendors it statically unless the
+# `external-harfbuzz` feature is on. fontconfig is Linux-only.
+#
+# The custom `-release` triplets in dist/vcpkg-triplets build release artefacts
+# only. ICU4C dominates this build, so not also building it in debug roughly
+# halves a very long step.
+[package.metadata.vcpkg]
+git = "https://github.com/microsoft/vcpkg"
+branch = "master"
+overlay-triplets-path = "../../dist/vcpkg-triplets"
+
+[package.metadata.vcpkg.target]
+x86_64-pc-windows-msvc = { triplet = "x64-windows-static-release", install = [
+    "freetype",
+    "graphite2",
+    "icu",
+    "libpng",
+    "zlib",
+] }
+aarch64-pc-windows-msvc = { triplet = "arm64-windows-static-release", install = [
+    "freetype",
+    "graphite2",
+    "icu",
+    "libpng",
+    "zlib",
+] }
