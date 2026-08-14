@@ -19,6 +19,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    # Activates when the VitePress site lands in phase 2. Until then there is
+    # nothing to publish and this would fail on every push.
+    if: hashFiles('pnpm-lock.yaml') != ''
     steps:
       - uses: actions/checkout@v4
 

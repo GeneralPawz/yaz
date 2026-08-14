@@ -105,9 +105,13 @@ jobs:
       - name: Test
         run: cargo test --workspace --all-features
 
+  # Activates when the frontend lands in phase 2. Gated on the lockfile rather
+  # than deleted, so the intended checks are visible now and turn on by
+  # themselves — a permanently red job is a job people stop looking at.
   frontend:
     name: Frontend
     runs-on: ubuntu-24.04
+    if: hashFiles('pnpm-lock.yaml') != ''
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -127,9 +131,11 @@ jobs:
       - name: i18n catalogue
         run: pnpm i18n:check
 
+  # Activates with the docs site in phase 2 — see the note on `frontend` above.
   docs:
     name: Docs
     runs-on: ubuntu-24.04
+    if: hashFiles('pnpm-lock.yaml') != ''
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
