@@ -45,6 +45,32 @@ jobs:
           components: rustfmt
       - run: cargo fmt --all --check
 
+  # The frontend and docs jobs check work that lands in phase 2. Rather than
+  # delete them — a job that does not exist is a job nobody remembers to add —
+  # they are gated on the lockfile appearing, and switch on by themselves.
+  #
+  # This has to be a job rather than a job-level `if: hashFiles(...)`, because
+  # hashFiles needs a checked-out workspace and is not available when job
+  # conditions are evaluated. Using it there makes the whole workflow fail to
+  # compile, with no jobs and no useful error.
+  detect:
+    name: Detect phase
+    runs-on: ubuntu-24.04
+    outputs:
+      frontend: ${{ steps.check.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        shell: bash
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+            echo "Frontend present — frontend and docs jobs will run."
+          else
+            echo "frontend=false" >> "$GITHUB_OUTPUT"
+            echo "No pnpm-lock.yaml yet (phase 1) — skipping frontend and docs jobs."
+          fi
+
   # ADR-0014: ARM64 is tier 1. These run on NATIVE ARM runners, never
   # cross-compiled and never under QEMU — emulated CI hides exactly the problems
   # the policy exists to catch.
@@ -105,13 +131,11 @@ jobs:
       - name: Test
         run: cargo test --workspace --all-features
 
-  # Activates when the frontend lands in phase 2. Gated on the lockfile rather
-  # than deleted, so the intended checks are visible now and turn on by
-  # themselves — a permanently red job is a job people stop looking at.
   frontend:
     name: Frontend
     runs-on: ubuntu-24.04
-    if: hashFiles('pnpm-lock.yaml') != ''
+    needs: detect
+    if: needs.detect.outputs.frontend == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -131,11 +155,11 @@ jobs:
       - name: i18n catalogue
         run: pnpm i18n:check
 
-  # Activates with the docs site in phase 2 — see the note on `frontend` above.
   docs:
     name: Docs
     runs-on: ubuntu-24.04
-    if: hashFiles('pnpm-lock.yaml') != ''
+    needs: detect
+    if: needs.detect.outputs.frontend == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

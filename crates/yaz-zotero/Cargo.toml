@@ -1,7 +1,7 @@
 [package]
 name = "yaz-zotero"
 description = "Zotero library access for yaz: Better BibTeX, local API, exported .bib, and sqlite."
-version.workspace = true
+version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -21,7 +21,7 @@ reqwest.workspace = true
 
 # NOTE(phase-5): rusqlite is added for the offline source. It must be built with
 # the bundled feature so it links natively on aarch64 (ADR-0014), and opened
-# read-only on a copy — never against the live zotero.sqlite.
+# read-only on a copy, never against the live zotero.sqlite.
 
 [dev-dependencies]
 pretty_assertions.workspace = true

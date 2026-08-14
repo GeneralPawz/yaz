@@ -17,11 +17,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The VitePress site lands in phase 2; until then there is nothing to publish.
+  # hashFiles cannot be used in a job-level `if` (it needs a checked-out
+  # workspace, and using it there makes the workflow fail to compile), so the
+  # check runs as its own job.
+  detect:
+    runs-on: ubuntu-24.04
+    outputs:
+      site: ${{ steps.check.outputs.site }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        shell: bash
+        run: |
+          if [ -f pnpm-lock.yaml ] && [ -f docs/.vitepress/config.ts ]; then
+            echo "site=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "site=false" >> "$GITHUB_OUTPUT"
+            echo "Docs site not present yet (phase 1) — nothing to publish."
+          fi
+
   build:
     runs-on: ubuntu-24.04
-    # Activates when the VitePress site lands in phase 2. Until then there is
-    # nothing to publish and this would fail on every push.
-    if: hashFiles('pnpm-lock.yaml') != ''
+    needs: detect
+    if: needs.detect.outputs.site == 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -56,7 +75,8 @@ jobs:
           path: docs/.vitepress/dist
 
   deploy:
-    needs: build
+    needs: [detect, build]
+    if: needs.detect.outputs.site == 'true'
     runs-on: ubuntu-24.04
     environment:
       name: github-pages
