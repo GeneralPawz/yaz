@@ -37,7 +37,7 @@ anyhow = "1"
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-toml = "0.8"
+toml = "1.1"
 
 # Async
 tokio = { version = "1", features = ["rt-multi-thread", "fs", "process", "sync", "time", "macros"] }
@@ -48,14 +48,14 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
 # Filesystem
 camino = { version = "1", features = ["serde1"] }
-notify = "7"
-notify-debouncer-full = "0.4"
+notify = "8"
+notify-debouncer-full = "0.7"
 walkdir = "2"
 
 # Misc
 semver = { version = "1", features = ["serde"] }
 url = { version = "2", features = ["serde"] }
-sha2 = "0.10"
+sha2 = "0.11"
 # Both root sources are compiled in, but only one is used at a time — see
 # yaz_core::net and ADR-0019. Enabling both features alone would make reqwest
 # trust the *union* of the OS store and Mozilla's list, which silently defeats
