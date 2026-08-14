@@ -65,6 +65,38 @@ You also need the **WebView2 runtime**, which ships with Windows 11 — includin
 the native ARM64 build, so nothing is emulated
 ([ADR-0014](../adr/0014-target-platforms-and-arm64.md)).
 
+#### …and LLVM/clang, for the same reason nobody warns you about
+
+Once the CRT is in place, the next failure is:
+
+```
+error occurred in cc-rs: failed to find tool "clang": program not found
+error: failed to run custom build command for `ring v0.17.x`
+```
+
+`ring` — pulled in through rustls, which reqwest uses — hand-writes assembly
+that MSVC's assembler cannot build for aarch64, so its build script requires
+clang specifically. This bites *only* on Windows ARM64: the GitHub-hosted
+Windows runners ship LLVM already, so CI is green while your machine is not.
+
+`winget install LLVM.LLVM` needs elevation and offers no user scope. The
+friction-free route is the official native-ARM64 tarball, which needs no
+installer, no registry, and no admin:
+
+```powershell
+$url  = "https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.8/clang+llvm-22.1.8-aarch64-pc-windows-msvc.tar.xz"
+$dest = "D:\packages\llvm"     # anywhere writable
+Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\llvm-arm64.tar.xz"
+New-Item -ItemType Directory -Force -Path $dest | Out-Null
+tar -xf "$env:TEMP\llvm-arm64.tar.xz" -C $dest --strip-components=1
+```
+
+Then put `$dest\bin` on `PATH`. Verify with `clang --version`; it should report
+an `aarch64-pc-windows-msvc` host.
+
+Alternatively, add `Microsoft.VisualStudio.Component.VC.Llvm.Clang` through the
+Visual Studio installer, the same way as the ARM64 CRT above.
+
 ### Windows on x86_64
 
 Visual Studio Build Tools with "Desktop development with C++", plus the WebView2

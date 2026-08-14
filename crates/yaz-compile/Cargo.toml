@@ -41,7 +41,11 @@ insta.workspace = true
 # dependencies come from vcpkg. Linux uses pkg-config and needs none of this.
 #
 # harfbuzz is absent deliberately: Tectonic vendors it statically unless the
-# `external-harfbuzz` feature is on. fontconfig is Linux-only.
+# `external-harfbuzz` feature is on.
+#
+# fontconfig IS required on Windows, contrary to what the dependency list in
+# Tectonic's docs suggests: tectonic_bridge_fontconfig's build script looks for
+# it through vcpkg on every platform, and omitting it panics the build.
 #
 # The custom `-release` triplets in dist/vcpkg-triplets build release artefacts
 # only. ICU4C dominates this build, so not also building it in debug roughly
@@ -58,6 +62,7 @@ overlay-triplets-path = "../../dist/vcpkg-triplets"
 
 [package.metadata.vcpkg.target]
 x86_64-pc-windows-msvc = { triplet = "x64-windows-static-release", install = [
+    "fontconfig",
     "freetype",
     "graphite2",
     "icu",
@@ -65,6 +70,7 @@ x86_64-pc-windows-msvc = { triplet = "x64-windows-static-release", install = [
     "zlib",
 ] }
 aarch64-pc-windows-msvc = { triplet = "arm64-windows-static-release", install = [
+    "fontconfig",
     "freetype",
     "graphite2",
     "icu",

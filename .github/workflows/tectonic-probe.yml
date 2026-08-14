@@ -23,7 +23,11 @@ on:
 
 concurrency:
   group: tectonic-probe-${{ github.ref }}
-  cancel-in-progress: true
+  # Deliberately NOT cancel-in-progress. A cold vcpkg build of ICU4C runs for
+  # the better part of an hour and the cache is only written when the job
+  # finishes, so cancelling on every push throws away all of it and learns
+  # nothing.
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -110,7 +114,7 @@ jobs:
           & "$env:VCPKG_ROOT\vcpkg.exe" install `
             --overlay-triplets=dist/vcpkg-triplets `
             --triplet ${{ matrix.triplet }} `
-            freetype graphite2 icu libpng zlib
+            fontconfig freetype graphite2 icu libpng zlib
 
       - name: Build with the Tectonic engine
         shell: bash
