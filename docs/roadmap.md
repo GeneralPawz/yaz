@@ -90,6 +90,13 @@ A useful correction to carry forward: the pure-Rust stack is *faster and far
 easier to build*, not meaningfully smaller. Anyone reaching for it to save disk
 space is reaching for the wrong reason.
 
+And the comparison is platform-dependent, which is easy to miss. The CI probe
+measures Tectonic adding **46 MB on Windows but only 13 MB on Linux**, because
+Windows statically links the vcpkg-built C libraries while Linux uses the
+distribution's shared ones. Typst is pure Rust and therefore always statically
+linked, so it gets no such discount — on Linux it is plausibly the *larger* of
+the two. Any size claim here has to name its platform to mean anything.
+
 ## The open question: a lean Rust engine
 
 Tectonic embeds a large amount of C. That is the honest cost of LaTeX
