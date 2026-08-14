@@ -65,6 +65,38 @@ You also need the **WebView2 runtime**, which ships with Windows 11 — includin
 the native ARM64 build, so nothing is emulated
 ([ADR-0014](../adr/0014-target-platforms-and-arm64.md)).
 
+#### …and LLVM/clang, for the same reason nobody warns you about
+
+Once the CRT is in place, the next failure is:
+
+```
+error occurred in cc-rs: failed to find tool "clang": program not found
+error: failed to run custom build command for `ring v0.17.x`
+```
+
+`ring` — pulled in through rustls, which reqwest uses — hand-writes assembly
+that MSVC's assembler cannot build for aarch64, so its build script requires
+clang specifically. This bites *only* on Windows ARM64: the GitHub-hosted
+Windows runners ship LLVM already, so CI is green while your machine is not.
+
+`winget install LLVM.LLVM` needs elevation and offers no user scope. The
+friction-free route is the official native-ARM64 tarball, which needs no
+installer, no registry, and no admin:
+
+```powershell
+$url  = "https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.8/clang+llvm-22.1.8-aarch64-pc-windows-msvc.tar.xz"
+$dest = "D:\packages\llvm"     # anywhere writable
+Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\llvm-arm64.tar.xz"
+New-Item -ItemType Directory -Force -Path $dest | Out-Null
+tar -xf "$env:TEMP\llvm-arm64.tar.xz" -C $dest --strip-components=1
+```
+
+Then put `$dest\bin` on `PATH`. Verify with `clang --version`; it should report
+an `aarch64-pc-windows-msvc` host.
+
+Alternatively, add `Microsoft.VisualStudio.Component.VC.Llvm.Clang` through the
+Visual Studio installer, the same way as the ARM64 CRT above.
+
 ### Windows on x86_64
 
 Visual Studio Build Tools with "Desktop development with C++", plus the WebView2
@@ -102,13 +134,28 @@ emulation — fine for correctness testing, meaningless for performance numbers.
 
 ```bash
 cargo fmt --all --check
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace --all-features
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
 
 pnpm check          # types
 pnpm lint           # includes the i18n and theme-token rules
 pnpm test
 ```
+
+Note the absence of `--all-features`. Features that pull in system C libraries —
+currently `tectonic-engine`, which needs vcpkg on Windows — are excluded
+deliberately: enabling them without their prerequisites fails as a build-script
+panic inside a dependency, which tells you nothing about the real cause. To
+exercise the embedded LaTeX engine, install its prerequisites and ask for it:
+
+```bash
+cargo test -p yaz-compile --features tectonic-engine
+```
+
+On Windows, do not reach for `cargo install cargo-vcpkg` — it does not build on
+ARM64 at all (it depends on `winapi` 0.3.5, which does not compile for aarch64).
+Clone and bootstrap vcpkg and invoke it directly, as
+`.github/workflows/tectonic-probe.yml` does.
 
 CI additionally runs the performance budgets
 ([ADR-0015](../adr/0015-performance-budgets.md)) on native x86_64 **and** ARM64

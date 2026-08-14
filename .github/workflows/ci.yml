@@ -128,11 +128,20 @@ jobs:
           echo "host triple: $(rustc -vV | grep '^host:')"
           echo "runner arch: $(uname -m 2>/dev/null || echo $PROCESSOR_ARCHITECTURE)"
 
+      # Deliberately NOT --all-features. Features that pull in system C
+      # libraries — currently `tectonic-engine`, which needs vcpkg on Windows —
+      # would be switched on here with none of their prerequisites present, and
+      # the failure surfaces as a build-script panic deep in a dependency rather
+      # than as anything resembling the actual cause.
+      #
+      # Such features are covered by their own workflow (tectonic-probe.yml),
+      # which installs what they need. Any future optional dependency with a
+      # native toolchain requirement belongs there too, not here.
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test --workspace --all-features
+        run: cargo test --workspace
 
   frontend:
     name: Frontend
