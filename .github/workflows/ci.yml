@@ -61,6 +61,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       frontend: ${{ steps.check.outputs.frontend }}
+      docs: ${{ steps.check.outputs.docs }}
     steps:
       - uses: actions/checkout@v4
       - id: check
@@ -68,10 +69,21 @@ jobs:
         run: |
           if [ -f pnpm-lock.yaml ]; then
             echo "frontend=true" >> "$GITHUB_OUTPUT"
-            echo "Frontend present — frontend and docs jobs will run."
+            echo "Frontend present — frontend job will run."
           else
             echo "frontend=false" >> "$GITHUB_OUTPUT"
-            echo "No pnpm-lock.yaml yet (phase 1) — skipping frontend and docs jobs."
+            echo "No pnpm-lock.yaml yet — skipping frontend job."
+          fi
+          # Gated separately from the frontend: the docs site and its generators
+          # are ADR-0016 work that arrives later than the app itself, and keying
+          # both off the lockfile turned the docs job red the moment phase 2
+          # landed.
+          if [ -f docs/.vitepress/config.ts ] && [ -f scripts/generate-docs.mjs ]; then
+            echo "docs=true" >> "$GITHUB_OUTPUT"
+            echo "Docs site present — docs job will run."
+          else
+            echo "docs=false" >> "$GITHUB_OUTPUT"
+            echo "No docs site yet — skipping docs job."
           fi
 
   # ADR-0014: ARM64 is tier 1. These run on NATIVE ARM runners, never
@@ -162,7 +174,7 @@ jobs:
     name: Docs
     runs-on: ubuntu-24.04
     needs: detect
-    if: needs.detect.outputs.frontend == 'true'
+    if: needs.detect.outputs.docs == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

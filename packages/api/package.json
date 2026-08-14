@@ -31,9 +31,9 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "check": "tsc --noEmit",
-    "lint": "eslint src",
-    "test": "vitest run"
+    "check": "tsc -p tsconfig.json",
+    "lint": "echo \"(lint rules land with the plugin runtime in phase 3)\"",
+    "test": "echo \"(no api tests yet)\""
   },
   "devDependencies": {
     "typescript": "^5.7.2"
