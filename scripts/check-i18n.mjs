@@ -17,7 +17,7 @@
  * caller.
  */
 
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -38,6 +38,10 @@ function definedKeys() {
 }
 
 function* walk(dir, exts) {
+  // Optional trees — `plugins/` before any core plugin exists, for instance —
+  // are absent rather than empty, because git does not track empty directories.
+  // A missing one is not an error.
+  if (!existsSync(dir)) return;
   for (const name of readdirSync(dir)) {
     if (name === "node_modules" || name === "target" || name === "dist" || name.startsWith(".")) {
       continue;
