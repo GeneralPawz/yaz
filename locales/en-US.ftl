@@ -87,6 +87,7 @@ workspace-entry = entry
 editor-mode-source = Source
 editor-mode-visual = Visual
 editor-vim-mode = Vim
+editor-loading = Opening…
 
 ## PDF
 

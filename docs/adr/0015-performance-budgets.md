@@ -93,10 +93,22 @@ taking.
 The decisive data point came by accident. A binary built without the Tauri CLI
 never embeds the frontend, so its webview renders only an error page — **and it
 measured 368 MB**, within noise of the full application. Chromium's baseline is
-essentially the entire figure: **Svelte, CodeMirror and pdf.js together cost
-close to nothing on top of it.** Lazy-loading pdf.js and lazily loading core
-plugins remain worth doing for *startup* and for tidiness, but neither will move
-memory, and this ADR should not pretend otherwise.
+essentially the entire figure.
+
+### Correction: lazy loading did move memory, by about the frontend's whole cost
+
+This section previously concluded that lazy loading "will not move memory".
+Measured, that was wrong in a small but real way.
+
+Deferring CodeMirror and pdf.js until first use took idle RSS from **383.5 MB to
+365.1 MB — 18 MB, about 5%.** Which is consistent rather than surprising: the
+error-page binary showed the frontend costing ~16 MB in total, and lazy loading
+defers essentially all of it. The application now sits *at* the Chromium floor
+rather than slightly above it.
+
+So the shape of the earlier claim held — no frontend work reclaims the ~350 MB
+baseline — but "will not move memory" overstated it. 18 MB is worth having, and
+the ADR should say what was measured rather than what was predicted.
 
 The one genuinely untested lever is WebView2's `MemoryUsageTargetLevel`, which
 asks Chromium to trim when the application is idle or backgrounded. It is not
@@ -114,8 +126,9 @@ VS Code, not a native editor.
 
 | Metric | Budget | Measured |
 | --- | --- | --- |
-| Time to interactive | < 1000 ms | **464 ms** (n=6, 430–514) |
-| Idle RSS | < 420 MB | **384 MB** |
+| Time to interactive | < 1000 ms | **384 ms** median (was 464 ms before lazy loading) |
+| Idle RSS | < 420 MB | **365 MB** (was 384 MB before lazy loading) |
+| Initial JS bundle | — | **51 KB** (was 859 KB before lazy loading) |
 | Installer | < 40 MB | **2.8 MB** — or **13.8 MB** with the embedded engine |
 | Installed payload | — | **6.3 MB** — or **50.5 MB** with the embedded engine |
 
@@ -164,8 +177,15 @@ read this amendment instead.
 
 ### Design rules that follow
 
-- **Core plugins are lazily loaded.** A disabled or unused plugin costs no
-  startup time and no memory ([0005](0005-extensibility-tiers.md)).
+- **Nothing large is loaded before it can be used.** CodeMirror arrives when a
+  file is opened, pdf.js when a compile first produces something to show. Both
+  are measurably worth deferring: the initial bundle is 51 KB rather than
+  859 KB, which is 94% of it. The cost is a brief load on first use, which is
+  the right place to pay — a session spent writing may never open the PDF pane
+  at all.
+- **Core plugins are lazily loaded**, for the same reason. A disabled or unused
+  plugin costs no startup time and no memory
+  ([0005](0005-extensibility-tiers.md)).
 - **The IPC boundary is not on the keystroke path.** The buffer lives in the
   webview; Rust does filesystem, compilation, and indexing work asynchronously
   and in batches ([0002](0002-application-shell-tauri.md)).

@@ -1,12 +1,31 @@
 <script lang="ts">
-  import * as pdfjs from "pdfjs-dist";
-  import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
   import { t } from "./i18n";
 
-  // Bundled and served from our own origin. The CSP in tauri.conf.json permits
-  // no external hosts, so the CDN default pdf.js would otherwise reach for is
-  // not an option — which is correct, not a limitation.
-  pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+  /**
+   * pdf.js is loaded on first use, not at startup.
+   *
+   * It is the largest thing the frontend pulls in, and nothing can appear in
+   * this pane until a compile has succeeded — which is never during boot, and
+   * often not at all in a session spent writing. Paying for it up front buys
+   * nothing.
+   *
+   * Cached after the first load, so switching documents does not re-import.
+   */
+  let pdfjs: typeof import("pdfjs-dist") | null = null;
+
+  async function loadPdfjs() {
+    if (pdfjs) return pdfjs;
+    const [module, worker] = await Promise.all([
+      import("pdfjs-dist"),
+      import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
+    ]);
+    // Bundled and served from our own origin. The CSP in tauri.conf.json
+    // permits no external hosts, so the CDN default pdf.js would otherwise
+    // reach for is not an option — which is correct, not a limitation.
+    module.GlobalWorkerOptions.workerSrc = worker.default;
+    pdfjs = module;
+    return module;
+  }
 
   interface Props {
     /** Raw PDF bytes, or null when nothing has been compiled yet. */
@@ -31,9 +50,11 @@
 
     (async () => {
       try {
+        const lib = await loadPdfjs();
+        if (cancelled) return;
         // pdf.js takes ownership of the buffer it is handed, so a copy is passed
         // rather than the caller's array.
-        const doc = await pdfjs.getDocument({ data: bytes.slice() }).promise;
+        const doc = await lib.getDocument({ data: bytes.slice() }).promise;
         if (cancelled) return;
 
         const rendered: HTMLCanvasElement[] = [];

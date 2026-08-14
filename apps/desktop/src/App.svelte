@@ -1,9 +1,22 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
-  import Editor from "./lib/Editor.svelte";
   import PdfView from "./lib/PdfView.svelte";
   import { t } from "./lib/i18n";
   import * as ipc from "./lib/ipc";
+
+  /**
+   * The editor is loaded when a file is first opened, not at startup.
+   *
+   * CodeMirror plus the Vim keymap is the largest thing left in the initial
+   * bundle, and until a document is open there is nothing for it to do. The
+   * window that appears before that is a toolbar, a file list and two empty
+   * panes.
+   *
+   * PdfView stays eagerly imported: it is a thin shell, and the heavy part
+   * (pdf.js) does its own lazy load from inside.
+   */
+  let EditorComponent = $state<typeof import("./lib/Editor.svelte").default | null>(null);
+  let editorLoadFailed = $state(false);
 
   let project = $state<ipc.ProjectInfo | null>(null);
   let currentFile = $state<string | null>(null);
@@ -68,8 +81,21 @@
     }
   }
 
+  async function ensureEditorLoaded() {
+    if (EditorComponent || editorLoadFailed) return;
+    try {
+      EditorComponent = (await import("./lib/Editor.svelte")).default;
+    } catch (error) {
+      // A failed chunk load leaves the pane empty forever otherwise, with no
+      // clue why. Better to say so than to look merely broken.
+      editorLoadFailed = true;
+      failure = String(error);
+    }
+  }
+
   async function openFile(relativePath: string) {
     if (!project) return;
+    void ensureEditorLoaded();
     try {
       docText = await ipc.readFile(project.root, relativePath);
       currentFile = relativePath;
@@ -167,8 +193,8 @@
     </nav>
 
     <main class="editor-pane">
-      {#if currentFile}
-        <Editor
+      {#if currentFile && EditorComponent}
+        <EditorComponent
           doc={docText}
           docId={currentFile}
           vimMode={vimMode}
@@ -178,6 +204,8 @@
           }}
           onSave={save}
         />
+      {:else if currentFile}
+        <p class="empty">{t("editor-loading")}</p>
       {:else}
         <p class="empty">{t("workspace-no-file-open")}</p>
       {/if}
