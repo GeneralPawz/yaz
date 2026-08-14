@@ -70,9 +70,10 @@
           canvas.className = "page";
           const ctx = canvas.getContext("2d");
           if (!ctx) continue;
-          // pdf.js 4.x takes the 2D context; the `canvas` parameter only exists
-          // from 5.x onward.
-          await page.render({ canvasContext: ctx, viewport }).promise;
+          // pdf.js wants the canvas itself from 5.x onward, not only its 2D
+          // context. On 4.x passing `canvas` was rejected as an unknown
+          // property, so this argument flips with the major version.
+          await page.render({ canvas, canvasContext: ctx, viewport }).promise;
           if (cancelled) return;
           rendered.push(canvas);
         }
