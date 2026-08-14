@@ -63,6 +63,35 @@ default and system TeX distributions supported as first-class peers.**
 - Embedding Tectonic pulls a substantial dependency tree into the binary and
   increases build times and artefact size. Accepted: it is what removes the
   install barrier.
+
+  **Measured, 2026-08-14, `aarch64-pc-windows-msvc`:**
+
+  | Artefact | Without Tectonic | With Tectonic | Added |
+  | --- | ---: | ---: | ---: |
+  | `yaz.exe` | 6.27 MB | 50.46 MB | **+44.19 MB** |
+  | Installer (NSIS) | 2.84 MB | 13.82 MB | **+10.98 MB** |
+
+  So the embedded engine costs roughly **44 MB in the binary and 11 MB in the
+  download**, the latter being smaller because the installer compresses. Still
+  comfortably inside the 40 MB installer budget in
+  [0015](0015-performance-budgets.md).
+
+  For context on what that buys: a minimal TeX Live is several hundred megabytes
+  and a full one is multiple gigabytes, so 44 MB for a self-contained engine is a
+  good trade — and the user downloads it once rather than installing a
+  distribution.
+
+  Measure this from a **linked application**, never from a library build or a
+  toy example. An earlier attempt used an example that referenced only
+  `id()` and `is_available()`; neither reaches any Tectonic code, the linker
+  discarded the engine, and the probe reported *zero bytes added on
+  linux-aarch64*. Dead-code elimination happens at link time, so anything short
+  of a real binary that actually calls into the engine measures nothing.
+
+- The first local build of the vcpkg dependencies took about 25 minutes, and the
+  whole pipeline including the application about 34. That is a one-time cost per
+  machine, but it is a real barrier for contributors on Windows and worth saying
+  out loud rather than discovering.
 - Tectonic's first compile of a document downloads packages, so it needs network
   access and a visible progress state. Its package cache is warmed on first run
   and shared across projects. Fully offline first-use is a known limitation; a

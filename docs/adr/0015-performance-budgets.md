@@ -116,8 +116,14 @@ VS Code, not a native editor.
 | --- | --- | --- |
 | Time to interactive | < 1000 ms | **464 ms** (n=6, 430–514) |
 | Idle RSS | < 420 MB | **384 MB** |
-| Installer | < 40 MB | **2.8 MB** |
-| Installed payload | — | **6.3 MB** (single exe, frontend embedded) |
+| Installer | < 40 MB | **2.8 MB** — or **13.8 MB** with the embedded engine |
+| Installed payload | — | **6.3 MB** — or **50.5 MB** with the embedded engine |
+
+The embedded LaTeX engine is by far the largest single thing yaz ships: it adds
+44 MB to the binary and 11 MB to the download
+([0007](0007-latex-compilation-engines.md)). Even so the installer stays inside
+budget, and it replaces a TeX distribution measured in hundreds of megabytes or
+gigabytes.
 
 Time to interactive is measured by the frontend calling `report_ready` once it
 has mounted, not by watching for a window handle from outside the process — the
