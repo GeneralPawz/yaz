@@ -1,10 +1,7 @@
 [package]
 name = "yaz-core"
 description = "Project, document, workspace and settings model for yaz."
-# Literal, not `version.workspace = true`: release-please writes this field and
-# cannot do so through workspace inheritance. It keeps every crate in sync, and
-# ADR-0012 forbids hand-editing versions anyway.
-version = "0.1.0"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

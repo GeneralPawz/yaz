@@ -28,12 +28,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - uses: pnpm/action-setup@v4
-      - run: pnpm install --frozen-lockfile
+      # Installed directly rather than through the workspace: commit linting is
+      # a phase 1 concern and must not wait on the frontend lockfile that only
+      # arrives in phase 2.
+      - name: Install commitlint
+        run: npm install --no-save @commitlint/cli@^19 @commitlint/config-conventional@^19
       # Hooks can be skipped locally; CI is where this is actually enforced.
       # See docs/adr/0012-versioning-and-changelog.md
       - name: Lint commit messages
-        run: pnpm exec commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
+        run: npx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
 
   format:
     name: Formatting

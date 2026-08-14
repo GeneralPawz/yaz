@@ -20,13 +20,15 @@ homepage = "https://generalpawz.github.io/yaz"
 authors = ["yaz contributors"]
 
 [workspace.dependencies]
-# Internal
-yaz-core = { path = "crates/yaz-core", version = "0.1.0" }
-yaz-latex = { path = "crates/yaz-latex", version = "0.1.0" }
-yaz-compile = { path = "crates/yaz-compile", version = "0.1.0" }
-yaz-plugin = { path = "crates/yaz-plugin", version = "0.1.0" }
-yaz-zotero = { path = "crates/yaz-zotero", version = "0.1.0" }
-yaz-obsidian = { path = "crates/yaz-obsidian", version = "0.1.0" }
+# Internal. Path-only, deliberately: these crates are not published to crates.io,
+# so carrying a `version` here would only create a second place for release-please
+# to keep in sync. The single source of truth is [workspace.package] above.
+yaz-core = { path = "crates/yaz-core" }
+yaz-latex = { path = "crates/yaz-latex" }
+yaz-compile = { path = "crates/yaz-compile" }
+yaz-plugin = { path = "crates/yaz-plugin" }
+yaz-zotero = { path = "crates/yaz-zotero" }
+yaz-obsidian = { path = "crates/yaz-obsidian" }
 
 # Error handling
 thiserror = "2"

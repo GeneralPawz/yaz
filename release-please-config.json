@@ -16,14 +16,19 @@
   "packages": {
     ".": {
       "component": "yaz",
-      "release-type": "rust",
+      "_comment": "release-type is `node` rather than `rust` because the repository root is a VIRTUAL Cargo workspace with no [package] section, which the rust strategy rejects ('is not a package manifest'). The root package.json is a real manifest with a version, so it anchors the release; the Cargo and Tauri versions follow via extra-files.",
+      "release-type": "node",
       "package-name": "yaz",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
-        "crates/yaz-app/tauri.conf.json",
+        {
+          "type": "toml",
+          "path": "Cargo.toml",
+          "jsonpath": "$.workspace.package.version"
+        },
         {
           "type": "json",
-          "path": "package.json",
+          "path": "crates/yaz-app/tauri.conf.json",
           "jsonpath": "$.version"
         },
         {
@@ -39,6 +44,5 @@
       "package-name": "@yaz/api",
       "changelog-path": "CHANGELOG.md"
     }
-  },
-  "plugins": ["linked-versions"]
+  }
 }
