@@ -55,6 +55,11 @@ walkdir = "2"
 # Misc
 semver = { version = "1", features = ["serde"] }
 url = { version = "2", features = ["serde"] }
+# `bundled` compiles SQLite from source rather than linking a system library.
+# That is what makes it satisfy ADR-0014 without ceremony: it builds natively on
+# aarch64 with no system package, and adds no runtime dependency to the
+# installer.
+rusqlite = { version = "0.38", features = ["bundled"] }
 sha2 = "0.11"
 # Both root sources are compiled in, but only one is used at a time — see
 # yaz_core::net and ADR-0019. Enabling both features alone would make reqwest

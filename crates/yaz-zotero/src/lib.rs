@@ -32,6 +32,18 @@
 #![deny(unsafe_code)]
 #![warn(clippy::all)]
 
+pub mod bib;
+pub mod datadir;
+pub mod error;
+pub mod library;
+pub mod local_api;
+pub mod model;
+pub mod sqlite;
+
+pub use error::{Error, Result};
+pub use library::{Config, Library};
+pub use model::{Annotation, AnnotationKind, Item};
+
 /// Which source is currently serving library queries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActiveSource {
