@@ -1,12 +1,17 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
   import type { EditorApi } from "@yaz/api";
+  import Connections from "./lib/Connections.svelte";
+  import MenuBar, { type Menu } from "./lib/MenuBar.svelte";
   import PdfView from "./lib/PdfView.svelte";
   import Picker from "./lib/Picker.svelte";
   import { t } from "./lib/i18n";
   import * as ipc from "./lib/ipc";
   import { PluginRuntime, type PickerRequest } from "./lib/plugins/host";
   import ZoteroPlugin from "../../../plugins/zotero/src/main";
+
+  /** The plugin the shell asks about connection status on the user's behalf. */
+  const ZOTERO_PLUGIN_ID = "com.yaz.zotero";
 
   /**
    * The editor is loaded when a file is first opened, not at startup.
@@ -39,6 +44,48 @@
   let notice = $state<string | null>(null);
   let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 
+  let zoteroStatus = $state<ipc.ZoteroStatus | null>(null);
+  let connectionsBusy = $state(false);
+
+  /**
+   * Ask the backend how the library is being read.
+   *
+   * Never surfaced as a failure: not having Zotero is an ordinary state, and an
+   * error banner for it would be noise on most machines.
+   */
+  async function refreshConnections() {
+    connectionsBusy = true;
+    try {
+      zoteroStatus = await ipc.zoteroStatus(ZOTERO_PLUGIN_ID);
+    } catch {
+      zoteroStatus = null;
+    } finally {
+      connectionsBusy = false;
+    }
+  }
+
+  async function reconnect() {
+    connectionsBusy = true;
+    try {
+      await ipc.zoteroReconnect(ZOTERO_PLUGIN_ID);
+      zoteroStatus = await ipc.zoteroStatus(ZOTERO_PLUGIN_ID);
+    } catch (error) {
+      failure = String(error);
+    } finally {
+      connectionsBusy = false;
+    }
+  }
+
+  function notImplemented() {
+    showNotice(t("menu-not-implemented"));
+  }
+
+  function showNotice(text: string) {
+    notice = text;
+    clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(() => (notice = null), 6000);
+  }
+
   /**
    * The plugin runtime.
    *
@@ -58,11 +105,7 @@
     requestPicker: (request) => {
       picker = request;
     },
-    showNotice: (text) => {
-      notice = text;
-      clearTimeout(noticeTimer);
-      noticeTimer = setTimeout(() => (notice = null), 6000);
-    },
+    showNotice,
   });
 
   let commands = $state<ReturnType<PluginRuntime["availableCommands"]>>([]);
@@ -79,6 +122,94 @@
     } catch (error) {
       failure = String(error);
     }
+  }
+
+  /**
+   * The menu bar.
+   *
+   * Plugin commands land under Tools rather than in the toolbar, so a plugin can
+   * contribute a command without the shell growing a button for it — and without
+   * the shell knowing what the command does.
+   */
+  const menus = $derived<Menu[]>([
+    {
+      labelKey: "menu-file",
+      items: [
+        { labelKey: "menu-file-open-folder", action: chooseProject },
+        {
+          labelKey: "menu-file-save",
+          action: save,
+          disabled: !currentFile || !dirty,
+        },
+        {
+          labelKey: "menu-file-compile",
+          action: compile,
+          disabled: !project || busy,
+          separatorBefore: true,
+        },
+        {
+          labelKey: "menu-file-close-project",
+          action: closeProject,
+          disabled: !project,
+          separatorBefore: true,
+        },
+      ],
+    },
+    {
+      labelKey: "menu-edit",
+      items: [
+        { labelKey: "menu-edit-undo", action: notImplemented, disabled: true },
+        { labelKey: "menu-edit-redo", action: notImplemented, disabled: true },
+        {
+          labelKey: "menu-edit-find",
+          action: notImplemented,
+          disabled: true,
+          separatorBefore: true,
+        },
+      ],
+    },
+    {
+      labelKey: "menu-view",
+      items: [
+        {
+          labelKey: "menu-view-vim",
+          checked: vimMode,
+          action: () => {
+            vimMode = !vimMode;
+          },
+        },
+      ],
+    },
+    {
+      labelKey: "menu-tools",
+      items: commands.map((command) => ({
+        labelKey: command.nameKey,
+        action: () => runCommand(command.id),
+        disabled: false,
+      })),
+    },
+    {
+      labelKey: "menu-help",
+      items: [
+        { labelKey: "menu-help-documentation", action: notImplemented, disabled: true },
+        { labelKey: "menu-help-report-issue", action: notImplemented, disabled: true },
+        {
+          labelKey: "menu-help-about",
+          action: notImplemented,
+          disabled: true,
+          separatorBefore: true,
+        },
+      ],
+    },
+  ]);
+
+  function closeProject() {
+    project = null;
+    currentFile = null;
+    docText = "";
+    result = null;
+    pdfData = null;
+    void ipc.pluginSetProject(null);
   }
 
   const selectedEngineInfo = $derived(engines.find((e) => e.id === selectedEngine) ?? null);
@@ -106,8 +237,13 @@
     // without them, and blocking startup on a plugin would spend the budget in
     // ADR-0015 on something the user has not asked for yet.
     void runtime
-      .start({ "com.yaz.zotero": ZoteroPlugin })
-      .then(refreshCommands)
+      .start({ [ZOTERO_PLUGIN_ID]: ZoteroPlugin })
+      .then(() => {
+        refreshCommands();
+        // After the plugins are loaded, not before: the status call is itself
+        // brokered, and asking earlier is refused because nothing is granted yet.
+        return refreshConnections();
+      })
       .catch((error) => {
         failure = String(error);
       });
@@ -196,15 +332,18 @@
 </script>
 
 <div class="app">
+  <MenuBar {menus} />
+
   <header class="toolbar">
-    <button onclick={chooseProject}>{t("workspace-open-project")}</button>
     <button onclick={compile} disabled={!project || busy}>
       {busy ? t("compile-running") : t("compile-run")}
     </button>
-    <label class="toggle">
-      <input type="checkbox" bind:checked={vimMode} />
-      {t("editor-vim-mode")}
-    </label>
+
+    <Connections
+      status={zoteroStatus}
+      busy={connectionsBusy}
+      onreconnect={reconnect}
+    />
 
     <label class="engine" title={t("settings-engine-help")}>
       {t("settings-engine")}
@@ -223,18 +362,11 @@
       </select>
     </label>
 
-    {#each commands as command (command.id)}
-      <button onclick={() => runCommand(command.id)}>{command.name}</button>
-    {/each}
-
     {#if selectedEngineInfo && !selectedEngineInfo.available && selectedEngineInfo.unavailableReasonKey}
       <span class="warn">{t(selectedEngineInfo.unavailableReasonKey)}</span>
     {/if}
 
     <span class="spacer"></span>
-    {#if project}
-      <span class="path" title={project.root}>{project.root}</span>
-    {/if}
   </header>
 
   <div class="body">
@@ -392,7 +524,6 @@
     cursor: default;
   }
 
-  .toggle,
   .engine {
     display: flex;
     align-items: center;
@@ -505,14 +636,4 @@
     z-index: 110;
   }
 
-  .path {
-    color: var(--yaz-text-muted);
-    font-family: var(--yaz-font-mono);
-    font-size: 0.85em;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-inline-size: 30rem;
-    direction: rtl;
-  }
 </style>

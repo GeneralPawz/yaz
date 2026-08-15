@@ -60,6 +60,14 @@ export interface Notice {
 export interface RegisteredCommand {
   pluginId: string;
   id: string;
+  /**
+   * The message key, kept alongside the resolved name.
+   *
+   * The menu renders from the key rather than the string so that the i18n check
+   * can see it, and so a locale change re-renders the label rather than baking
+   * in whatever was active when the plugin loaded.
+   */
+  nameKey: string;
   name: string;
   callback: () => void | Promise<void>;
   isAvailable?: (() => boolean) | undefined;
@@ -126,6 +134,7 @@ export class PluginRuntime {
       runtime.commands.push({
         pluginId,
         id: `${pluginId}.${command.id}`,
+        nameKey: command.nameKey,
         name: t(command.nameKey),
         callback: command.callback,
         isAvailable: command.isAvailable,

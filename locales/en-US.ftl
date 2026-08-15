@@ -183,3 +183,37 @@ zotero-live-api-disabled = Zotero is running, but its local API is switched off
 zotero-live-api-disabled-help = Turn on "Allow other applications on this computer to communicate with Zotero" in Zotero's Advanced settings to read the library live.
 zotero-live-unexpected = Zotero answered unexpectedly
 zotero-demoted = The live connection failed, so the library is being read from a copy on disk.
+
+## Menu bar
+
+menu-file = File
+menu-edit = Edit
+menu-view = View
+menu-tools = Tools
+menu-help = Help
+
+menu-file-open-folder = Open folder…
+menu-file-save = Save
+menu-file-compile = Compile
+menu-file-close-project = Close project
+menu-edit-undo = Undo
+menu-edit-redo = Redo
+menu-edit-find = Find…
+menu-view-vim = Vim keys
+menu-view-connections = Connections
+menu-tools-engine = Typesetting engine
+menu-help-documentation = Documentation
+menu-help-report-issue = Report an issue
+menu-help-about = About yaz
+menu-not-implemented = That is not built yet.
+
+## Connections
+
+connections-title = Connections
+connections-none = Nothing is configured yet.
+connections-reconnect = Reconnect
+connections-zotero = Zotero
+connections-obsidian = Obsidian
+connections-not-configured = Not configured
+connections-reading-offline = Reading a copy of the library on disk
+connections-source = Source: { $source }

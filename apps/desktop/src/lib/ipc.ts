@@ -146,6 +146,16 @@ export interface ZoteroStatus {
   keysAreAuthoritative: boolean;
   dataDir: string | null;
   detail: string | null;
+  /**
+   * What probing the live source found, whatever the outcome.
+   *
+   * Separate from `source` because "Zotero is running but its local API is
+   * switched off" is fixable in half a minute, and invisible if the user is
+   * only told the library is being read offline.
+   */
+  liveStatusKey: string;
+  /** Whether a live source was tried and then demoted after failing. */
+  wasDemoted: boolean;
 }
 
 /** A library item. */
