@@ -2,11 +2,11 @@
 
 ## Requirements
 
-| Tool | Version | Needed for |
-| --- | --- | --- |
-| Rust | 1.85+ (edition 2024) | Everything in `crates/` |
-| Node | 22+ | `apps/`, `packages/`, `plugins/`, `docs/` |
-| pnpm | 9+ | Workspace management |
+| Tool | Version              | Needed for                                |
+| ---- | -------------------- | ----------------------------------------- |
+| Rust | 1.85+ (edition 2024) | Everything in `crates/`                   |
+| Node | 22+                  | `apps/`, `packages/`, `plugins/`, `docs/` |
+| pnpm | 9+                   | Workspace management                      |
 
 A contributor working only on Rust does not need Node, and vice versa. The
 targets in `rust-toolchain.toml` are installed automatically by rustup on first
@@ -22,7 +22,7 @@ pnpm dev           # dev mode: no updater, no live plugin registry
 ## Building the application
 
 > **Do not build the app with `cargo build --release`.** It produces a binary
-> that opens a window showing the webview's *"cannot reach this page"* error, and
+> that opens a window showing the webview's _"cannot reach this page"_ error, and
 > nothing about the message suggests a build problem.
 >
 > `tauri-build` distinguishes dev from production using environment the Tauri CLI
@@ -71,7 +71,7 @@ for an `arm64` directory. The missing piece is the **MSVC CRT**: look under
 `…\VC\Tools\MSVC\<ver>\lib\` and if you see only `x64`, `x86`, and `onecore`,
 this is your problem.
 
-Note that this blocks *all* builds on an ARM64 host, including cross-compiling
+Note that this blocks _all_ builds on an ARM64 host, including cross-compiling
 to x86_64 — build scripts and proc-macro crates are compiled for the host.
 
 Fix, from an **elevated** terminal:
@@ -110,7 +110,7 @@ error: failed to run custom build command for `ring v0.17.x`
 
 `ring` — pulled in through rustls, which reqwest uses — hand-writes assembly
 that MSVC's assembler cannot build for aarch64, so its build script requires
-clang specifically. This bites *only* on Windows ARM64: the GitHub-hosted
+clang specifically. This bites _only_ on Windows ARM64: the GitHub-hosted
 Windows runners ship LLVM already, so CI is green while your machine is not.
 
 `winget install LLVM.LLVM` needs elevation and offers no user scope. The
@@ -159,7 +159,7 @@ Identical on aarch64 — every one of these has a native ARM64 build.
 You do not need a TeX distribution. Tectonic is embedded and is the default
 engine ([ADR-0007](../adr/0007-latex-compilation-engines.md)).
 
-A system TeX Live or MiKTeX is useful for exercising the *other* engine path,
+A system TeX Live or MiKTeX is useful for exercising the _other_ engine path,
 which is the one journal templates requiring `pdflatex` or `lualatex` use. On
 Windows-on-ARM be aware that MiKTeX is typically an x64 build running under
 emulation — fine for correctness testing, meaningless for performance numbers.

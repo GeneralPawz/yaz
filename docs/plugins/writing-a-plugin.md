@@ -11,7 +11,7 @@ mode are **core plugins**, written against exactly the `@yaz/api` you are
 reading about, with no back doors.
 
 That is deliberate, and it is the reason to trust the API is adequate: if a core
-plugin needs something that does not exist, the answer is new *public* API, never
+plugin needs something that does not exist, the answer is new _public_ API, never
 a shortcut for first-party code. The inadequacies surface to us before they
 surface to you.
 

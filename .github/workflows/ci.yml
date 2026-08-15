@@ -47,6 +47,19 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt --all --check
+      # The Prettier half, which this job did not run for a long time while
+      # CONTRIBUTING listed formatting among the rules that fail the build.
+      # Forty files had drifted, and nothing was going to notice.
+      #
+      # Prettier alone rather than `pnpm format:check`, which would re-run
+      # cargo fmt: the Rust gate above stays free of the Node toolchain, so a
+      # contributor working only on Rust still gets a fast, standalone answer.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v6
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec prettier --check .
 
   # The frontend and docs jobs check work that lands in phase 2. Rather than
   # delete them — a job that does not exist is a job nobody remembers to add —

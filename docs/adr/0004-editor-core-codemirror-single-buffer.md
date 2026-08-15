@@ -105,6 +105,6 @@ text rendering is oriented towards monospaced code rather than the proportional
 typography visual mode needs.
 
 **Start single-buffer, adopt ProseMirror later if tables prove unworkable.**
-Considered and set aside as a *plan*, but noted as a genuine escape hatch: since
+Considered and set aside as a _plan_, but noted as a genuine escape hatch: since
 the buffer is the file, adding a document-model editor later is additive and
 does not invalidate the decoration work. If we ever take it, it needs a new ADR.

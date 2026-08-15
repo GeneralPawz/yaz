@@ -22,10 +22,10 @@ ARM64 rather than an x86_64 build under emulation.
 
 ## Two downloads 📦
 
-| Download | Installer | Take this if |
-| --- | ---: | --- |
-| **yaz** | ~14 MB | You want it to work. LaTeX engine included, nothing else to install |
-| **yaz-slim** | ~3 MB | You already have TeX Live or MiKTeX, or you need `pdflatex` / `lualatex` |
+| Download     | Installer | Take this if                                                             |
+| ------------ | --------: | ------------------------------------------------------------------------ |
+| **yaz**      |    ~14 MB | You want it to work. LaTeX engine included, nothing else to install      |
+| **yaz-slim** |     ~3 MB | You already have TeX Live or MiKTeX, or you need `pdflatex` / `lualatex` |
 
 Same application, same install location — the only difference is whether the
 LaTeX engine is inside it. **Unsure? Take `yaz`.** It compiles the moment you
@@ -40,16 +40,16 @@ The updater keeps you on the build you chose, because moving a `yaz` install to
 A **source mode** with syntax highlighting, autocompletion, line numbers and
 diagnostics, and a **visual mode** that renders the document as rich text.
 
-They are the *same editor over the same buffer*. That is the whole trick: the
+They are the _same editor over the same buffer_. That is the whole trick: the
 buffer always holds your real `.tex`, and visual mode is decorations drawn over
 it rather than a second document model.
 
-| Because of that | You get |
-| --- | --- |
-| One editor instance | Vim keybindings work in **both** modes, not implemented twice |
-| No conversion step | Switching modes cannot change a byte of your file |
-| One undo stack | Mode switches preserve history and cursor position |
-| One plugin surface | An editor plugin works in both modes without knowing modes exist |
+| Because of that     | You get                                                          |
+| ------------------- | ---------------------------------------------------------------- |
+| One editor instance | Vim keybindings work in **both** modes, not implemented twice    |
+| No conversion step  | Switching modes cannot change a byte of your file                |
+| One undo stack      | Mode switches preserve history and cursor position               |
+| One plugin surface  | An editor plugin works in both modes without knowing modes exist |
 
 Unknown macros from a conference template degrade to plain source instead of
 crashing a converter.
@@ -84,10 +84,10 @@ mangles it.
 
 Two engines, neither a fallback for the other:
 
-| Engine | Good for | Cost |
-| --- | --- | --- |
-| **Tectonic**, embedded | Installing nothing; native on every architecture | XeTeX-based, so it cannot be `pdflatex` |
-| **System TeX** (TeX Live, MiKTeX) | Templates demanding `pdflatex` or `lualatex` | Needs a distribution, often a gigabyte or more |
+| Engine                            | Good for                                         | Cost                                           |
+| --------------------------------- | ------------------------------------------------ | ---------------------------------------------- |
+| **Tectonic**, embedded            | Installing nothing; native on every architecture | XeTeX-based, so it cannot be `pdflatex`        |
+| **System TeX** (TeX Live, MiKTeX) | Templates demanding `pdflatex` or `lualatex`     | Needs a distribution, often a gigabyte or more |
 
 The choice is per project and stored in `yaz.toml`, so a co-author who opens your
 project compiles the same way you do. Engines are **refused, never substituted** —
@@ -112,7 +112,7 @@ capabilities you granted.
 
 yaz's own Zotero bridge, Obsidian bridge and Vim mode are **core plugins** on the
 exact public API you get, with no back doors. If a core plugin needs something
-that does not exist, the answer is new *public* API.
+that does not exist, the answer is new _public_ API.
 [Writing a plugin](https://generalpawz.github.io/yaz/plugins/writing-a-plugin).
 
 ## Actually native on ARM 🦾
@@ -124,14 +124,14 @@ measured on ARM64 too — a budget met only on x86_64 is not met.
 
 ## Status 📍
 
-| Phase | Goal | |
-| --- | --- | --- |
-| 1 | Architecture decided and recorded, repository, CI, release automation | ✅ |
-| 2 | Walking skeleton — open a folder, edit a `.tex`, compile, see the PDF | ✅ |
-| 3 | Plugin runtime, capability broker, theme engine, i18n runtime | next |
-| 4 | Editor depth — Lezer grammar, completion, diagnostics, Vim, visual mode | |
-| 5 | Zotero and Obsidian bridges | |
-| 6 | Templates, export, community registry | |
+| Phase | Goal                                                                    |      |
+| ----- | ----------------------------------------------------------------------- | ---- |
+| 1     | Architecture decided and recorded, repository, CI, release automation   | ✅   |
+| 2     | Walking skeleton — open a folder, edit a `.tex`, compile, see the PDF   | ✅   |
+| 3     | Plugin runtime, capability broker, theme engine, i18n runtime           | next |
+| 4     | Editor depth — Lezer grammar, completion, diagnostics, Vim, visual mode |      |
+| 5     | Zotero and Obsidian bridges                                             |      |
+| 6     | Templates, export, community registry                                   |      |
 
 **Works today:** open a folder, edit `.tex` files with line numbers, LaTeX
 highlighting and optional Vim keys, save, choose an engine, compile, and read the
@@ -141,7 +141,7 @@ PDF beside your source.
 Obsidian bridges.
 
 Phase 3 comes before feature work deliberately — every feature after it is built
-*on* the plugin API, the theme tokens and the message catalogue, rather than
+_on_ the plugin API, the theme tokens and the message catalogue, rather than
 retrofitted onto them.
 
 ## Building from source 🔨
@@ -158,7 +158,7 @@ pnpm app:build     # release binary + installer
 
 > [!CAUTION]
 > **Do not build the app with `cargo build --release`.** It produces a binary
-> whose window shows the webview's *"cannot reach this page"* error, and nothing
+> whose window shows the webview's _"cannot reach this page"_ error, and nothing
 > in that message suggests a build problem — `tauri-build` defaults to
 > development mode without the Tauri CLI's environment, so the frontend is never
 > embedded. Plain `cargo` is fine for every other crate.
@@ -169,18 +169,18 @@ mention ARM64. Both are documented, with the exact commands, in
 
 ## Documentation 📖
 
-| Page | What is in it |
-| --- | --- |
-| [Getting started](https://generalpawz.github.io/yaz/guide/getting-started) | Build it, open a folder, compile your first document |
-| [Choosing an engine](https://generalpawz.github.io/yaz/guide/engines) | Tectonic vs system TeX, and why a choice is never silently substituted |
-| [Writing a plugin](https://generalpawz.github.io/yaz/plugins/writing-a-plugin) | The API, the manifest, capabilities, and what they do not protect against |
-| [Capability reference](https://generalpawz.github.io/yaz/reference/generated/capabilities) | Every privileged thing a plugin can ask for — generated from the code |
-| [Development setup](https://generalpawz.github.io/yaz/contributing/setup) | Platform prerequisites, including the ARM64 Windows traps |
-| [Decision records](https://generalpawz.github.io/yaz/reference/generated/adr-index) | Why anything is the way it is |
+| Page                                                                                       | What is in it                                                             |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| [Getting started](https://generalpawz.github.io/yaz/guide/getting-started)                 | Build it, open a folder, compile your first document                      |
+| [Choosing an engine](https://generalpawz.github.io/yaz/guide/engines)                      | Tectonic vs system TeX, and why a choice is never silently substituted    |
+| [Writing a plugin](https://generalpawz.github.io/yaz/plugins/writing-a-plugin)             | The API, the manifest, capabilities, and what they do not protect against |
+| [Capability reference](https://generalpawz.github.io/yaz/reference/generated/capabilities) | Every privileged thing a plugin can ask for — generated from the code     |
+| [Development setup](https://generalpawz.github.io/yaz/contributing/setup)                  | Platform prerequisites, including the ARM64 Windows traps                 |
+| [Decision records](https://generalpawz.github.io/yaz/reference/generated/adr-index)        | Why anything is the way it is                                             |
 
 ## Why the decisions are published 🔍
 
-A plugin author asking *why is the API shaped like this* should be able to read
+A plugin author asking _why is the API shaped like this_ should be able to read
 the answer rather than guess. So the reasoning is documentation, not an internal
 artefact — including the decisions that turned out to be **wrong**.
 
@@ -223,7 +223,7 @@ There is **no CLA**; contributions are made under the licence of the files they
 touch, certified with a [DCO](https://developercertificate.org/) sign-off.
 
 What the AGPL buys, precisely: nobody can ship a closed-source fork, and nobody
-can run yaz as a hosted service without publishing their changes. It does *not*
+can run yaz as a hosted service without publishing their changes. It does _not_
 forbid selling copies — it forbids selling them closed. The reasoning, and the
 alternatives rejected, are in
 [ADR-0018](https://generalpawz.github.io/yaz/adr/0018-licensing).

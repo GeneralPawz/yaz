@@ -9,7 +9,7 @@ yaz is a long-lived desktop application with a third-party plugin ecosystem. Two
 properties make undocumented decisions unusually expensive here:
 
 1. **A public plugin API is a promise.** Once community plugins depend on a
-   behaviour, changing it breaks other people's work. We need to know *why* an
+   behaviour, changing it breaks other people's work. We need to know _why_ an
    API is shaped the way it is before we consider reshaping it.
 2. **The interesting choices are architectural, not local.** Whether the visual
    editor shares a buffer with the source editor, or whether plugins get DOM
@@ -27,7 +27,7 @@ the format described by `docs/adr/README.md`.
 - An ADR is required for anything that constrains code we have not written yet:
   dependencies at the framework tier, the plugin contract, the file formats we
   read or write, the platform matrix, the release process.
-- An ADR is *not* required for reversible, local choices — which crate parses
+- An ADR is _not_ required for reversible, local choices — which crate parses
   TOML, how a function is named.
 - ADRs are append-only. A reversed decision is recorded by a new ADR that
   supersedes the old one; the old one stays in the tree with its status updated.

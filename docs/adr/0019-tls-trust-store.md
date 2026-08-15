@@ -46,7 +46,7 @@ reversible.
 - **Fails completely behind a TLS-intercepting proxy.** This is the decisive
   objection. Zotero sync, the plugin registry and update checks all break, for
   exactly the users we are building for.
-- **Ignores administrator policy**, including *removals*. If an institution
+- **Ignores administrator policy**, including _removals_. If an institution
   distrusts a CA, we keep trusting it — which is a security argument against
   bundling, not for it.
 - **Roots update on our release cadence**, not the OS's. A compromised CA stays
@@ -118,7 +118,7 @@ both `rustls-tls-native-roots` and `rustls-tls-webpki-roots` produces a client
 trusting the **union** of the OS store and Mozilla's list.
 
 That looks like a harmless superset and quietly destroys half of what this ADR is
-for: a CA the administrator *removed* would still be trusted through the bundled
+for: a CA the administrator _removed_ would still be trusted through the bundled
 copy, so institutional policy is not honoured after all.
 
 Both are therefore compiled in, and exactly one is switched on per client —
@@ -163,5 +163,5 @@ administrator installing one puts it in the OS store anyway. Worth revisiting
 only if a concrete case appears that the OS store does not cover.
 
 **Pin certificates for known hosts.** Strongest against interception, and
-actively wrong here: it would *break* the legitimate corporate proxies this ADR
+actively wrong here: it would _break_ the legitimate corporate proxies this ADR
 exists to accommodate.

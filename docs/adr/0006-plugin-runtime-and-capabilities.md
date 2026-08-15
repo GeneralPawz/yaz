@@ -41,15 +41,15 @@ identity, its manifest, and the user's grants.
 Declared in `manifest.json`, granted by the user at install time, revocable
 individually at any time in settings:
 
-| Capability | Grants |
-| --- | --- |
-| `fs:project` | Read/write within the open project root |
-| `fs:read` / `fs:write` | Access to declared paths outside the project |
-| `net` | HTTP to explicitly declared host patterns — never a wildcard |
-| `process` | Execute declared binaries, argument-validated |
-| `zotero` | The Zotero bridge API |
-| `obsidian` | Vault access through the Obsidian bridge |
-| `clipboard`, `notifications`, `shell:open` | As named |
+| Capability                                 | Grants                                                       |
+| ------------------------------------------ | ------------------------------------------------------------ |
+| `fs:project`                               | Read/write within the open project root                      |
+| `fs:read` / `fs:write`                     | Access to declared paths outside the project                 |
+| `net`                                      | HTTP to explicitly declared host patterns — never a wildcard |
+| `process`                                  | Execute declared binaries, argument-validated                |
+| `zotero`                                   | The Zotero bridge API                                        |
+| `obsidian`                                 | Vault access through the Obsidian bridge                     |
+| `clipboard`, `notifications`, `shell:open` | As named                                                     |
 
 Rules enforced by the broker: paths are canonicalised and symlink-resolved
 before any check, so `..` traversal and symlink escapes fail; network hosts are
@@ -72,7 +72,7 @@ overstating the guarantee would be worse than not having it.
   explicit action with the capability list shown.
 - A **restricted mode** loads no community plugins at all, for opening untrusted
   projects.
-- A plugin's declared capabilities are shown at install *and* re-confirmed when
+- A plugin's declared capabilities are shown at install _and_ re-confirmed when
   an update requests capabilities the installed version did not have. Silent
   privilege escalation through auto-update is the most likely real attack, and
   [0013](0013-update-distribution.md) blocks it.
@@ -114,7 +114,7 @@ protects against UI tampering, while both designs gate disk and network equally.
 
 **WebAssembly plugins.** Strongest isolation, language-agnostic. Rejected on
 author experience: a real toolchain and build step per plugin, and poor DOM
-ergonomics. Not ruled out for a future *compute* plugin type — a citation-style
+ergonomics. Not ruled out for a future _compute_ plugin type — a citation-style
 processor or exotic parser — where isolation matters and no UI is involved.
 
 **Native dynamic-library plugins.** Rejected in [0002](0002-application-shell-tauri.md):

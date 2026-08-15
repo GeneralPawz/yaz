@@ -16,7 +16,7 @@ do not silently deviate.
 The load-bearing ones:
 
 - **0004** — There is ONE CodeMirror buffer holding the raw `.tex`. Visual mode
-  is *decorations over that buffer*, never a second document model. Do not
+  is _decorations over that buffer_, never a second document model. Do not
   introduce ProseMirror or a LaTeX↔document converter.
 - **0005** — Three tiers: core / core plugins / community plugins. Core plugins
   (`plugins/`) use only the public `@yaz/api`. **Never add a privileged back door

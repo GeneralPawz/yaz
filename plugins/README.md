@@ -4,7 +4,7 @@ Bundled with the application, toggleable, maintained by us — and **written
 strictly against the public `@yaz/api`, with no privileged access whatsoever**.
 
 That last part is the whole point. Shipping the Zotero bridge, the Obsidian
-bridge and Vim mode as *plugins* means the plugin API is exercised by demanding,
+bridge and Vim mode as _plugins_ means the plugin API is exercised by demanding,
 real features from the start, and its inadequacies surface to us before they
 surface to an external author.
 
@@ -18,12 +18,12 @@ bundled `main.js`. Start from [`packages/plugin-template`](../packages/plugin-te
 
 Planned, in roughly the order they arrive:
 
-| Plugin | Phase |
-| --- | --- |
-| `vim` | 4 |
-| `zotero` | 5 |
-| `obsidian` | 5 |
-| `bibliography`, `outline`, `synctex` | 5 |
-| `templates`, `export`, `git`, `spellcheck`, `tables`, `figures`, `snippets`, `stats` | 6 |
+| Plugin                                                                               | Phase |
+| ------------------------------------------------------------------------------------ | ----- |
+| `vim`                                                                                | 4     |
+| `zotero`                                                                             | 5     |
+| `obsidian`                                                                           | 5     |
+| `bibliography`, `outline`, `synctex`                                                 | 5     |
+| `templates`, `export`, `git`, `spellcheck`, `tables`, `figures`, `snippets`, `stats` | 6     |
 
 The directory is empty until the plugin runtime lands in phase 3.

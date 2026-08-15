@@ -39,17 +39,17 @@ user-overridable mapping.
 Implemented in Rust with `pulldown-cmark` and a LaTeX writer, so it is fast, has
 no Pandoc dependency, and is testable with snapshot tests over a corpus.
 
-| Obsidian construct | LaTeX result |
-| --- | --- |
-| `# Heading` | `\section` / `\subsection`, depth-mapped to document class |
-| `[[Note]]` → note with a citation key in frontmatter | `\cite{key}` |
-| `[[Note]]` → note that maps to a section | `\ref{sec:...}` |
-| `[[Note]]` → otherwise | `\hyperref` or footnote, per configuration |
-| `![[Note]]` | `\input{}` of the translated note |
-| `![[image.png]]` | `\includegraphics` with the asset copied into the project |
-| `> [!note]` callouts | A configurable environment |
-| `$...$`, `$$...$$` | Passed through unchanged |
-| Frontmatter | Preamble metadata: title, author, keywords |
+| Obsidian construct                                   | LaTeX result                                               |
+| ---------------------------------------------------- | ---------------------------------------------------------- |
+| `# Heading`                                          | `\section` / `\subsection`, depth-mapped to document class |
+| `[[Note]]` → note with a citation key in frontmatter | `\cite{key}`                                               |
+| `[[Note]]` → note that maps to a section             | `\ref{sec:...}`                                            |
+| `[[Note]]` → otherwise                               | `\hyperref` or footnote, per configuration                 |
+| `![[Note]]`                                          | `\input{}` of the translated note                          |
+| `![[image.png]]`                                     | `\includegraphics` with the asset copied into the project  |
+| `> [!note]` callouts                                 | A configurable environment                                 |
+| `$...$`, `$$...$$`                                   | Passed through unchanged                                   |
+| Frontmatter                                          | Preamble metadata: title, author, keywords                 |
 
 **The mapping is data, not code** — a TOML file in the project, with our default
 shipped and fully overridable. Vault conventions vary enormously between users
@@ -97,7 +97,7 @@ out later as an optional enhancement.
 already handles most of this. Rejected as a hard dependency: it is a large
 external binary the user must install, it is not consistently native on ARM64,
 and we would still write the Obsidian-specific layer since Pandoc does not
-understand wikilinks, embeds, or callouts. Offered as an *optional* export path
+understand wikilinks, embeds, or callouts. Offered as an _optional_ export path
 in the `export` core plugin where the user has it.
 
 **Import by copy-paste only.** Rejected as not integration.
