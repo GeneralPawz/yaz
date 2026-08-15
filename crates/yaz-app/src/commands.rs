@@ -41,7 +41,17 @@ impl From<yaz_core::Error> for CommandError {
 }
 
 impl CommandError {
-    fn new(message_key: &str, detail: impl std::fmt::Display) -> Self {
+    /// The message key the frontend resolves against the active locale.
+    ///
+    /// Test-only: production code serialises the whole struct across IPC rather
+    /// than reading the key back, so a non-test accessor would be dead code and
+    /// CI denies warnings.
+    #[cfg(test)]
+    pub(crate) fn message_key(&self) -> &str {
+        &self.message_key
+    }
+
+    pub(crate) fn new(message_key: &str, detail: impl std::fmt::Display) -> Self {
         Self {
             message_key: message_key.to_owned(),
             detail: detail.to_string(),

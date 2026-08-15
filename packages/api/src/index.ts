@@ -106,6 +106,8 @@ export interface App {
   readonly i18n: I18nApi;
   /** Transient user-facing messages. */
   readonly notices: NoticeApi;
+  /** Chooser dialogs. */
+  readonly ui: UiApi;
   /** Zotero library access. Requires the `zotero` capability. */
   readonly zotero: ZoteroApi;
   /** Obsidian vault access. Requires the `obsidian` capability. */
@@ -157,6 +159,14 @@ export interface EditorApi {
   replaceRange(from: number, to: number, text: string): void;
   /** Current selection as byte offsets. */
   getSelection(): { from: number; to: number };
+  /**
+   * Replace the selection with `text`, or insert at the cursor when nothing is
+   * selected.
+   *
+   * Equivalent to `replaceRange(...getSelection(), text)`, which is what every
+   * plugin that inserts anything would otherwise write.
+   */
+  insertAtCursor(text: string): void;
   /** Which rendering mode is active. Does not affect the buffer contents. */
   getMode(): "source" | "visual";
 }
@@ -233,7 +243,10 @@ export interface WorkspaceApi {
    * The factory is handed a plain `HTMLElement` to render into — deliberately,
    * so that the plugin contract does not depend on the shell's framework.
    */
-  registerView(type: string, factory: (container: HTMLElement) => ViewHandle): void;
+  registerView(
+    type: string,
+    factory: (container: HTMLElement) => ViewHandle,
+  ): void;
 }
 
 /** Handle returned by a view factory. @since 0.1.0 */
@@ -271,9 +284,9 @@ export interface CompileDiagnostic {
   /** The engine's own message text. */
   message: string;
   /** Source file, when the log attributes one. */
-  file?: string;
+  file?: string | undefined;
   /** 1-based line number, when the log attributes one. */
-  line?: number;
+  line?: number | undefined;
 }
 
 /**
@@ -287,24 +300,212 @@ export interface CompileDiagnostic {
  * @since 0.1.0
  */
 export interface ZoteroApi {
-  /** Which source is currently serving queries, and whether it is live. */
-  readonly source: {
-    kind: "better-bibtex" | "local-api" | "exported-bib" | "sqlite" | "none";
-    isLive: boolean;
-  };
-  /** Search the library. */
-  search(query: string): Promise<ZoteroItem[]>;
-  /** Ensure an item exists in the project `.bib` and return its citation key. */
-  ensureInBibliography(itemKey: string): Promise<string>;
+  /**
+   * Which source is answering, and whether it is current.
+   *
+   * Asynchronous because connecting is deferred until something actually asks:
+   * probing a closed Zotero costs a connection timeout, and paying it during
+   * startup would slow launch for every user including those who never open the
+   * citation picker.
+   */
+  status(): Promise<ZoteroStatus>;
+
+  /** Search the library. An empty query lists recent items. */
+  search(query: string, limit?: number): Promise<ZoteroItem[]>;
+
+  /**
+   * Every passage a reader marked in an item.
+   *
+   * Note that not all of them are quotable — see
+   * {@link ZoteroAnnotation.isQuotable}.
+   */
+  listAnnotations(itemKey: string): Promise<ZoteroAnnotation[]>;
+
+  /**
+   * Ensure an item exists in the project `.bib` and return its citation key.
+   *
+   * The project `.bib` is the compile-time source of truth, so this copies the
+   * entry in rather than pointing at the library: a document has to build on a
+   * co-author's machine that has never had Zotero installed.
+   *
+   * Calling this twice for the same item does not append a duplicate.
+   */
+  ensureInBibliography(
+    itemKey: string,
+    bibliography?: string,
+  ): Promise<CitationKey>;
+
+  /** Re-probe the sources, e.g. after the user starts Zotero. */
+  refresh(): Promise<void>;
+}
+
+/**
+ * Which source is serving library queries.
+ *
+ * Exposed deliberately: silently serving results from a stale exported `.bib`
+ * while presenting them as the live library would be a correctness problem in a
+ * citation tool.
+ *
+ * @since 0.1.0
+ */
+export interface ZoteroStatus {
+  kind: "better-bibtex" | "local-api" | "exported-bib" | "sqlite" | "none";
+  /** Message key naming the source, for display. */
+  sourceKey: string;
+  /** Whether the source reflects the library as it is right now. */
+  isLive: boolean;
+  /**
+   * Whether citation keys come from a source that owns them.
+   *
+   * `false` means keys are generated locally and **may not match** what a
+   * collaborator's Better BibTeX produces. Worth surfacing rather than
+   * discovering later in someone else's document.
+   */
+  keysAreAuthoritative: boolean;
+  /** The data directory in use, when reading offline. */
+  dataDir: string | null;
+  /** Diagnostic text when no source is available. */
+  detail: string | null;
 }
 
 /** A Zotero library item. @since 0.1.0 */
 export interface ZoteroItem {
   key: string;
   citationKey: string | null;
+  /** Zotero's item type, e.g. `journalArticle`. */
+  itemType: string;
   title: string;
   creators: string[];
   year: number | null;
+  /** Journal, proceedings or book title, when the item has one. */
+  container: string | null;
+}
+
+/**
+ * A passage a reader marked in an attachment.
+ *
+ * Zotero anchors these to an attachment and the attachment to an item; that
+ * indirection is resolved before it reaches a plugin, so `itemKey` is the
+ * citable work rather than the PDF.
+ *
+ * @since 0.1.0
+ */
+export interface ZoteroAnnotation {
+  key: string;
+  /** The citable item this belongs to. */
+  itemKey: string;
+  kind: "highlight" | "note" | "image" | "ink" | "underline" | "other";
+  /** Message key naming the kind. */
+  kindKey: string;
+  /** The marked text. Empty for kinds that mark a region rather than text. */
+  text: string;
+  /** The reader's own comment, which is not the source's words. */
+  comment: string | null;
+  /**
+   * Highlight colour as Zotero records it, e.g. `#ffd400`.
+   *
+   * Readers encode meaning in colour — one for claims, another for method — so
+   * a picker that discards it throws away the only organisation many libraries
+   * have.
+   */
+  color: string | null;
+  /**
+   * The page label as the document assigns it, which is not always a number.
+   *
+   * `null` when the attachment has no pagination, rather than the placeholder
+   * Zotero stores — citing page "-" is worse than citing no page.
+   */
+  pageLabel: string | null;
+  /**
+   * Whether this marks text worth offering as a quotation.
+   *
+   * `false` for ink and image marks, which cover a region and have no text, and
+   * for notes, which are the reader's words rather than the source's — quoting
+   * one as the source would misattribute it.
+   */
+  isQuotable: boolean;
+}
+
+/** The outcome of ensuring an item is citable from this project. @since 0.1.0 */
+export interface CitationKey {
+  /** The key to use in `\cite{...}`. */
+  key: string;
+  /** Whether this call appended the entry. */
+  added: boolean;
+  /** The bibliography file, relative to the project root. */
+  bibliography: string;
+  /** Whether the key came from a source that owns citation keys. */
+  isAuthoritative: boolean;
+}
+
+/**
+ * Chooser dialogs.
+ *
+ * A plugin could build one out of raw DOM — it has the access — but then every
+ * plugin's picker would look and behave differently, and none of them would
+ * follow the theme or the keyboard conventions. This is the shared one.
+ *
+ * @since 0.1.0
+ */
+export interface UiApi {
+  /**
+   * Present a list and resolve with the chosen value, or `null` if dismissed.
+   *
+   * @typeParam T - the value carried by each row, returned as chosen.
+   */
+  pick<T>(options: PickerOptions<T>): Promise<T | null>;
+}
+
+/** Configuration for {@link UiApi.pick}. @since 0.1.0 */
+export interface PickerOptions<T> {
+  /** Message key for the dialog title. */
+  titleKey: string;
+  /** Message key for the filter field's placeholder. */
+  placeholderKey?: string | undefined;
+  /** Message key shown when there is nothing to choose from. */
+  emptyKey?: string | undefined;
+  /**
+   * The rows.
+   *
+   * A function is called on every keystroke and is how a picker searches a
+   * library too large to send at once; an array is filtered locally.
+   */
+  items: PickerItem<T>[] | ((query: string) => Promise<PickerItem<T>[]>);
+}
+
+/**
+ * One row in a picker.
+ *
+ * The text fields here are **data, not interface copy** — a paper's title, an
+ * author's name, a highlighted sentence — so they are strings rather than
+ * message keys. This is the one place that distinction matters: a title must not
+ * be translated, and there is no catalogue that could contain it.
+ *
+ * @since 0.1.0
+ */
+export interface PickerItem<T> {
+  /** Returned by {@link UiApi.pick} when this row is chosen. */
+  value: T;
+  /** Primary text. */
+  label: string;
+  /**
+   * Secondary text, shown beside the label.
+   *
+   * Written `| undefined` rather than plain optional so that a caller under
+   * `exactOptionalPropertyTypes` can pass a value that may be absent — which is
+   * what building a row from library data always looks like.
+   */
+  description?: string | undefined;
+  /** Longer text, shown beneath. */
+  detail?: string | undefined;
+  /**
+   * A colour to accent the row with, e.g. a highlight's own colour.
+   *
+   * The one sanctioned exception to "no literal colours" (ADR-0010): this is a
+   * value that came out of the user's data, not a design decision, and no theme
+   * token could represent it.
+   */
+  accentColor?: string | undefined;
 }
 
 /**

@@ -18,7 +18,7 @@
    * Bumped when tokens are added. Token names, once published, are effectively
    * permanent: renaming one breaks every theme.
    */
-  --yaz-tokens-version: 1;
+  --yaz-tokens-version: 2;
 
   /* ---- Surfaces --------------------------------------------------------- */
   --yaz-bg-primary: #ffffff;
@@ -28,6 +28,10 @@
   --yaz-bg-hover: rgba(0, 0, 0, 0.04);
   --yaz-bg-active: rgba(0, 0, 0, 0.08);
   --yaz-bg-selection: rgba(47, 108, 226, 0.18);
+  /* The dimming behind a modal. Distinct from --yaz-bg-overlay, which is the
+     modal's own surface: one is a scrim, the other is a panel, and a theme
+     needs to set them independently. */
+  --yaz-scrim: rgba(0, 0, 0, 0.32);
 
   /* ---- Text ------------------------------------------------------------- */
   --yaz-text-primary: #1a1d21;
@@ -76,6 +80,8 @@
   --yaz-font-mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
   --yaz-font-prose: Georgia, "Times New Roman", serif;
   --yaz-font-size-base: 14px;
+  /* Secondary text: metadata beside a title, a caption under a row. */
+  --yaz-font-size-sm: 12px;
   --yaz-line-height: 1.55;
 
   /* ---- Spacing scale ---------------------------------------------------- */

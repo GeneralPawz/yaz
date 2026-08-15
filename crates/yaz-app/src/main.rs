@@ -14,6 +14,7 @@
 #![warn(clippy::all)]
 
 mod commands;
+mod plugin_host;
 
 /// True when running in development mode.
 ///
@@ -54,6 +55,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(clock)
+        .manage(plugin_host::PluginHost::new())
         .invoke_handler(tauri::generate_handler![
             commands::open_project,
             commands::read_file,
@@ -64,6 +66,14 @@ fn main() {
             commands::set_project_engine,
             commands::read_artefact,
             commands::report_ready,
+            plugin_host::plugin_zotero_status,
+            plugin_host::plugin_zotero_search,
+            plugin_host::plugin_zotero_annotations,
+            plugin_host::plugin_zotero_ensure_in_bibliography,
+            plugin_host::plugin_zotero_reconnect,
+            plugin_host::plugin_denials,
+            plugin_host::plugin_list,
+            plugin_host::plugin_set_project,
         ])
         .setup(|_app| {
             if is_dev_mode() {

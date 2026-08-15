@@ -58,7 +58,11 @@ export function readFile(root: string, relativePath: string): Promise<string> {
 }
 
 /** Write a project-relative file. */
-export function writeFile(root: string, relativePath: string, contents: string): Promise<void> {
+export function writeFile(
+  root: string,
+  relativePath: string,
+  contents: string,
+): Promise<void> {
   return invoke<void>("write_file", { root, relativePath, contents });
 }
 
@@ -100,7 +104,10 @@ export function getProjectSettings(root: string): Promise<ProjectSettings> {
 }
 
 /** Persist the engine choice, writing `yaz.toml` into the project. */
-export function setProjectEngine(root: string, engineId: string): Promise<void> {
+export function setProjectEngine(
+  root: string,
+  engineId: string,
+): Promise<void> {
   return invoke<void>("set_project_engine", { root, engineId });
 }
 
@@ -119,4 +126,131 @@ export function reportReady(): Promise<number> {
 export async function readArtefact(path: string): Promise<Uint8Array> {
   const bytes = await invoke<number[]>("read_artefact", { path });
   return new Uint8Array(bytes);
+}
+
+// ---------------------------------------------------------------------------
+// The brokered plugin surface.
+//
+// Every one of these takes a `pluginId` and is refused by the capability broker
+// in the Rust process before it does any work (ADR-0006). They are the only way
+// a plugin reaches Zotero — there is no unbrokered path, which is what makes the
+// Zotero bridge a genuine test of the plugin API rather than a privileged
+// insider (ADR-0005).
+// ---------------------------------------------------------------------------
+
+/** Which Zotero source is answering, and whether it is current. */
+export interface ZoteroStatus {
+  source: "better-bibtex" | "local-api" | "exported-bib" | "sqlite" | "none";
+  sourceKey: string;
+  isLive: boolean;
+  keysAreAuthoritative: boolean;
+  dataDir: string | null;
+  detail: string | null;
+}
+
+/** A library item. */
+export interface ZoteroItem {
+  key: string;
+  citationKey: string | null;
+  itemType: string;
+  title: string;
+  creators: string[];
+  year: number | null;
+  container: string | null;
+}
+
+/** A passage a reader marked in an attachment. */
+export interface ZoteroAnnotation {
+  key: string;
+  itemKey: string;
+  kind: "highlight" | "note" | "image" | "ink" | "underline" | "other";
+  kindKey: string;
+  text: string;
+  comment: string | null;
+  color: string | null;
+  /** Null when the attachment has no pagination. */
+  pageLabel: string | null;
+  isQuotable: boolean;
+}
+
+/** The outcome of ensuring an item is citable from this project. */
+export interface CitationKey {
+  key: string;
+  added: boolean;
+  bibliography: string;
+  isAuthoritative: boolean;
+}
+
+/** Which source is serving library queries. */
+export function zoteroStatus(pluginId: string): Promise<ZoteroStatus> {
+  return invoke<ZoteroStatus>("plugin_zotero_status", { pluginId });
+}
+
+/** Search the library. An empty query lists recent items. */
+export function zoteroSearch(
+  pluginId: string,
+  query: string,
+  limit = 50,
+): Promise<ZoteroItem[]> {
+  return invoke<ZoteroItem[]>("plugin_zotero_search", {
+    pluginId,
+    query,
+    limit,
+  });
+}
+
+/** Every passage a reader marked in an item. */
+export function zoteroAnnotations(
+  pluginId: string,
+  itemKey: string,
+): Promise<ZoteroAnnotation[]> {
+  return invoke<ZoteroAnnotation[]>("plugin_zotero_annotations", {
+    pluginId,
+    itemKey,
+  });
+}
+
+/** Ensure an item is in the project bibliography and return its citation key. */
+export function zoteroEnsureInBibliography(
+  pluginId: string,
+  root: string,
+  itemKey: string,
+  bibliography?: string,
+): Promise<CitationKey> {
+  return invoke<CitationKey>("plugin_zotero_ensure_in_bibliography", {
+    pluginId,
+    root,
+    itemKey,
+    bibliography: bibliography ?? null,
+  });
+}
+
+/** Re-probe the Zotero sources, e.g. after the user starts Zotero. */
+export function zoteroReconnect(pluginId: string): Promise<void> {
+  return invoke<void>("plugin_zotero_reconnect", { pluginId });
+}
+
+/** A bundled core plugin, as the Rust side reports it. */
+export interface CorePlugin {
+  id: string;
+  name: string;
+  description: string;
+  /** Capability identifiers its manifest declares. */
+  capabilities: string[];
+}
+
+/**
+ * Load the bundled core plugins and report what was granted.
+ *
+ * Note what is missing: there is no way to *request* a capability from here.
+ * The Rust side reads each plugin's manifest and grants from that, because a
+ * capability list supplied by the webview would make the broker decorative.
+ */
+export function pluginList(): Promise<CorePlugin[]> {
+  return invoke<CorePlugin[]>("plugin_list");
+}
+
+/** Rescope plugin filesystem capabilities to the open project. */
+export function pluginSetProject(root: string | null): Promise<void> {
+  return invoke<void>("plugin_set_project", { root });
 }

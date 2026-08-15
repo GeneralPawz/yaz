@@ -1,8 +1,12 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
+  import type { EditorApi } from "@yaz/api";
   import PdfView from "./lib/PdfView.svelte";
+  import Picker from "./lib/Picker.svelte";
   import { t } from "./lib/i18n";
   import * as ipc from "./lib/ipc";
+  import { PluginRuntime, type PickerRequest } from "./lib/plugins/host";
+  import ZoteroPlugin from "../../../plugins/zotero/src/main";
 
   /**
    * The editor is loaded when a file is first opened, not at startup.
@@ -30,6 +34,53 @@
   let engines = $state<ipc.EngineInfo[]>([]);
   let selectedEngine = $state<string | null>(null);
 
+  let editorApi: EditorApi | null = null;
+  let picker = $state<PickerRequest | null>(null);
+  let notice = $state<string | null>(null);
+  let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /**
+   * The plugin runtime.
+   *
+   * Core plugins are bundled, but they see only `@yaz/api` and every privileged
+   * call they make is refused by the capability broker in the Rust process
+   * first. That is the forcing function in ADR-0005 — the Zotero bridge gets no
+   * shortcut the shell would not give an external author.
+   */
+  const runtime = new PluginRuntime({
+    project: () => (project ? { root: project.root, entry: project.entry } : null),
+    editor: () => editorApi,
+    compile: async () => {
+      await compile();
+      if (!result) throw new Error("compile produced no result");
+      return result;
+    },
+    requestPicker: (request) => {
+      picker = request;
+    },
+    showNotice: (text) => {
+      notice = text;
+      clearTimeout(noticeTimer);
+      noticeTimer = setTimeout(() => (notice = null), 6000);
+    },
+  });
+
+  let commands = $state<ReturnType<PluginRuntime["availableCommands"]>>([]);
+
+  function refreshCommands() {
+    commands = runtime.availableCommands();
+  }
+
+  async function runCommand(id: string) {
+    const command = runtime.commands.find((c) => c.id === id);
+    if (!command) return;
+    try {
+      await command.callback();
+    } catch (error) {
+      failure = String(error);
+    }
+  }
+
   const selectedEngineInfo = $derived(engines.find((e) => e.id === selectedEngine) ?? null);
 
   const errorCount = $derived(
@@ -47,6 +98,16 @@
       .then((found) => {
         engines = found;
       })
+      .catch((error) => {
+        failure = String(error);
+      });
+
+    // Plugins load after the first paint, not before it. The window is usable
+    // without them, and blocking startup on a plugin would spend the budget in
+    // ADR-0015 on something the user has not asked for yet.
+    void runtime
+      .start({ "com.yaz.zotero": ZoteroPlugin })
+      .then(refreshCommands)
       .catch((error) => {
         failure = String(error);
       });
@@ -69,6 +130,10 @@
     try {
       const info = await ipc.openProject(picked);
       project = info;
+      // Filesystem capabilities are scoped to the open project, so the brokers
+      // have to be told. Without this a plugin keeps writing into whichever
+      // project was open when it loaded.
+      await ipc.pluginSetProject(info.root);
       result = null;
       pdfData = null;
       const settings = await ipc.getProjectSettings(info.root);
@@ -158,6 +223,10 @@
       </select>
     </label>
 
+    {#each commands as command (command.id)}
+      <button onclick={() => runCommand(command.id)}>{command.name}</button>
+    {/each}
+
     {#if selectedEngineInfo && !selectedEngineInfo.available && selectedEngineInfo.unavailableReasonKey}
       <span class="warn">{t(selectedEngineInfo.unavailableReasonKey)}</span>
     {/if}
@@ -203,6 +272,10 @@
             dirty = true;
           }}
           onSave={save}
+          onReady={(api) => {
+            editorApi = api;
+            refreshCommands();
+          }}
         />
       {:else if currentFile}
         <p class="empty">{t("editor-loading")}</p>
@@ -215,6 +288,31 @@
       <PdfView data={pdfData} />
     </aside>
   </div>
+
+  {#if picker}
+    <Picker
+      titleKey={picker.titleKey}
+      placeholderKey={picker.placeholderKey}
+      emptyKey={picker.emptyKey}
+      load={picker.load}
+      onchoose={(value) => {
+        const pending = picker;
+        picker = null;
+        pending?.resolve(value);
+      }}
+      oncancel={() => {
+        const pending = picker;
+        picker = null;
+        // Resolving with undefined is how `ui.pick` reports a dismissal, so a
+        // plugin awaiting it is never left hanging.
+        pending?.resolve(undefined);
+      }}
+    />
+  {/if}
+
+  {#if notice}
+    <output class="notice">{notice}</output>
+  {/if}
 
   <footer class="status">
     {#if failure}
@@ -390,6 +488,21 @@
 
   .muted {
     color: var(--yaz-text-muted);
+  }
+
+  .notice {
+    position: fixed;
+    inset-block-end: var(--yaz-space-8);
+    inset-inline-start: 50%;
+    transform: translateX(-50%);
+    padding-block: var(--yaz-space-2);
+    padding-inline: var(--yaz-space-4);
+    background: var(--yaz-bg-overlay);
+    color: var(--yaz-text-primary);
+    border: 1px solid var(--yaz-border);
+    border-radius: var(--yaz-radius-md);
+    box-shadow: var(--yaz-shadow-overlay);
+    z-index: 110;
   }
 
   .path {

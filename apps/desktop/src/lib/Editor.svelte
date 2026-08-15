@@ -31,6 +31,7 @@
   import { stex } from "@codemirror/legacy-modes/mode/stex";
   import { tags } from "@lezer/highlight";
   import { vim } from "@replit/codemirror-vim";
+  import type { EditorApi } from "@yaz/api";
 
   interface Props {
     /** Buffer contents. Changing this to a different file replaces the document. */
@@ -40,9 +41,48 @@
     onChange: (text: string) => void;
     onSave: () => void;
     vimMode: boolean;
+    /**
+     * Handed an `EditorApi` when the view exists, and `null` when it goes away.
+     *
+     * This is how a plugin reaches the buffer. It is deliberately a callback
+     * rather than an exported binding: the view outlives neither the component
+     * nor a file switch, and a stale handle would let a plugin write into a
+     * destroyed document.
+     */
+    onReady?: (api: EditorApi | null) => void;
   }
 
-  let { doc, docId, onChange, onSave, vimMode }: Props = $props();
+  let { doc, docId, onChange, onSave, vimMode, onReady }: Props = $props();
+
+  /**
+   * The buffer as `@yaz/api` describes it.
+   *
+   * There is one buffer holding the raw `.tex` in both source and visual mode,
+   * so this needs no notion of modes (ADR-0004).
+   */
+  function editorApi(instance: EditorView): EditorApi {
+    return {
+      getText: () => instance.state.doc.toString(),
+      getSelection: () => {
+        const range = instance.state.selection.main;
+        return { from: range.from, to: range.to };
+      },
+      replaceRange: (from, to, text) => {
+        instance.dispatch({ changes: { from, to, insert: text } });
+      },
+      insertAtCursor: (text) => {
+        const range = instance.state.selection.main;
+        instance.dispatch({
+          changes: { from: range.from, to: range.to, insert: text },
+          // Leave the caret after what was inserted, which is where someone
+          // who just pasted a citation expects to keep typing.
+          selection: { anchor: range.from + text.length },
+        });
+        instance.focus();
+      },
+      getMode: () => "source",
+    };
+  }
 
   let host: HTMLDivElement;
   let view: EditorView | undefined;
@@ -151,9 +191,11 @@
       }),
     });
     loadedDocId = docId;
+    onReady?.(editorApi(view));
     return () => {
       view?.destroy();
       view = undefined;
+      onReady?.(null);
     };
   });
 

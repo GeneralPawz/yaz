@@ -10,7 +10,13 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 /// A plugin's `manifest.json`.
+///
+/// Field names are camelCase on the wire, matching what a plugin author writes
+/// and what `packages/plugin-template/manifest.json` ships. Without the rename
+/// this struct silently fails to parse its own template, since `minAppVersion`
+/// would have to be spelled `min_app_version` in the JSON.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Manifest {
     /// Stable, globally unique identifier, e.g. `com.example.my-plugin`.
     pub id: String,

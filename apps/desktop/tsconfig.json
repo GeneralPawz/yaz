@@ -17,7 +17,21 @@
     "skipLibCheck": true,
     "allowJs": true,
     "checkJs": true,
-    "noEmit": true
+    "noEmit": true,
+    // Resolve @yaz/api to its sources rather than to built output, exactly as
+    // the plugin template does. Without this the shell type-checks against
+    // nothing, and so does any bundled core plugin it imports.
+    "paths": {
+      "@yaz/api": ["../../packages/api/src/index.ts"]
+    }
   },
-  "include": ["src/**/*.ts", "src/**/*.svelte", "vite.config.ts"]
+  // Core plugins are bundled into the application, so their sources are part
+  // of this compilation. They are still written against @yaz/api alone — the
+  // ADR-0005 lint enforces that they import no internal frontend module.
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.svelte",
+    "vite.config.ts",
+    "../../plugins/*/src/**/*.ts"
+  ]
 }

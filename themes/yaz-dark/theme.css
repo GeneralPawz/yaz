@@ -17,6 +17,9 @@
   --yaz-bg-hover: rgba(255, 255, 255, 0.05);
   --yaz-bg-active: rgba(255, 255, 255, 0.09);
   --yaz-bg-selection: rgba(97, 155, 255, 0.24);
+  /* Darker than the light theme's scrim: the same alpha over a dark ground
+     barely separates the modal from the page behind it. */
+  --yaz-scrim: rgba(0, 0, 0, 0.55);
 
   /* ---- Text ------------------------------------------------------------- */
   --yaz-text-primary: #e6e9ee;
