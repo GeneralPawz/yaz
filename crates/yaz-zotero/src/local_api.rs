@@ -44,6 +44,37 @@ pub struct LocalApi {
     http: reqwest::Client,
 }
 
+/// What a probe of the local API found.
+///
+/// More than a boolean because the cases need different words. "Zotero is
+/// closed" is the normal state for most writers most of the time and deserves
+/// no fuss; "Zotero is open but its local API is switched off" is a thing the
+/// user can fix in thirty seconds, and telling them so is the difference between
+/// a working live connection and permanently reading a copy of the database.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Availability {
+    /// The local API answered.
+    Available,
+    /// Nothing is listening; Zotero is not running.
+    NotRunning,
+    /// Zotero is running, but the local API is disabled in its settings.
+    LocalApiDisabled,
+    /// Something answered, but not in a way this understands.
+    Unexpected,
+}
+
+impl Availability {
+    /// Message key explaining this state.
+    pub fn message_key(&self) -> &'static str {
+        match self {
+            Availability::Available => "zotero-live-available",
+            Availability::NotRunning => "zotero-live-not-running",
+            Availability::LocalApiDisabled => "zotero-live-api-disabled",
+            Availability::Unexpected => "zotero-live-unexpected",
+        }
+    }
+}
+
 /// The envelope every local-API item comes in.
 #[derive(Debug, Deserialize)]
 struct Envelope<T> {
@@ -119,17 +150,38 @@ impl LocalApi {
         Self { http }
     }
 
-    /// Whether a Zotero is answering right now.
+    /// Whether this source can actually answer queries.
     ///
-    /// A refused connection is the ordinary case — most writers have Zotero
-    /// closed most of the time — so this returns a bool rather than an error.
-    pub async fn is_running(&self) -> bool {
-        self.http
-            .get(format!("http://{ZOTERO_HOST}:{ZOTERO_PORT}/connector/ping"))
-            .timeout(std::time::Duration::from_millis(750))
+    /// # Why not `/connector/ping`
+    ///
+    /// Because it lies about the thing we care about. `ping` answers `200` from
+    /// the connector server, which is on by default, and says only that Zotero
+    /// is *running*. The local API is a **separate, disabled-by-default**
+    /// feature, and asking it for items while it is off returns
+    /// `403 Local API is not enabled`.
+    ///
+    /// Probing `ping` therefore reported the live source as available on a
+    /// perfectly ordinary Zotero install, and every subsequent query failed —
+    /// which is exactly how this was found. The probe now asks the endpoint it
+    /// is actually going to use.
+    pub async fn availability(&self) -> Availability {
+        let response = self
+            .http
+            .get(format!("{}/items", base()))
+            .query(&[("limit", "1"), ("format", "json")])
+            .timeout(std::time::Duration::from_millis(1500))
             .send()
-            .await
-            .is_ok()
+            .await;
+
+        match response {
+            Ok(response) if response.status().is_success() => Availability::Available,
+            Ok(response) if response.status() == reqwest::StatusCode::FORBIDDEN => {
+                Availability::LocalApiDisabled
+            }
+            Ok(_) => Availability::Unexpected,
+            Err(error) if error.is_connect() || error.is_timeout() => Availability::NotRunning,
+            Err(_) => Availability::Unexpected,
+        }
     }
 
     /// Search the library.

@@ -362,6 +362,14 @@ pub struct ZoteroStatus {
     data_dir: Option<String>,
     /// Why no source is available, when none is.
     detail: Option<String>,
+    /// What probing the live source found, whatever the outcome.
+    ///
+    /// Reported separately from `source` because "Zotero is running but its
+    /// local API is switched off" is a thing the user can fix, and it is
+    /// invisible if all they are told is that the library is being read offline.
+    live_status_key: String,
+    /// Whether a live source was tried and then demoted after failing.
+    was_demoted: bool,
 }
 
 /// A library item as the picker shows it.
@@ -411,6 +419,8 @@ pub async fn plugin_zotero_status(
         keys_are_authoritative: library.keys_are_authoritative(),
         data_dir: library.data_dir.as_ref().map(|d| d.path.to_string()),
         detail: library.failure.clone(),
+        live_status_key: library.live_status.message_key().to_owned(),
+        was_demoted: library.was_demoted(),
     })
 }
 

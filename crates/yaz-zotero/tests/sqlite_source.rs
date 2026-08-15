@@ -454,3 +454,56 @@ fn an_attachment_key_is_not_a_citable_item() {
     assert!(source.find("ATTACHAA").unwrap().is_none());
     assert!(source.find("ANNOAAAA").unwrap().is_none());
 }
+
+/// The exact failure reported from the running application.
+///
+/// Zotero was open, an item called "Test Speaking" existed, and the picker said
+/// "could not load the list". The cause was a probe of `/connector/ping`, which
+/// answers 200 whenever Zotero is running at all — while the local API, a
+/// separate and disabled-by-default feature, returned 403 to every query.
+///
+/// This drives the real facade against the real library, so it covers the probe,
+/// the demotion, and the fallback together. Skipped when `YAZ_ZOTERO_DIR` is
+/// unset; the hermetic tests above are what run in CI.
+#[tokio::test]
+async fn a_real_library_answers_whether_or_not_the_local_api_is_enabled() {
+    let Ok(dir) = std::env::var("YAZ_ZOTERO_DIR") else {
+        eprintln!("YAZ_ZOTERO_DIR unset — skipping the live-Zotero pass");
+        return;
+    };
+    let config = yaz_zotero::Config {
+        data_dir: Some(Utf8PathBuf::from(dir)),
+        scratch: scratch(),
+    };
+    let library =
+        yaz_zotero::Library::connect(&config, yaz_core::net::http_client().unwrap()).await;
+
+    eprintln!(
+        "live probe: {:?}   active source: {:?}",
+        library.live_status,
+        library.source()
+    );
+    assert_ne!(
+        library.source(),
+        yaz_zotero::ActiveSource::None,
+        "some source must answer: {:?}",
+        library.failure
+    );
+
+    // The query that failed in the application.
+    let hits = library
+        .search("Test Speaking", 20)
+        .await
+        .expect("the picker's query must not error");
+    eprintln!("'Test Speaking' matched {} item(s)", hits.len());
+    for item in hits.iter().take(3) {
+        eprintln!("   {} — {}", item.key, item.title);
+    }
+    assert!(
+        !hits.is_empty(),
+        "the item exists in the library, so the picker must find it"
+    );
+
+    // And an empty query must list something, or the picker opens blank.
+    assert!(!library.search("", 10).await.unwrap().is_empty());
+}

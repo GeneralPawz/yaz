@@ -174,3 +174,12 @@ zotero-error-http = Could not reach Zotero.
 zotero-error-database = Your Zotero library could not be read.
 zotero-error-io = A file could not be read or written.
 zotero-error-item-not-found = That item is no longer in your Zotero library.
+
+## Zotero — the live connection
+
+zotero-live-available = Connected to Zotero
+zotero-live-not-running = Zotero is not running
+zotero-live-api-disabled = Zotero is running, but its local API is switched off
+zotero-live-api-disabled-help = Turn on "Allow other applications on this computer to communicate with Zotero" in Zotero's Advanced settings to read the library live.
+zotero-live-unexpected = Zotero answered unexpectedly
+zotero-demoted = The live connection failed, so the library is being read from a copy on disk.
