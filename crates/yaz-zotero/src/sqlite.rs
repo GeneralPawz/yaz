@@ -176,6 +176,33 @@ impl SqliteSource {
         ids.into_iter().map(|id| self.hydrate(id)).collect()
     }
 
+    /// Look one item up by its Zotero key.
+    ///
+    /// Distinct from [`SqliteSource::search`] on purpose. Search matches titles
+    /// and creator surnames, so passing a key to it matches nothing — an item
+    /// key appears in no field a reader would ever search. Citing an item is a
+    /// lookup, not a search, and conflating the two fails for every item.
+    pub fn find(&self, item_key: &str) -> Result<Option<Item>> {
+        let id: Option<i64> = self
+            .connection
+            .query_row(
+                "SELECT i.itemID FROM items i
+                 JOIN itemTypes it ON it.itemTypeID = i.itemTypeID
+                 WHERE i.key = ?1
+                   AND i.itemID NOT IN (SELECT itemID FROM deletedItems)
+                   AND it.typeName NOT IN (?2, ?3, ?4)",
+                rusqlite::params![item_key, NON_CITABLE[0], NON_CITABLE[1], NON_CITABLE[2]],
+                |row| row.get(0),
+            )
+            .map(Some)
+            .or_else(|error| match error {
+                rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                other => Err(database(other)),
+            })?;
+
+        id.map(|id| self.hydrate(id)).transpose()
+    }
+
     fn candidate_ids(&self, pattern: &str, limit: usize) -> Result<Vec<i64>> {
         let mut statement = self
             .connection

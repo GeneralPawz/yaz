@@ -74,6 +74,7 @@ fn main() {
             plugin_host::plugin_denials,
             plugin_host::plugin_list,
             plugin_host::plugin_set_project,
+            plugin_host::plugin_set_zotero_data_dir,
         ])
         .setup(|_app| {
             if is_dev_mode() {

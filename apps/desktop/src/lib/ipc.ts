@@ -254,3 +254,17 @@ export function pluginList(): Promise<CorePlugin[]> {
 export function pluginSetProject(root: string | null): Promise<void> {
   return invoke<void>("plugin_set_project", { root });
 }
+
+/**
+ * Point the Zotero bridge at a specific data directory, or `null` to rediscover.
+ *
+ * Needed because a machine can hold several Zotero profiles pointing at
+ * different libraries, and picking the wrong one does not fail — it succeeds
+ * against an empty database and looks like "Zotero isn't set up".
+ */
+export function zoteroSetDataDir(
+  pluginId: string,
+  path: string | null,
+): Promise<ZoteroStatus> {
+  return invoke<ZoteroStatus>("plugin_set_zotero_data_dir", { pluginId, path });
+}

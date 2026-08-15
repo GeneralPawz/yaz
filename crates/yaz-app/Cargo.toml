@@ -54,3 +54,6 @@ tokio.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+# Builds a Zotero fixture library, so the citation path is exercised end to end
+# rather than only in pieces.
+rusqlite = { workspace = true }

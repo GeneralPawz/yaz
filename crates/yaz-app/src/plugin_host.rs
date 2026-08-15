@@ -80,6 +80,13 @@ pub struct PluginHost {
     zotero: RwLock<Option<Arc<Library>>>,
     /// The open project root, which scopes [`Capability::FsProject`].
     project_root: RwLock<Option<Utf8PathBuf>>,
+    /// An explicit Zotero data directory, overriding discovery.
+    ///
+    /// Discovery is right for almost everyone, but a machine can hold several
+    /// Zotero profiles pointing at different libraries, and the user needs a way
+    /// to say which. It is also what makes this testable against a fixture
+    /// rather than against whoever's library happens to be on the build machine.
+    zotero_data_dir: RwLock<Option<Utf8PathBuf>>,
 }
 
 impl Default for PluginHost {
@@ -95,7 +102,17 @@ impl PluginHost {
             brokers: RwLock::new(HashMap::new()),
             zotero: RwLock::new(None),
             project_root: RwLock::new(None),
+            zotero_data_dir: RwLock::new(None),
         }
+    }
+
+    /// Point the Zotero bridge at a specific data directory.
+    ///
+    /// Drops any connected library, so the next call re-probes against the new
+    /// location rather than answering from the old one.
+    pub async fn set_zotero_data_dir(&self, dir: Option<Utf8PathBuf>) {
+        *self.zotero_data_dir.write().await = dir;
+        *self.zotero.write().await = None;
     }
 
     /// Grant a plugin its capabilities, replacing any previous grant.
@@ -162,7 +179,7 @@ impl PluginHost {
         let http = yaz_core::net::http_client()
             .map_err(|error| CommandError::new("zotero-error-http", error))?;
         let config = yaz_zotero::Config {
-            data_dir: None,
+            data_dir: self.zotero_data_dir.read().await.clone(),
             scratch: Utf8PathBuf::from_path_buf(std::env::temp_dir())
                 .unwrap_or_else(|_| Utf8PathBuf::from(".")),
         };
@@ -208,6 +225,92 @@ impl PluginHost {
             }
         }
         loaded
+    }
+
+    /// Ensure an item exists in the project bibliography, and return its key.
+    ///
+    /// [ADR-0008] makes the project `.bib` the compile-time source of truth, so
+    /// this copies the entry into the project rather than pointing at the
+    /// library — a document must build on a co-author's machine that has never
+    /// had Zotero installed.
+    ///
+    /// The read-modify-write happens here rather than in the plugin because it
+    /// is one operation: a plugin doing it over three separate brokered calls
+    /// could interleave with itself and lose an entry.
+    ///
+    /// [ADR-0008]: https://github.com/GeneralPawz/yaz/blob/main/docs/adr/0008-zotero-integration.md
+    pub async fn ensure_in_bibliography(
+        &self,
+        plugin_id: &str,
+        root: &Utf8Path,
+        item_key: &str,
+        bibliography: Option<String>,
+    ) -> Result<CitationKey> {
+        self.authorise(plugin_id, &Request::Zotero).await?;
+
+        let relative = bibliography.unwrap_or_else(|| "references.bib".to_owned());
+        let bib_path = root.join(&relative);
+
+        // The write is authorised separately and explicitly. Holding the Zotero
+        // capability must not imply permission to write to the disk.
+        self.authorise(plugin_id, &Request::FsWrite(&bib_path))
+            .await?;
+
+        let library = self.library().await?;
+        // A lookup, not a search. Search matches titles and creator surnames, so
+        // passing a key to it finds nothing at all — this originally did exactly
+        // that, and every citation insert failed until a test caught it.
+        let item = library
+            .find(item_key)
+            .await
+            .map_err(zotero_error)?
+            .ok_or_else(|| CommandError::new("zotero-error-item-not-found", item_key))?;
+
+        let existing = std::fs::read_to_string(bib_path.as_std_path()).unwrap_or_default();
+        let taken = yaz_zotero::bib::existing_keys(&existing);
+
+        // An entry already written for this item is found by its key, so citing
+        // the same source twice does not append a duplicate.
+        let base = item
+            .citation_key
+            .clone()
+            .unwrap_or_else(|| yaz_zotero::bib::generate_key(&item));
+        if taken.contains(&base) {
+            return Ok(CitationKey {
+                key: base,
+                added: false,
+                bibliography: relative,
+                is_authoritative: item.citation_key.is_some(),
+            });
+        }
+
+        let key = yaz_zotero::bib::disambiguate(&base, &taken);
+        let entry = yaz_zotero::bib::to_bibtex(&item, &key);
+
+        // Separate entries with a blank line, without introducing one at the
+        // top of a file that did not exist a moment ago.
+        let mut contents = existing;
+        if !contents.is_empty() {
+            if !contents.ends_with('\n') {
+                contents.push('\n');
+            }
+            contents.push('\n');
+        }
+        contents.push_str(&entry);
+
+        if let Some(parent) = bib_path.parent() {
+            std::fs::create_dir_all(parent.as_std_path())
+                .map_err(|error| CommandError::new("zotero-error-io", error))?;
+        }
+        std::fs::write(bib_path.as_std_path(), contents)
+            .map_err(|error| CommandError::new("zotero-error-io", error))?;
+
+        Ok(CitationKey {
+            key,
+            added: true,
+            bibliography: relative,
+            is_authoritative: item.citation_key.is_some(),
+        })
     }
 
     /// Drop the cached library so the next call re-probes.
@@ -414,80 +517,13 @@ pub async fn plugin_zotero_ensure_in_bibliography(
     bibliography: Option<String>,
     host: tauri::State<'_, PluginHost>,
 ) -> Result<CitationKey> {
-    host.authorise(&plugin_id, &Request::Zotero).await?;
-
-    let root = Utf8PathBuf::from(root);
-    let relative = bibliography.unwrap_or_else(|| "references.bib".to_owned());
-    let bib_path = root.join(&relative);
-
-    // The write is authorised separately and explicitly. Holding the Zotero
-    // capability must not imply permission to write to the disk.
-    host.authorise(&plugin_id, &Request::FsWrite(&bib_path))
-        .await?;
-
-    let library = host.library().await?;
-    let items = library.search(&item_key, 200).await.map_err(zotero_error)?;
-    // Searching by key is not what search is for; match exactly and fail
-    // loudly rather than citing whatever came back first.
-    let item = items
-        .into_iter()
-        .find(|i| i.key == item_key)
-        .ok_or_else(|| CommandError::new("zotero-error-item-not-found", &item_key))?;
-
-    let existing = std::fs::read_to_string(bib_path.as_std_path()).unwrap_or_default();
-    let taken = yaz_zotero::bib::existing_keys(&existing);
-
-    if let Some(key) = item.citation_key.clone() {
-        if taken.contains(&key) {
-            return Ok(CitationKey {
-                key,
-                added: false,
-                bibliography: relative,
-                is_authoritative: true,
-            });
-        }
-    }
-
-    // An entry we already wrote for this item is found by its key, so citing the
-    // same source twice does not append a duplicate.
-    let base = item
-        .citation_key
-        .clone()
-        .unwrap_or_else(|| yaz_zotero::bib::generate_key(&item));
-    if taken.contains(&base) {
-        return Ok(CitationKey {
-            key: base,
-            added: false,
-            bibliography: relative,
-            is_authoritative: item.citation_key.is_some(),
-        });
-    }
-
-    let key = yaz_zotero::bib::disambiguate(&base, &taken);
-    let entry = yaz_zotero::bib::to_bibtex(&item, &key);
-
-    let mut contents = existing;
-    if !contents.is_empty() && !contents.ends_with('\n') {
-        contents.push('\n');
-    }
-    if !contents.is_empty() {
-        contents.push('\n');
-    }
-    contents.push_str(&entry);
-
-    if let Some(parent) = bib_path.parent() {
-        std::fs::create_dir_all(parent.as_std_path())
-            .map_err(|error| CommandError::new("zotero-error-io", error))?;
-    }
-    std::fs::write(bib_path.as_std_path(), contents)
-        .map_err(|error| CommandError::new("zotero-error-io", error))?;
-
-    Ok(CitationKey {
-        key,
-        added: true,
-        bibliography: relative,
-        is_authoritative: item.citation_key.is_some(),
-    })
+    host.ensure_in_bibliography(
+        &plugin_id,
+        &Utf8PathBuf::from(root),
+        &item_key,
+        bibliography,
+    )
+    .await
 }
 
 /// Re-probe the Zotero sources.
@@ -508,6 +544,24 @@ pub async fn plugin_zotero_reconnect(
 #[tauri::command]
 pub async fn plugin_list(host: tauri::State<'_, PluginHost>) -> Result<Vec<CorePlugin>> {
     Ok(host.load_core_plugins().await)
+}
+
+/// Point the Zotero bridge at a specific data directory.
+///
+/// Discovery is right for almost everyone, but a machine can hold several Zotero
+/// profiles pointing at different libraries — and choosing the wrong one does not
+/// fail, it succeeds against an empty database and reports a library with no
+/// items. This is the escape hatch for that, and passing `null` returns to
+/// discovery.
+#[tauri::command]
+pub async fn plugin_set_zotero_data_dir(
+    plugin_id: String,
+    path: Option<String>,
+    host: tauri::State<'_, PluginHost>,
+) -> Result<ZoteroStatus> {
+    host.authorise(&plugin_id, &Request::Zotero).await?;
+    host.set_zotero_data_dir(path.map(Utf8PathBuf::from)).await;
+    plugin_zotero_status(plugin_id, host).await
 }
 
 /// Rescope filesystem capabilities to the project the user just opened.
@@ -556,6 +610,148 @@ pub async fn plugin_denials(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Build a Zotero library with one citable item, and point a host at it.
+    ///
+    /// This covers the whole path the picker drives — broker, library, BibTeX
+    /// generation, the project's own `.bib`. Each piece is tested on its own
+    /// elsewhere; what this checks is that they are wired to one another.
+    async fn host_with_library(data_dir: &Utf8Path) -> PluginHost {
+        let db = data_dir.join("zotero.sqlite");
+        let connection = rusqlite::Connection::open(db.as_std_path()).unwrap();
+        connection
+            .execute_batch(
+                r#"
+        CREATE TABLE version (schema TEXT PRIMARY KEY, version INT NOT NULL);
+        CREATE TABLE itemTypes (itemTypeID INTEGER PRIMARY KEY, typeName TEXT);
+        CREATE TABLE items (itemID INTEGER PRIMARY KEY, itemTypeID INT, key TEXT, dateAdded TEXT);
+        CREATE TABLE fields (fieldID INTEGER PRIMARY KEY, fieldName TEXT);
+        CREATE TABLE itemDataValues (valueID INTEGER PRIMARY KEY, value TEXT);
+        CREATE TABLE itemData (itemID INT, fieldID INT, valueID INT);
+        CREATE TABLE creators (creatorID INTEGER PRIMARY KEY, firstName TEXT, lastName TEXT, fieldMode INT);
+        CREATE TABLE itemCreators (itemID INT, creatorID INT, creatorTypeID INT, orderIndex INT);
+        CREATE TABLE itemAttachments (itemID INTEGER PRIMARY KEY, parentItemID INT, path TEXT);
+        CREATE TABLE itemAnnotations (itemID INTEGER PRIMARY KEY, parentItemID INT, type INT,
+            authorName TEXT, text TEXT, comment TEXT, color TEXT, pageLabel TEXT,
+            sortIndex TEXT, position TEXT, isExternal INT);
+        CREATE TABLE deletedItems (itemID INTEGER PRIMARY KEY, dateDeleted TEXT);
+        INSERT INTO version VALUES ('userdata', 125);
+        INSERT INTO itemTypes VALUES (1,'journalArticle');
+        INSERT INTO items VALUES (10, 1, 'ITEMAAAA', '2024-01-02 10:00:00');
+        INSERT INTO fields VALUES (1,'title'),(2,'date');
+        INSERT INTO itemDataValues VALUES (100,'Cost & risk in 50% of BIM models'),(101,'2024-00-00 2024');
+        INSERT INTO itemData VALUES (10,1,100),(10,2,101);
+        INSERT INTO creators VALUES (200,'Anna','Müller',0);
+        INSERT INTO itemCreators VALUES (10,200,1,0);
+        "#,
+            )
+            .unwrap();
+
+        let host = PluginHost::new();
+        host.set_zotero_data_dir(Some(data_dir.to_path_buf())).await;
+        host.load_core_plugins().await;
+        host
+    }
+
+    /// A temporary library and project, as (library dir, project root).
+    fn library_and_project() -> (
+        tempfile::TempDir,
+        tempfile::TempDir,
+        Utf8PathBuf,
+        Utf8PathBuf,
+    ) {
+        let library = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let library_dir = Utf8PathBuf::from_path_buf(library.path().to_path_buf()).unwrap();
+        let project_root = Utf8PathBuf::from_path_buf(project.path().to_path_buf()).unwrap();
+        (library, project, library_dir, project_root)
+    }
+
+    #[tokio::test]
+    async fn citing_writes_a_usable_entry_into_the_project_bibliography() {
+        let (_lib, _proj, library_dir, project_root) = library_and_project();
+        let host = host_with_library(&library_dir).await;
+        host.set_project_root(Some(&project_root)).await;
+
+        let result = host
+            .ensure_in_bibliography("com.yaz.zotero", &project_root, "ITEMAAAA", None)
+            .await
+            .expect("citing should succeed");
+
+        assert!(result.added);
+        assert_eq!(result.bibliography, "references.bib");
+        // Umlauts transliterate rather than drop: `muller` is a different name.
+        assert_eq!(result.key, "mueller2024cost");
+        assert!(
+            !result.is_authoritative,
+            "no Better BibTeX, so the key is ours and must say so"
+        );
+
+        let bib = std::fs::read_to_string(project_root.join("references.bib").as_std_path())
+            .expect("the .bib should exist");
+        assert!(bib.starts_with("@article{mueller2024cost,"), "{bib}");
+        // A raw `%` would comment out the rest of the line, breaking the build
+        // while the entry still looked perfectly fine in the file.
+        assert!(bib.contains(r"Cost \& risk in 50\% of BIM models"), "{bib}");
+        assert!(bib.contains("author = {Müller, Anna}"), "{bib}");
+    }
+
+    #[tokio::test]
+    async fn citing_the_same_source_twice_does_not_duplicate_the_entry() {
+        let (_lib, _proj, library_dir, project_root) = library_and_project();
+        let host = host_with_library(&library_dir).await;
+        host.set_project_root(Some(&project_root)).await;
+
+        let first = host
+            .ensure_in_bibliography("com.yaz.zotero", &project_root, "ITEMAAAA", None)
+            .await
+            .unwrap();
+        let second = host
+            .ensure_in_bibliography("com.yaz.zotero", &project_root, "ITEMAAAA", None)
+            .await
+            .unwrap();
+
+        assert!(first.added);
+        assert!(!second.added, "the second call must not append");
+        assert_eq!(first.key, second.key, "and must cite the same key");
+
+        let bib =
+            std::fs::read_to_string(project_root.join("references.bib").as_std_path()).unwrap();
+        assert_eq!(bib.matches("@article{").count(), 1, "{bib}");
+    }
+
+    #[tokio::test]
+    async fn a_citation_cannot_be_written_outside_the_open_project() {
+        // fs:project is scoped to the project root, so a bibliography path that
+        // escapes it must be refused by the broker rather than written.
+        let (_lib, _proj, library_dir, project_root) = library_and_project();
+        let host = host_with_library(&library_dir).await;
+        host.set_project_root(Some(&project_root)).await;
+
+        let error = host
+            .ensure_in_bibliography(
+                "com.yaz.zotero",
+                &project_root,
+                "ITEMAAAA",
+                Some("../../escaped.bib".to_owned()),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.message_key(), "capability-error-out-of-scope");
+    }
+
+    #[tokio::test]
+    async fn an_item_that_is_no_longer_in_the_library_is_reported() {
+        let (_lib, _proj, library_dir, project_root) = library_and_project();
+        let host = host_with_library(&library_dir).await;
+        host.set_project_root(Some(&project_root)).await;
+
+        let error = host
+            .ensure_in_bibliography("com.yaz.zotero", &project_root, "GONEGONE", None)
+            .await
+            .unwrap_err();
+        assert_eq!(error.message_key(), "zotero-error-item-not-found");
+    }
 
     #[tokio::test]
     async fn the_bundled_manifests_parse_and_grant_what_they_declare() {

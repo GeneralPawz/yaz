@@ -149,6 +149,22 @@ impl Library {
         }
     }
 
+    /// Look one item up by its Zotero key.
+    ///
+    /// Not a one-result search. An item key matches no field a reader would ever
+    /// search on, so routing a lookup through [`Library::search`] finds nothing —
+    /// for every item, not just some.
+    pub async fn find(&self, item_key: &str) -> Result<Option<Item>> {
+        if let Some(api) = &self.live {
+            return api.find(item_key).await;
+        }
+        let Some(offline) = &self.offline else {
+            return Err(Error::NotRunning);
+        };
+        let source = offline.lock().expect("zotero library mutex poisoned");
+        source.find(item_key)
+    }
+
     /// Every marked passage on an item.
     pub async fn annotations(&self, item_key: &str) -> Result<Vec<Annotation>> {
         if let Some(api) = &self.live {

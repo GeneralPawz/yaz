@@ -415,3 +415,42 @@ async fn an_empty_query_lists_recent_items() {
     assert_eq!(library.search("", 10).await.unwrap().len(), 2);
     assert_eq!(library.search("   ", 10).await.unwrap().len(), 2);
 }
+
+/// Looking an item up by key is not a search, and must not be routed through one.
+///
+/// This is a regression test. `ensure_in_bibliography` originally found its item
+/// by calling `search(item_key)` and filtering the results — which finds nothing,
+/// because a Zotero key appears in no field a reader would ever search on. Every
+/// citation insert failed.
+#[test]
+fn an_item_is_found_by_key_even_though_search_cannot_find_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = open_fixture(&dir, 125).unwrap();
+
+    let found = source.find("ITEMAAAA").unwrap().expect("the item exists");
+    assert_eq!(found.key, "ITEMAAAA");
+    assert_eq!(found.title, "Semantic validation of information containers");
+
+    // The bug, made explicit: search over the key finds nothing.
+    assert!(
+        source.search("ITEMAAAA", 10).unwrap().is_empty(),
+        "a key is not searchable text, which is exactly why find() exists"
+    );
+}
+
+#[test]
+fn a_missing_key_is_none_rather_than_an_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = open_fixture(&dir, 125).unwrap();
+    assert!(source.find("NOSUCHKEY").unwrap().is_none());
+}
+
+#[test]
+fn an_attachment_key_is_not_a_citable_item() {
+    // The attachment exists in `items`, so a naive lookup would return it and a
+    // citation would point at a PDF rather than at a work.
+    let dir = tempfile::tempdir().unwrap();
+    let source = open_fixture(&dir, 125).unwrap();
+    assert!(source.find("ATTACHAA").unwrap().is_none());
+    assert!(source.find("ANNOAAAA").unwrap().is_none());
+}

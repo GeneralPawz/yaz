@@ -154,6 +154,28 @@ impl LocalApi {
         parse_items(&body)
     }
 
+    /// Look one item up by its Zotero key.
+    ///
+    /// A separate endpoint from search, because a key matches no searchable
+    /// field — passing one to `/items?q=` finds nothing.
+    pub async fn find(&self, item_key: &str) -> Result<Option<Item>> {
+        let url = format!("{}/items/{item_key}", base());
+        let response = self
+            .http
+            .get(&url)
+            .query(&[("format", "json")])
+            .send()
+            .await
+            .map_err(http)?;
+
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        let body = response.text().await.map_err(http)?;
+        // The single-item endpoint returns one envelope, not an array.
+        parse_items(&format!("[{body}]")).map(|mut items| items.pop())
+    }
+
     /// Every marked passage on an item.
     ///
     /// Two hops, because Zotero models annotations as children of the
