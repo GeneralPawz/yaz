@@ -9,7 +9,7 @@ Three distribution problems, related but not identical:
 
 - **The application** must update itself from GitHub releases, across four
   platform/architecture combinations.
-- **Plugins and themes** must be installable from a GitHub repository *and* from
+- **Plugins and themes** must be installable from a GitHub repository _and_ from
   a local file, and updatable from their source repository.
 - **Development must never touch any of this.** A developer running from source
   must not have the updater fetch a release over their build, must not hit the
@@ -49,11 +49,12 @@ capabilities in an update.
   The reverse direction, slim to full, is merely wasteful rather than harmful,
   but it is gated the same way: a user who chose the 3 MB download should not be
   handed a 14 MB one without asking.
+
 - Update checks are **opt-in on first run**, with a clear explanation. Checking
   is a network request that reveals an install exists; the user decides.
 - Release channels: `stable` and `beta`. A user opts into `beta` explicitly and
   can return to `stable`.
-- The changelog for the pending version is shown *before* the user accepts.
+- The changelog for the pending version is shown _before_ the user accepts.
 
 ### Plugin and theme updates
 
@@ -80,14 +81,14 @@ capabilities in an update.
 Determined by a debug build or `YAZ_DEV=1`, and shown in the window title so it
 is never ambiguous:
 
-| Behaviour | Release | Dev |
-| --- | --- | --- |
-| App update check | Enabled (if opted in) | **Never runs** |
-| Plugin registry | Live `yaz-releases` | Local fixture at `.yaz-dev/registry.json` |
-| Plugin source | Installed plugins directory | Also loads unpacked from `dev-plugins/` |
-| Plugin hot reload | No | **Yes**, on file change |
-| Signature checks | Enforced | Enforced, against a dev key |
-| Telemetry | N/A | N/A |
+| Behaviour         | Release                     | Dev                                       |
+| ----------------- | --------------------------- | ----------------------------------------- |
+| App update check  | Enabled (if opted in)       | **Never runs**                            |
+| Plugin registry   | Live `yaz-releases`         | Local fixture at `.yaz-dev/registry.json` |
+| Plugin source     | Installed plugins directory | Also loads unpacked from `dev-plugins/`   |
+| Plugin hot reload | No                          | **Yes**, on file change                   |
+| Signature checks  | Enforced                    | Enforced, against a dev key               |
+| Telemetry         | N/A                         | N/A                                       |
 
 Signature verification is **not** relaxed in dev. Disabling it in the code path
 developers exercise daily is how it ends up disabled in a release build.
@@ -114,7 +115,7 @@ developers exercise daily is how it ends up disabled in a release build.
 ## Alternatives considered
 
 **Package managers only** (winget, apt, Flatpak, AUR). Better OS integration and
-no updater to maintain. Rejected as the *primary* mechanism: coverage is uneven,
+no updater to maintain. Rejected as the _primary_ mechanism: coverage is uneven,
 lag between our release and availability is long and out of our control, and
 Linux ARM64 coverage is patchiest of all. We intend to publish there in addition.
 

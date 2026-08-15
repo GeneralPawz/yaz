@@ -54,10 +54,10 @@ default and system TeX distributions supported as first-class peers.**
 Because the trade is genuine rather than a default with a workaround, both are
 released for every platform:
 
-| Build | Contains | Installer | For |
-| --- | --- | ---: | --- |
-| **yaz** (`full`) | Tectonic embedded | ~14 MB | Almost everyone. Compiles immediately, nothing to install |
-| **yaz-slim** | No embedded engine | ~3 MB | People who already have TeX Live or MiKTeX, or who need `pdflatex`/`lualatex` |
+| Build            | Contains           | Installer | For                                                                           |
+| ---------------- | ------------------ | --------: | ----------------------------------------------------------------------------- |
+| **yaz** (`full`) | Tectonic embedded  |    ~14 MB | Almost everyone. Compiles immediately, nothing to install                     |
+| **yaz-slim**     | No embedded engine |     ~3 MB | People who already have TeX Live or MiKTeX, or who need `pdflatex`/`lualatex` |
 
 `full` carries the plain name deliberately: it is what someone downloading yaz
 for the first time should get, because it works without first installing a
@@ -86,10 +86,10 @@ would silently remove the user's LaTeX engine.
 
   **Measured, 2026-08-14, `aarch64-pc-windows-msvc`:**
 
-  | Artefact | Without Tectonic | With Tectonic | Added |
-  | --- | ---: | ---: | ---: |
-  | `yaz.exe` | 6.27 MB | 50.46 MB | **+44.19 MB** |
-  | Installer (NSIS) | 2.84 MB | 13.82 MB | **+10.98 MB** |
+  | Artefact         | Without Tectonic | With Tectonic |         Added |
+  | ---------------- | ---------------: | ------------: | ------------: |
+  | `yaz.exe`        |          6.27 MB |      50.46 MB | **+44.19 MB** |
+  | Installer (NSIS) |          2.84 MB |      13.82 MB | **+10.98 MB** |
 
   So the embedded engine costs roughly **44 MB in the binary and 11 MB in the
   download**, the latter being smaller because the installer compresses. Still
@@ -104,8 +104,8 @@ would silently remove the user's LaTeX engine.
   Measure this from a **linked application**, never from a library build or a
   toy example. An earlier attempt used an example that referenced only
   `id()` and `is_available()`; neither reaches any Tectonic code, the linker
-  discarded the engine, and the probe reported *zero bytes added on
-  linux-aarch64*. Dead-code elimination happens at link time, so anything short
+  discarded the engine, and the probe reported _zero bytes added on
+  linux-aarch64_. Dead-code elimination happens at link time, so anything short
   of a real binary that actually calls into the engine measures nothing.
 
 - The first local build of the vcpkg dependencies took about 25 minutes, and the

@@ -29,12 +29,12 @@ only offline one and is the most fragile.
 sources, degrading rather than failing, and always telling the user which source
 is live.**
 
-| Priority | Source | Provides | Requires |
-| --- | --- | --- | --- |
-| 1 | Better BibTeX JSON-RPC | Live search, stable citation keys, CAYW picker, auto-export | Zotero running + BBT |
-| 2 | Zotero 7 local API | Live search, collections, attachments | Zotero running |
-| 3 | Watched `.bib` file | Full offline read, whatever was exported | An export exists |
-| 4 | `zotero.sqlite` (read-only copy) | Offline library read | Zotero data directory found |
+| Priority | Source                           | Provides                                                    | Requires                    |
+| -------- | -------------------------------- | ----------------------------------------------------------- | --------------------------- |
+| 1        | Better BibTeX JSON-RPC           | Live search, stable citation keys, CAYW picker, auto-export | Zotero running + BBT        |
+| 2        | Zotero 7 local API               | Live search, collections, attachments                       | Zotero running              |
+| 3        | Watched `.bib` file              | Full offline read, whatever was exported                    | An export exists            |
+| 4        | `zotero.sqlite` (read-only copy) | Offline library read                                        | Zotero data directory found |
 
 Behaviour:
 

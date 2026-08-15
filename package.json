@@ -43,5 +43,12 @@
     "husky": "^9.1.7",
     "prettier": "^3.4.2",
     "typescript": "^6.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "vitepress>vite": "^6.4.3",
+      "vitepress>esbuild": "^0.25.0",
+      "@vitejs/plugin-vue>vite": "^6.4.3"
+    }
   }
 }

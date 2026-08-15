@@ -58,7 +58,11 @@ export function readFile(root: string, relativePath: string): Promise<string> {
 }
 
 /** Write a project-relative file. */
-export function writeFile(root: string, relativePath: string, contents: string): Promise<void> {
+export function writeFile(
+  root: string,
+  relativePath: string,
+  contents: string,
+): Promise<void> {
   return invoke<void>("write_file", { root, relativePath, contents });
 }
 
@@ -100,7 +104,10 @@ export function getProjectSettings(root: string): Promise<ProjectSettings> {
 }
 
 /** Persist the engine choice, writing `yaz.toml` into the project. */
-export function setProjectEngine(root: string, engineId: string): Promise<void> {
+export function setProjectEngine(
+  root: string,
+  engineId: string,
+): Promise<void> {
   return invoke<void>("set_project_engine", { root, engineId });
 }
 

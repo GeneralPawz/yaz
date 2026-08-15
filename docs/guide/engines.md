@@ -10,10 +10,10 @@ specific typesetter.
 Two builds ship for every platform. The difference is only whether the LaTeX
 engine is inside the application.
 
-| Download | Installer | Take this if |
-| --- | ---: | --- |
-| **yaz** | ~14 MB | You want it to work. No TeX installation needed |
-| **yaz-slim** | ~3 MB | You already have TeX Live or MiKTeX, or you need `pdflatex` or `lualatex` |
+| Download     | Installer | Take this if                                                              |
+| ------------ | --------: | ------------------------------------------------------------------------- |
+| **yaz**      |    ~14 MB | You want it to work. No TeX installation needed                           |
+| **yaz-slim** |     ~3 MB | You already have TeX Live or MiKTeX, or you need `pdflatex` or `lualatex` |
 
 ::: tip Not sure? Take **yaz**.
 It compiles the moment you open it. `yaz-slim` saves about 11 MB of download and

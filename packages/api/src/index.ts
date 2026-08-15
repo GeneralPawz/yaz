@@ -233,7 +233,10 @@ export interface WorkspaceApi {
    * The factory is handed a plain `HTMLElement` to render into — deliberately,
    * so that the plugin contract does not depend on the shell's framework.
    */
-  registerView(type: string, factory: (container: HTMLElement) => ViewHandle): void;
+  registerView(
+    type: string,
+    factory: (container: HTMLElement) => ViewHandle,
+  ): void;
 }
 
 /** Handle returned by a view factory. @since 0.1.0 */
