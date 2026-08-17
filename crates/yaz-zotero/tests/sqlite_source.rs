@@ -91,14 +91,22 @@ fn build_fixture(path: &Utf8Path, userdata_version: i64) {
     .unwrap();
 }
 
-fn scratch() -> Utf8PathBuf {
-    Utf8PathBuf::from_path_buf(std::env::temp_dir()).unwrap()
+/// A scratch directory inside the test's own temporary directory.
+///
+/// Deliberately not the shared system temp directory. The cached copy is keyed
+/// to the source path, and every test gets a fresh one, so pointing them all at
+/// the system temp left a cache file behind per test per run — the same litter
+/// the cache was introduced to stop, just smaller.
+fn scratch_in(dir: &tempfile::TempDir) -> Utf8PathBuf {
+    let path = Utf8PathBuf::from_path_buf(dir.path().join("scratch")).unwrap();
+    std::fs::create_dir_all(path.as_std_path()).unwrap();
+    path
 }
 
 fn open_fixture(dir: &tempfile::TempDir, version: i64) -> yaz_zotero::Result<SqliteSource> {
     let db = Utf8PathBuf::from_path_buf(dir.path().join("zotero.sqlite")).unwrap();
     build_fixture(&db, version);
-    SqliteSource::open(&db, &scratch())
+    SqliteSource::open(&db, &scratch_in(dir))
 }
 
 #[test]
@@ -263,7 +271,7 @@ fn an_unrecognised_schema_disables_the_source_rather_than_guessing() {
 fn a_missing_library_is_reported_as_such() {
     let error = SqliteSource::open(
         &Utf8PathBuf::from("/definitely/not/here/zotero.sqlite"),
-        &scratch(),
+        &scratch_in(&tempfile::tempdir().unwrap()),
     )
     .unwrap_err();
     assert!(matches!(error, yaz_zotero::Error::NoLibrary { .. }));
@@ -277,7 +285,7 @@ fn the_original_library_is_never_opened_directly() {
     build_fixture(&db, 125);
 
     let before = std::fs::metadata(db.as_std_path()).unwrap().len();
-    let source = SqliteSource::open(&db, &scratch()).unwrap();
+    let source = SqliteSource::open(&db, &scratch_in(&dir)).unwrap();
     let _ = source.recent(10).unwrap();
     drop(source);
 
@@ -302,7 +310,8 @@ fn real_library_if_available() {
         return;
     };
     let db = Utf8PathBuf::from(path);
-    let source = SqliteSource::open(&db, &scratch()).expect("real library should open");
+    let owner = tempfile::tempdir().unwrap();
+    let source = SqliteSource::open(&db, &scratch_in(&owner)).expect("real library should open");
     eprintln!("schema userdata {}", source.schema_version);
 
     let recent = source.recent(5).unwrap();
@@ -369,7 +378,7 @@ async fn the_facade_falls_through_to_sqlite_when_zotero_is_closed() {
 
     let config = yaz_zotero::Config {
         data_dir: Some(data_dir.clone()),
-        scratch: scratch(),
+        scratch: scratch_in(&dir),
     };
     let library =
         yaz_zotero::Library::connect(&config, yaz_core::net::http_client().unwrap()).await;
@@ -408,7 +417,7 @@ async fn an_empty_query_lists_recent_items() {
 
     let config = yaz_zotero::Config {
         data_dir: Some(data_dir),
-        scratch: scratch(),
+        scratch: scratch_in(&dir),
     };
     let library =
         yaz_zotero::Library::connect(&config, yaz_core::net::http_client().unwrap()).await;
@@ -471,9 +480,10 @@ async fn a_real_library_answers_whether_or_not_the_local_api_is_enabled() {
         eprintln!("YAZ_ZOTERO_DIR unset — skipping the live-Zotero pass");
         return;
     };
+    let owner = tempfile::tempdir().unwrap();
     let config = yaz_zotero::Config {
         data_dir: Some(Utf8PathBuf::from(dir)),
-        scratch: scratch(),
+        scratch: scratch_in(&owner),
     };
     let library =
         yaz_zotero::Library::connect(&config, yaz_core::net::http_client().unwrap()).await;
