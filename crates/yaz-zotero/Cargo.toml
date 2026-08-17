@@ -25,6 +25,9 @@ reqwest.workspace = true
 # preferable to a vcpkg tree. Opened read-only on a copy, never against the live
 # zotero.sqlite; see the module docs in src/sqlite.rs.
 rusqlite = { workspace = true }
+# For OnceCell: the offline library is opened on first query rather than at
+# connect, so startup never pays for copying a large database.
+tokio.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true

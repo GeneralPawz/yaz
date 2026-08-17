@@ -46,46 +46,68 @@ const NON_CITABLE: [&str; 3] = ["attachment", "note", "annotation"];
 #[derive(Debug)]
 pub struct SqliteSource {
     connection: Connection,
-    /// The temporary copy, removed on drop.
-    copy: Utf8PathBuf,
+    /// The cached copy this reads from.
+    ///
+    /// Kept rather than deleted on drop: it is a cache keyed to the source
+    /// library, reused across launches, and refreshed only when Zotero writes.
+    pub cache_path: Utf8PathBuf,
     /// The `userdata` schema version this library reported.
     pub schema_version: i64,
-}
-
-impl Drop for SqliteSource {
-    fn drop(&mut self) {
-        // Best effort: a leftover copy in the temp directory is untidy, not
-        // dangerous, and there is nothing useful to do if removal fails.
-        let _ = std::fs::remove_file(self.copy.as_std_path());
-    }
 }
 
 impl SqliteSource {
     /// Copy the library and open the copy read-only.
     ///
-    /// `scratch` is the directory the copy is written into.
+    /// `scratch` is the directory the cached copy lives in.
+    ///
+    /// # The copy is a cache, not a temporary
+    ///
+    /// The first version used a fresh filename per open and deleted it on
+    /// `Drop`. `Drop` does not run when a process is killed, and a desktop
+    /// application is killed all the time — so the copies accumulated. On the
+    /// machine this was found on: **201 files, a gigabyte**, one per launch and
+    /// one per test run, growing without bound.
+    ///
+    /// So there is now one copy per library, named deterministically from the
+    /// source path, refreshed only when the source has actually changed. That
+    /// fixes the leak and removes a 146 MB copy from the common path — Zotero
+    /// only writes when the user edits their library, and most launches reuse.
     pub fn open(database: &Utf8Path, scratch: &Utf8Path) -> Result<Self> {
-        if !database.as_std_path().is_file() {
+        let source_meta =
+            std::fs::metadata(database.as_std_path()).map_err(|_| Error::NoLibrary {
+                path: database.to_owned(),
+            })?;
+        if !source_meta.is_file() {
             return Err(Error::NoLibrary {
                 path: database.to_owned(),
             });
         }
 
-        // A distinct name per open, so two concurrent readers cannot clobber
-        // each other's copy.
-        let copy = scratch.join(format!(
-            "yaz-zotero-{}-{}.sqlite",
-            std::process::id(),
-            next_copy_id()
-        ));
         std::fs::create_dir_all(scratch.as_std_path()).map_err(|source| Error::Io {
             path: scratch.to_owned(),
             source,
         })?;
-        std::fs::copy(database.as_std_path(), copy.as_std_path()).map_err(|source| Error::Io {
-            path: database.to_owned(),
-            source,
-        })?;
+
+        let copy = scratch.join(cache_name(database));
+        sweep_leaked_copies(scratch, &copy);
+
+        if !copy_is_current(&copy, &source_meta) {
+            match std::fs::copy(database.as_std_path(), copy.as_std_path()) {
+                Ok(_) => {}
+                // Another yaz is reading this exact copy, so it cannot be
+                // replaced. Using the slightly older copy beats failing: it is
+                // a library view, and the alternative is no library at all.
+                Err(error) if copy.as_std_path().is_file() => {
+                    tracing::warn!(%error, "could not refresh the library copy; using the existing one");
+                }
+                Err(source) => {
+                    return Err(Error::Io {
+                        path: database.to_owned(),
+                        source,
+                    });
+                }
+            }
+        }
 
         let connection = Connection::open_with_flags(
             copy.as_std_path(),
@@ -132,7 +154,7 @@ impl SqliteSource {
 
         Ok(Self {
             connection,
-            copy,
+            cache_path: copy,
             schema_version,
         })
     }
@@ -354,11 +376,83 @@ impl SqliteSource {
     }
 }
 
-/// Serial number so concurrent opens get distinct copies.
-fn next_copy_id() -> u64 {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    COUNTER.fetch_add(1, Ordering::Relaxed)
+/// Prefix every cached copy shares, so leaked ones can be recognised.
+const CACHE_PREFIX: &str = "yaz-zotero-";
+
+/// A deterministic filename for this library's cached copy.
+///
+/// Derived from the source path so that two different libraries — a machine can
+/// easily have two Zotero profiles — do not share, and so that the same library
+/// reuses its copy across launches.
+fn cache_name(database: &Utf8Path) -> String {
+    format!(
+        "{CACHE_PREFIX}cache-{:016x}.sqlite",
+        fnv1a(database.as_str())
+    )
+}
+
+/// FNV-1a, written out rather than using `DefaultHasher`.
+///
+/// `DefaultHasher`'s output is explicitly not stable across Rust releases, and a
+/// cache filename that changes when the toolchain does would silently orphan the
+/// previous copy — which is the bug this whole mechanism exists to fix.
+fn fnv1a(input: &str) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in input.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
+/// Whether the cached copy still reflects the source.
+///
+/// Size and modification time together. Zotero rewrites the file whenever the
+/// user changes their library, so the timestamp moves; comparing size as well
+/// catches a restore-from-backup that happens to preserve the timestamp.
+fn copy_is_current(copy: &Utf8Path, source: &std::fs::Metadata) -> bool {
+    let Ok(existing) = std::fs::metadata(copy.as_std_path()) else {
+        return false;
+    };
+    if existing.len() != source.len() {
+        return false;
+    }
+    match (existing.modified(), source.modified()) {
+        (Ok(copied), Ok(original)) => copied >= original,
+        // Without timestamps there is no way to tell; re-copying is the safe
+        // answer, since a stale library is a wrong one.
+        _ => false,
+    }
+}
+
+/// Remove copies left behind by the old per-open naming scheme.
+///
+/// Only those. A `cache-` file that is not ours belongs to a *different*
+/// library — a machine can easily have two Zotero profiles — and deleting it
+/// would make the two libraries take turns re-copying each other's cache.
+///
+/// Best effort throughout: a file that cannot be removed is in use by another
+/// process, which is exactly the file to leave alone.
+fn sweep_leaked_copies(scratch: &Utf8Path, keep: &Utf8Path) {
+    let cache_marker = format!("{CACHE_PREFIX}cache-");
+    let Ok(entries) = std::fs::read_dir(scratch.as_std_path()) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path == keep.as_std_path() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let leaked = name.starts_with(CACHE_PREFIX)
+            && !name.starts_with(&cache_marker)
+            && name.ends_with(".sqlite");
+        if leaked {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
 }
 
 fn database(source: rusqlite::Error) -> Error {

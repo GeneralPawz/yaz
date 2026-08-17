@@ -35,6 +35,7 @@
 use camino::Utf8PathBuf;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use tokio::sync::OnceCell;
 
 use crate::ActiveSource;
 use crate::datadir::{self, DataDir};
@@ -58,10 +59,20 @@ pub struct Library {
     live: Option<LocalApi>,
     /// Set once a live query has failed, so the interface stops claiming live.
     demoted: AtomicBool,
-    /// `Mutex` because `rusqlite::Connection` is `Send` but not `Sync`, and this
-    /// is held in shared application state. The lock is never held across an
-    /// `await`; every sqlite call completes synchronously inside its own scope.
-    offline: Option<Mutex<SqliteSource>>,
+    /// The offline library, opened on **first query** rather than at connect.
+    ///
+    /// Opening it copies the database, and on a real library that is 146 MB —
+    /// cheap in isolation, but Windows Defender scans a freshly written file of
+    /// that size and the result was a visibly slower launch for everyone,
+    /// including users who never open the citation picker. The status panel asks
+    /// for connection state at startup, which made it the common path.
+    ///
+    /// `Mutex` inside because `rusqlite::Connection` is `Send` but not `Sync`.
+    /// The lock is never held across an `await`; every sqlite call completes
+    /// synchronously inside its own scope.
+    offline: OnceCell<Option<Mutex<SqliteSource>>>,
+    /// Everything needed to open the offline library when it is first wanted.
+    offline_config: Option<(Utf8PathBuf, Utf8PathBuf)>,
     /// Where the offline library was found, for the interface to explain.
     pub data_dir: Option<DataDir>,
     /// What the live probe found, whatever the outcome.
@@ -91,19 +102,18 @@ impl Library {
         let live_status = api.availability().await;
         let live = matches!(live_status, Availability::Available).then_some(api);
 
-        // Opened even when the live source works, so a later live failure has
-        // somewhere to fall through to. Copying the database while Zotero holds
-        // it open is fine — that is the whole reason for copying.
-        let (offline, data_dir, failure) = match datadir::resolve(config.data_dir.as_deref()) {
-            None => (
-                None,
-                None,
-                Some("no Zotero data directory could be located".to_owned()),
-            ),
-            Some(dir) => match SqliteSource::open(&dir.database(), &config.scratch) {
-                Ok(source) => (Some(Mutex::new(source)), Some(dir), None),
-                Err(error) => (None, Some(dir), Some(error.to_string())),
-            },
+        // Resolved, but not opened. Resolution reads two small text files and
+        // stats one path; opening copies the whole database.
+        let data_dir = datadir::resolve(config.data_dir.as_deref());
+        let offline_config = data_dir
+            .as_ref()
+            .filter(|dir| dir.has_database())
+            .map(|dir| (dir.database(), config.scratch.clone()));
+
+        let failure = if offline_config.is_none() {
+            Some("no Zotero library was found on this machine".to_owned())
+        } else {
+            None
         };
 
         // Only a genuine failure when nothing at all can answer: a missing
@@ -113,7 +123,8 @@ impl Library {
         Self {
             live,
             demoted: AtomicBool::new(false),
-            offline,
+            offline: OnceCell::new(),
+            offline_config,
             data_dir,
             live_status,
             failure,
@@ -121,11 +132,15 @@ impl Library {
     }
 
     /// Which source is answering right now.
+    ///
+    /// Reports the offline library as available without opening it — the
+    /// database file being present is enough to answer the question, and
+    /// opening it to find out would reintroduce the startup cost this avoids.
     pub fn source(&self) -> ActiveSource {
         if self.live.is_some() && !self.demoted.load(Ordering::Relaxed) {
             return ActiveSource::LocalApi;
         }
-        if self.offline.is_some() {
+        if self.offline_config.is_some() {
             return ActiveSource::Sqlite;
         }
         ActiveSource::None
@@ -158,8 +173,28 @@ impl Library {
         }
     }
 
-    fn offline_source(&self) -> Result<&Mutex<SqliteSource>> {
-        self.offline.as_ref().ok_or(Error::NotRunning)
+    /// The offline library, opening it if this is the first query.
+    async fn offline_source(&self) -> Result<&Mutex<SqliteSource>> {
+        let Some((database, scratch)) = &self.offline_config else {
+            return Err(Error::NoLibrary {
+                path: Utf8PathBuf::from("."),
+            });
+        };
+        let opened = self
+            .offline
+            .get_or_init(|| async {
+                match SqliteSource::open(database, scratch) {
+                    Ok(source) => Some(Mutex::new(source)),
+                    Err(error) => {
+                        tracing::warn!(%error, "could not open the offline Zotero library");
+                        None
+                    }
+                }
+            })
+            .await;
+        opened.as_ref().ok_or_else(|| Error::NoLibrary {
+            path: database.clone(),
+        })
     }
 
     /// Search the library, or list recent items when the query is empty.
@@ -173,7 +208,8 @@ impl Library {
         // Scoped so the guard is dropped before returning, and so no `await`
         // can ever be introduced while it is held.
         let source = self
-            .offline_source()?
+            .offline_source()
+            .await?
             .lock()
             .expect("zotero library mutex poisoned");
         if query.trim().is_empty() {
@@ -196,7 +232,8 @@ impl Library {
             }
         }
         let source = self
-            .offline_source()?
+            .offline_source()
+            .await?
             .lock()
             .expect("zotero library mutex poisoned");
         source.find(item_key)
@@ -211,7 +248,8 @@ impl Library {
             }
         }
         let source = self
-            .offline_source()?
+            .offline_source()
+            .await?
             .lock()
             .expect("zotero library mutex poisoned");
         source.annotations(item_key)
@@ -234,9 +272,16 @@ mod tests {
         Library {
             live: live.then(|| LocalApi::new(reqwest::Client::new())),
             demoted: AtomicBool::new(false),
-            // A real SqliteSource needs a database; these cases only exercise
-            // which source `source()` reports, so presence is what matters.
-            offline: None,
+            // Never opened by these cases: they exercise which source is
+            // *reported*, and reporting must not require opening anything —
+            // that is the property that keeps startup cheap.
+            offline: OnceCell::new(),
+            offline_config: offline.then(|| {
+                (
+                    Utf8PathBuf::from("/library/zotero.sqlite"),
+                    Utf8PathBuf::from("/scratch"),
+                )
+            }),
             data_dir: None,
             live_status: if live {
                 Availability::Available

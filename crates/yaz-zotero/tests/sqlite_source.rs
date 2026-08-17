@@ -507,3 +507,145 @@ async fn a_real_library_answers_whether_or_not_the_local_api_is_enabled() {
     // And an empty query must list something, or the picker opens blank.
     assert!(!library.search("", 10).await.unwrap().is_empty());
 }
+
+/// The copy is reused rather than rewritten on every open.
+///
+/// Regression test. The first version named the copy per open and deleted it on
+/// `Drop` — which does not run when a process is killed, and a desktop
+/// application is killed constantly. The machine this was found on had 201
+/// leaked copies totalling a gigabyte, and rewriting a 146 MB file on every
+/// launch is also what made startup visibly slow, because Windows Defender
+/// scans a freshly written file of that size.
+#[test]
+fn the_cached_copy_is_reused_when_the_library_has_not_changed() {
+    let dir = tempfile::tempdir().unwrap();
+    let scratch = tempfile::tempdir().unwrap();
+    let scratch_dir = Utf8PathBuf::from_path_buf(scratch.path().to_path_buf()).unwrap();
+    let db = Utf8PathBuf::from_path_buf(dir.path().join("zotero.sqlite")).unwrap();
+    build_fixture(&db, 125);
+
+    let first = SqliteSource::open(&db, &scratch_dir).unwrap();
+    let cache = first.cache_path.clone();
+    let written_at = std::fs::metadata(cache.as_std_path())
+        .unwrap()
+        .modified()
+        .unwrap();
+    drop(first);
+
+    // The copy must survive the source being dropped: it is a cache.
+    assert!(
+        cache.as_std_path().is_file(),
+        "the copy was deleted on drop"
+    );
+
+    let second = SqliteSource::open(&db, &scratch_dir).unwrap();
+    assert_eq!(
+        second.cache_path, cache,
+        "a second open must reuse the copy"
+    );
+    assert_eq!(
+        std::fs::metadata(cache.as_std_path())
+            .unwrap()
+            .modified()
+            .unwrap(),
+        written_at,
+        "the copy was rewritten even though the library had not changed"
+    );
+
+    // Exactly one copy, however many times it is opened.
+    let copies = std::fs::read_dir(scratch.path())
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_name().to_string_lossy().starts_with("yaz-zotero-"))
+        .count();
+    assert_eq!(copies, 1, "one cache per library, not one per open");
+}
+
+#[test]
+fn a_changed_library_refreshes_the_copy() {
+    let dir = tempfile::tempdir().unwrap();
+    let scratch = tempfile::tempdir().unwrap();
+    let scratch_dir = Utf8PathBuf::from_path_buf(scratch.path().to_path_buf()).unwrap();
+    let db = Utf8PathBuf::from_path_buf(dir.path().join("zotero.sqlite")).unwrap();
+    build_fixture(&db, 125);
+
+    let cache = SqliteSource::open(&db, &scratch_dir)
+        .unwrap()
+        .cache_path
+        .clone();
+
+    // Zotero writes: add another item, which changes size and timestamp.
+    let connection = rusqlite::Connection::open(db.as_std_path()).unwrap();
+    connection
+        .execute_batch(
+            "INSERT INTO items VALUES (99, 1, 'NEWITEM1', '2025-01-01 00:00:00');
+             INSERT INTO itemDataValues VALUES (900,'A brand new paper');
+             INSERT INTO itemData VALUES (99,1,900);",
+        )
+        .unwrap();
+    drop(connection);
+
+    let refreshed = SqliteSource::open(&db, &scratch_dir).unwrap();
+    // The content is the assertion that matters: a stale cache would hide the
+    // new item, which is far worse than a slow copy.
+    assert!(
+        refreshed.find("NEWITEM1").unwrap().is_some(),
+        "the cache was not refreshed after the library changed"
+    );
+    // Note this deliberately does not compare file *size*. SQLite reused a free
+    // page, so the file is byte-identical in length while its contents differ —
+    // which is exactly why `copy_is_current` compares the modification time too
+    // and not size alone.
+    assert!(
+        std::fs::metadata(cache.as_std_path())
+            .unwrap()
+            .modified()
+            .unwrap()
+            >= std::fs::metadata(db.as_std_path())
+                .unwrap()
+                .modified()
+                .unwrap(),
+        "the copy should be at least as new as the library"
+    );
+}
+
+#[test]
+fn copies_leaked_by_the_old_naming_scheme_are_swept_up() {
+    let dir = tempfile::tempdir().unwrap();
+    let scratch = tempfile::tempdir().unwrap();
+    let scratch_dir = Utf8PathBuf::from_path_buf(scratch.path().to_path_buf()).unwrap();
+    let db = Utf8PathBuf::from_path_buf(dir.path().join("zotero.sqlite")).unwrap();
+    build_fixture(&db, 125);
+
+    // What the previous version left behind, one per launch.
+    for n in 0..5 {
+        std::fs::write(
+            scratch.path().join(format!("yaz-zotero-1234-{n}.sqlite")),
+            b"junk",
+        )
+        .unwrap();
+    }
+    // Another library's cache, which must NOT be swept: two Zotero profiles on
+    // one machine would otherwise take turns deleting each other's copy.
+    let other = scratch
+        .path()
+        .join("yaz-zotero-cache-deadbeefdeadbeef.sqlite");
+    std::fs::write(&other, b"someone else's").unwrap();
+
+    let _source = SqliteSource::open(&db, &scratch_dir).unwrap();
+
+    let leaked = std::fs::read_dir(scratch.path())
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .starts_with("yaz-zotero-1234-")
+        })
+        .count();
+    assert_eq!(leaked, 0, "old-style copies should be swept");
+    assert!(
+        other.is_file(),
+        "another library's cache must be left alone"
+    );
+}
