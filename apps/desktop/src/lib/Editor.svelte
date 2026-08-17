@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { EditorState, Compartment } from "@codemirror/state";
   import {
     EditorView,
@@ -179,23 +180,49 @@
     ];
   }
 
+  /**
+   * Create the view once, for as long as there is an element to put it in.
+   *
+   * **This effect must depend on `host` and nothing else.** Everything else it
+   * needs is read through `untrack`, because an effect re-runs when anything it
+   * read changes — and `doc` changes on every keystroke, since `onChange` feeds
+   * the text straight back in as a prop.
+   *
+   * Reading `doc` here therefore destroyed and rebuilt CodeMirror on every
+   * character typed: the editor lost focus and the caret jumped to the top of
+   * the file, so the document could only be written one keystroke per click.
+   *
+   * Subsequent changes are handled by the effects below, which is the point of
+   * having them: a new file replaces the document, and toggling Vim
+   * reconfigures a compartment. Neither rebuilds the view.
+   */
   $effect(() => {
     if (!host) return;
-    view = new EditorView({
-      parent: host,
-      state: EditorState.create({
-        doc,
-        // Vim goes in a compartment so it can be toggled without rebuilding the
-        // document, which would lose the undo history and cursor.
-        extensions: [vimCompartment.of(vimMode ? vim() : []), ...baseExtensions()],
-      }),
+    const parent = host;
+
+    const instance = untrack(
+      () =>
+        new EditorView({
+          parent,
+          state: EditorState.create({
+            doc,
+            // Vim goes in a compartment so it can be toggled without rebuilding
+            // the document, which would lose the undo history and cursor.
+            extensions: [vimCompartment.of(vimMode ? vim() : []), ...baseExtensions()],
+          }),
+        }),
+    );
+
+    view = instance;
+    untrack(() => {
+      loadedDocId = docId;
+      onReady?.(editorApi(instance));
     });
-    loadedDocId = docId;
-    onReady?.(editorApi(view));
+
     return () => {
-      view?.destroy();
+      instance.destroy();
       view = undefined;
-      onReady?.(null);
+      untrack(() => onReady?.(null));
     };
   });
 
