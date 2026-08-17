@@ -1,8 +1,9 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
   import type { EditorApi } from "@yaz/api";
-  import Connections from "./lib/Connections.svelte";
   import MenuBar, { type Menu } from "./lib/MenuBar.svelte";
+  import Settings, { type Section } from "./lib/Settings.svelte";
+  import StatusLight, { type Health } from "./lib/StatusLight.svelte";
   import PdfView from "./lib/PdfView.svelte";
   import Picker from "./lib/Picker.svelte";
   import { t } from "./lib/i18n";
@@ -46,6 +47,28 @@
 
   let zoteroStatus = $state<ipc.ZoteroStatus | null>(null);
   let connectionsBusy = $state(false);
+  let settingsOpen = $state(false);
+  let settingsSection = $state<string | undefined>(undefined);
+  let enginesLoaded = $state(false);
+
+  /**
+   * What the status light shows.
+   *
+   * `unknown` is a real state, not a placeholder: nothing connects at startup
+   * any more, so until the user asks, yaz genuinely does not know. Painting it
+   * green or red would be a guess presented as a fact.
+   */
+  const health = $derived<Health>(
+    !zoteroStatus
+      ? "unknown"
+      : zoteroStatus.source === "none"
+        ? "off"
+        : zoteroStatus.isLive
+          ? "live"
+          : "degraded",
+  );
+
+  const healthKey = $derived(zoteroStatus ? zoteroStatus.sourceKey : "connections-unknown");
 
   /**
    * Ask the backend how the library is being read.
@@ -53,22 +76,46 @@
    * Never surfaced as a failure: not having Zotero is an ordinary state, and an
    * error banner for it would be noise on most machines.
    */
-  async function refreshConnections() {
-    connectionsBusy = true;
+  /**
+   * Detect the installed TeX engines.
+   *
+   * Deliberately not at startup. Each engine is detected by running it, and a
+   * system TeX on this platform is usually x86-64 under emulation — four probes
+   * cost over two seconds and flashed a console window each. Nothing needs the
+   * answer until the settings dialog is opened.
+   */
+  async function loadEngines() {
+    if (enginesLoaded) return;
     try {
-      zoteroStatus = await ipc.zoteroStatus(ZOTERO_PLUGIN_ID);
-    } catch {
-      zoteroStatus = null;
-    } finally {
-      connectionsBusy = false;
+      engines = await ipc.listEngines();
+      enginesLoaded = true;
+      if (project && !selectedEngine) {
+        const settings = await ipc.getProjectSettings(project.root);
+        selectedEngine = settings.engineId ?? engines.find((e) => e.available)?.id ?? null;
+      }
+    } catch (error) {
+      failure = String(error);
     }
   }
 
-  async function reconnect() {
+  function openSettings(section?: string) {
+    settingsSection = section;
+    settingsOpen = true;
+    void loadEngines();
+  }
+
+  /**
+   * Connect to Zotero, or re-probe if already connected.
+   *
+   * The only thing that starts a connection. Nothing probes on startup, so a
+   * user who never cites never pays for Zotero being looked for.
+   */
+  async function connectZotero() {
     connectionsBusy = true;
     try {
-      await ipc.zoteroReconnect(ZOTERO_PLUGIN_ID);
+      if (zoteroStatus) await ipc.zoteroReconnect(ZOTERO_PLUGIN_ID);
       zoteroStatus = await ipc.zoteroStatus(ZOTERO_PLUGIN_ID);
+      showNotice(t(zoteroStatus.liveStatusKey));
     } catch (error) {
       failure = String(error);
     } finally {
@@ -166,6 +213,11 @@
           disabled: true,
           separatorBefore: true,
         },
+        {
+          labelKey: "menu-edit-settings",
+          action: () => openSettings("engine"),
+          separatorBefore: true,
+        },
       ],
     },
     {
@@ -182,11 +234,32 @@
     },
     {
       labelKey: "menu-tools",
-      items: commands.map((command) => ({
-        labelKey: command.nameKey,
-        action: () => runCommand(command.id),
-        disabled: false,
-      })),
+      items: [
+        ...commands.map((command) => ({
+          labelKey: command.nameKey,
+          action: () => runCommand(command.id),
+        })),
+        {
+          labelKey: "menu-tools-connections",
+          separatorBefore: commands.length > 0,
+          // A flyout rather than a dialog: connecting is one click, and the
+          // detail belongs next to the thing it describes.
+          items: [
+            {
+              labelKey: zoteroStatus ? "connections-reconnect-zotero" : "connections-connect-zotero",
+              dot: health,
+              disabled: connectionsBusy,
+              action: connectZotero,
+            },
+            {
+              labelKey: "connections-obsidian",
+              dot: "unknown" as const,
+              disabled: true,
+              action: notImplemented,
+            },
+          ],
+        },
+      ],
     },
     {
       labelKey: "menu-help",
@@ -211,10 +284,109 @@
    * segment.
    */
   const windowTitle = $derived.by(() => {
-    if (!project) return t("app-name");
-    const name = project.root.replace(/[\/]+$/, "").split(/[\/]/).pop();
-    return name ? `${name} — ${t("app-name")}` : t("app-name");
+    if (!project) return "";
+    // The folder name, not the path and not the product name. The window
+    // already says which application it is; repeating it in the title bar of
+    // that application spends the only line there is.
+    return project.root.replace(/[\/]+$/, "").split(/[\/]/).pop() ?? "";
   });
+
+  const selectedEngineInfo = $derived(engines.find((e) => e.id === selectedEngine) ?? null);
+
+  /**
+   * The settings dialog's contents.
+   *
+   * The engine choice lives here rather than in the toolbar: it is set once per
+   * project and then not touched, which is the definition of a setting rather
+   * than a control.
+   */
+  const settingsSections = $derived<Section[]>([
+    {
+      id: "general",
+      labelKey: "settings-section-general",
+      glyph: "⚙",
+      groups: [
+        {
+          titleKey: "settings-group-editor",
+          fields: [
+            {
+              kind: "toggle",
+              labelKey: "menu-view-vim",
+              helpKey: "settings-vim-help",
+              value: vimMode,
+              onchange: (value) => (vimMode = value),
+            },
+          ],
+        },
+      ],
+    },
+    {
+      id: "engine",
+      labelKey: "settings-section-engine",
+      glyph: "⌘",
+      groups: [
+        {
+          titleKey: "settings-group-typesetting",
+          fields: [
+            {
+              kind: "select",
+              labelKey: "settings-engine",
+              helpKey: "settings-engine-help",
+              value: selectedEngine ?? "",
+              options: engines.map((engine) => ({
+                value: engine.id,
+                // Unavailable engines stay listed but unselectable. Hiding one
+                // leaves somebody hunting for an engine the docs promised.
+                label: engine.available
+                  ? engine.label
+                  : `${engine.label} — ${t("engine-unavailable-suffix")}`,
+                disabled: !engine.available,
+              })),
+              onchange: (value) => void chooseEngine(value),
+              warningKey:
+                selectedEngineInfo && !selectedEngineInfo.available
+                  ? (selectedEngineInfo.unavailableReasonKey ?? undefined)
+                  : undefined,
+            },
+            ...(project ? [] : [{ kind: "note" as const, labelKey: "settings-engine-no-project" }]),
+          ],
+        },
+      ],
+    },
+    {
+      id: "connections",
+      labelKey: "settings-section-connections",
+      glyph: "⇄",
+      groups: [
+        {
+          titleKey: "connections-zotero",
+          // Notes rather than controls: connecting is a menu action, and this
+          // is where the detail behind the status light lives — which source is
+          // answering, where it was found, and what to do about it.
+          fields: [
+            {
+              kind: "note",
+              labelKey: zoteroStatus ? zoteroStatus.liveStatusKey : "connections-unknown",
+            },
+            ...(zoteroStatus ? [{ kind: "note" as const, labelKey: zoteroStatus.sourceKey }] : []),
+            ...(zoteroStatus?.liveStatusKey === "zotero-live-api-disabled"
+              ? [{ kind: "note" as const, labelKey: "zotero-live-api-disabled-help" }]
+              : []),
+            ...(zoteroStatus?.wasDemoted
+              ? [{ kind: "note" as const, labelKey: "zotero-demoted" }]
+              : []),
+            ...(zoteroStatus && !zoteroStatus.keysAreAuthoritative && zoteroStatus.source !== "none"
+              ? [{ kind: "note" as const, labelKey: "zotero-keys-generated" }]
+              : []),
+          ],
+        },
+        {
+          titleKey: "connections-obsidian",
+          fields: [{ kind: "note", labelKey: "connections-not-configured" }],
+        },
+      ],
+    },
+  ]);
 
   function closeProject() {
     project = null;
@@ -224,8 +396,6 @@
     pdfData = null;
     void ipc.pluginSetProject(null);
   }
-
-  const selectedEngineInfo = $derived(engines.find((e) => e.id === selectedEngine) ?? null);
 
   const errorCount = $derived(
     result?.diagnostics.filter((d) => d.severity === "error").length ?? 0,
@@ -237,26 +407,21 @@
     void ipc.reportReady().catch(() => {
       /* measurement only; never worth surfacing to the user */
     });
-    void ipc
-      .listEngines()
-      .then((found) => {
-        engines = found;
-      })
-      .catch((error) => {
-        failure = String(error);
-      });
+    // Engines are NOT detected here. Detection runs each engine to see whether
+    // it exists, and a system TeX on Windows-on-ARM is x86-64 under emulation:
+    // four probes cost over two seconds and flashed a console window each.
+    // The settings dialog asks for them when it opens, which is the first
+    // moment anyone needs the answer.
+    //
+    // Zotero is not contacted here either. Nothing connects until the user
+    // asks, so a session that never cites anything never looks for a library.
 
     // Plugins load after the first paint, not before it. The window is usable
     // without them, and blocking startup on a plugin would spend the budget in
     // ADR-0015 on something the user has not asked for yet.
     void runtime
       .start({ [ZOTERO_PLUGIN_ID]: ZoteroPlugin })
-      .then(() => {
-        refreshCommands();
-        // After the plugins are loaded, not before: the status call is itself
-        // brokered, and asking earlier is refused because nothing is granted yet.
-        return refreshConnections();
-      })
+      .then(refreshCommands)
       .catch((error) => {
         failure = String(error);
       });
@@ -285,10 +450,11 @@
       await ipc.pluginSetProject(info.root);
       result = null;
       pdfData = null;
+      // The stored choice only. Resolving "no choice" to the first *available*
+      // engine would need the engine probe, and that is exactly what has been
+      // moved off the startup path; the settings dialog resolves it when opened.
       const settings = await ipc.getProjectSettings(info.root);
-      // No stored choice means "whatever this machine has"; show the first
-      // available engine rather than an empty picker.
-      selectedEngine = settings.engineId ?? engines.find((e) => e.available)?.id ?? null;
+      selectedEngine = settings.engineId;
       await openFile(info.entry);
     } catch (error) {
       failure = String(error);
@@ -355,34 +521,11 @@
       {busy ? t("compile-running") : t("compile-run")}
     </button>
 
-    <Connections
-      status={zoteroStatus}
-      busy={connectionsBusy}
-      onreconnect={reconnect}
-    />
-
-    <label class="engine" title={t("settings-engine-help")}>
-      {t("settings-engine")}
-      <select
-        disabled={!project}
-        value={selectedEngine ?? ""}
-        onchange={(event) => chooseEngine((event.currentTarget as HTMLSelectElement).value)}
-      >
-        {#each engines as engine (engine.id)}
-          <!-- Unavailable engines stay visible but unselectable. Hiding them
-               would leave someone hunting for an engine the docs promised. -->
-          <option value={engine.id} disabled={!engine.available}>
-            {engine.label}{#if !engine.available} — {t("engine-unavailable-suffix")}{/if}
-          </option>
-        {/each}
-      </select>
-    </label>
-
-    {#if selectedEngineInfo && !selectedEngineInfo.available && selectedEngineInfo.unavailableReasonKey}
-      <span class="warn">{t(selectedEngineInfo.unavailableReasonKey)}</span>
-    {/if}
-
     <span class="spacer"></span>
+
+    <!-- Something to glance at, not something to operate: the detail lives in
+         Tools > Connections. -->
+    <StatusLight {health} labelKey={healthKey} onclick={connectZotero} />
   </header>
 
   <div class="body">
@@ -455,6 +598,14 @@
         // plugin awaiting it is never left hanging.
         pending?.resolve(undefined);
       }}
+    />
+  {/if}
+
+  {#if settingsOpen}
+    <Settings
+      sections={settingsSections}
+      initial={settingsSection}
+      onclose={() => (settingsOpen = false)}
     />
   {/if}
 
@@ -538,32 +689,6 @@
   button:disabled {
     opacity: 0.5;
     cursor: default;
-  }
-
-  .engine {
-    display: flex;
-    align-items: center;
-    gap: var(--yaz-space-1);
-    color: var(--yaz-text-secondary);
-  }
-
-  select {
-    font: inherit;
-    color: var(--yaz-text-primary);
-    background: var(--yaz-bg-tertiary);
-    border: 1px solid var(--yaz-border);
-    border-radius: var(--yaz-radius-md);
-    padding: var(--yaz-space-1) var(--yaz-space-2);
-  }
-
-  select:disabled {
-    opacity: 0.5;
-  }
-
-  .warn {
-    color: var(--yaz-warning);
-    font-size: 0.85em;
-    max-inline-size: 24rem;
   }
 
   .body {

@@ -69,18 +69,71 @@ fn latexmk_flag(engine: &str) -> &'static str {
     }
 }
 
-/// Whether a binary can be found on `PATH`.
+/// Stop Windows opening a console window for a child process.
+///
+/// yaz is a GUI binary, so spawning a console application makes Windows
+/// allocate and show a console for it. Detecting four TeX engines at startup
+/// therefore flashed four black windows across the screen, which looks exactly
+/// like something crashing.
+///
+/// A no-op everywhere else: only Windows has this behaviour.
+fn suppress_console(command: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        /// `CREATE_NO_WINDOW`, from the Win32 process creation flags.
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = command;
+    }
+}
+
+/// Whether a binary can be found on `PATH`, answered once per process.
+///
+/// # Why this is cached
+///
+/// Each probe spawns a process, and on a Windows-on-ARM machine a system TeX is
+/// usually x86-64 running under emulation — where process start is slow enough
+/// to be felt. Probing every engine on every call added seconds to startup.
+///
+/// The cache means a TeX distribution installed while yaz is running is not
+/// noticed until restart. That is the right trade: the alternative charges every
+/// user, on every launch, for a change that almost never happens.
 fn binary_exists(name: &str) -> bool {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+
+    static CACHE: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+
+    if let Some(known) = cache.lock().expect("engine cache poisoned").get(name) {
+        return *known;
+    }
+
     // `--version` is the most portable liveness check across TeX tooling; some
     // of these do not support `--help` and none support a bare invocation
     // without blocking for input.
-    Command::new(name)
+    let mut command = Command::new(name);
+    command
         .arg("--version")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
+        .stdin(std::process::Stdio::null());
+    suppress_console(&mut command);
+
+    let found = command
         .status()
         .map(|status| status.success())
-        .unwrap_or(false)
+        .unwrap_or(false);
+
+    cache
+        .lock()
+        .expect("engine cache poisoned")
+        .insert(name.to_owned(), found);
+    found
 }
 
 impl CompileEngine for SystemEngine {
@@ -120,6 +173,9 @@ impl CompileEngine for SystemEngine {
         // and \bibliography paths resolve the way the author wrote them.
         command.current_dir(project.root.as_std_path());
         command.arg(project.entry.as_str());
+        // A compile is a console application too, and without this every build
+        // flashes a black window over whatever the user is reading.
+        suppress_console(&mut command);
 
         let output = command.output().map_err(|source| yaz_core::Error::Io {
             path: Utf8PathBuf::from(&self.engine),

@@ -26,6 +26,15 @@
     checked?: boolean | undefined;
     /** Draw a separator above this entry. */
     separatorBefore?: boolean | undefined;
+    /**
+     * Nested entries, shown as a flyout.
+     *
+     * One level only. A second level of nesting is where menus stop being
+     * navigable with a mouse, and nothing here needs it.
+     */
+    items?: MenuItem[] | undefined;
+    /** A coloured dot before the label, for connection state. */
+    dot?: "live" | "degraded" | "off" | "unknown" | undefined;
   }
 
   /** One top-level menu. */
@@ -77,11 +86,23 @@
    * and its absence is the thing that makes a hand-rolled menu bar feel wrong.
    */
   function hover(index: number) {
-    if (open !== null) open = index;
+    if (open !== null) {
+      open = index;
+      openSub = null;
+    }
   }
 
+  /** Which submenu is showing, keyed by its label. */
+  let openSub = $state<string | null>(null);
+
   function choose(item: MenuItem) {
+    // A parent opens its flyout rather than doing something itself.
+    if (item.items?.length) {
+      openSub = openSub === item.labelKey ? null : item.labelKey;
+      return;
+    }
     open = null;
+    openSub = null;
     if (!item.disabled) void item.action?.();
   }
 
@@ -117,7 +138,10 @@
         class:open={open === index}
         aria-haspopup="menu"
         aria-expanded={open === index}
-        onclick={() => (open = open === index ? null : index)}
+        onclick={() => {
+          open = open === index ? null : index;
+          openSub = null;
+        }}
         onmouseenter={() => hover(index)}
       >
         {t(menu.labelKey)}
@@ -129,16 +153,50 @@
             {#if item.separatorBefore}
               <div class="separator" role="separator"></div>
             {/if}
-            <button
-              type="button"
-              class="item"
-              role="menuitem"
-              disabled={item.disabled}
-              onclick={() => choose(item)}
-            >
-              <span class="tick" aria-hidden="true">{item.checked ? "✓" : ""}</span>
-              {t(item.labelKey)}
-            </button>
+            <div class="entry">
+              <button
+                type="button"
+                class="item"
+                role="menuitem"
+                aria-haspopup={item.items?.length ? "menu" : undefined}
+                aria-expanded={item.items?.length ? openSub === item.labelKey : undefined}
+                disabled={item.disabled}
+                onclick={() => choose(item)}
+                onmouseenter={() => {
+                  if (item.items?.length) openSub = item.labelKey;
+                  else openSub = null;
+                }}
+              >
+                <span class="tick" aria-hidden="true">{item.checked ? "✓" : ""}</span>
+                {#if item.dot}
+                  <span class="dot {item.dot}" aria-hidden="true"></span>
+                {/if}
+                {t(item.labelKey)}
+                {#if item.items?.length}
+                  <span class="arrow" aria-hidden="true">›</span>
+                {/if}
+              </button>
+
+              {#if item.items?.length && openSub === item.labelKey}
+                <div class="dropdown flyout" role="menu">
+                  {#each item.items as child (child.labelKey)}
+                    <button
+                      type="button"
+                      class="item"
+                      role="menuitem"
+                      disabled={child.disabled}
+                      onclick={() => choose(child)}
+                    >
+                      <span class="tick" aria-hidden="true">{child.checked ? "✓" : ""}</span>
+                      {#if child.dot}
+                        <span class="dot {child.dot}" aria-hidden="true"></span>
+                      {/if}
+                      {t(child.labelKey)}
+                    </button>
+                  {/each}
+                </div>
+              {/if}
+            </div>
           {/each}
         </div>
       {/if}
@@ -332,6 +390,41 @@
     inline-size: 1em;
     flex: none;
     color: var(--yaz-accent);
+  }
+
+  .entry {
+    position: relative;
+  }
+
+  .flyout {
+    inset-block-start: calc(-1 * var(--yaz-space-1));
+    inset-inline-start: 100%;
+  }
+
+  .arrow {
+    margin-inline-start: auto;
+    padding-inline-start: var(--yaz-space-3);
+    color: var(--yaz-text-muted);
+  }
+
+  .dot {
+    inline-size: 0.5rem;
+    block-size: 0.5rem;
+    border-radius: 50%;
+    flex: none;
+    background: var(--yaz-text-muted);
+  }
+
+  .dot.live {
+    background: var(--yaz-success);
+  }
+
+  .dot.degraded {
+    background: var(--yaz-warning);
+  }
+
+  .dot.off {
+    background: var(--yaz-error);
   }
 
   .separator {

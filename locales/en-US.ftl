@@ -224,3 +224,22 @@ window-minimise = Minimise
 window-maximise = Maximise
 window-restore = Restore
 window-close = Close
+
+## Settings
+
+settings-title = Settings
+settings-section-general = General
+settings-section-engine = Typesetting
+settings-section-connections = Connections
+settings-group-editor = Editor
+settings-group-typesetting = Engine
+settings-vim-help = Modal editing in both source and visual mode.
+settings-engine-no-project = Open a project to choose its engine. The choice is saved per project.
+
+## Connections, continued
+
+connections-unknown = Not connected yet
+connections-connect-zotero = Connect to Zotero
+connections-reconnect-zotero = Reconnect to Zotero
+menu-tools-connections = Connections
+menu-edit-settings = Settings…
