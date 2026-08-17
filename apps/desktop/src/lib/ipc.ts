@@ -156,6 +156,16 @@ export interface ZoteroStatus {
   liveStatusKey: string;
   /** Whether a live source was tried and then demoted after failing. */
   wasDemoted: boolean;
+  /**
+   * Whether Zotero is running and answering.
+   *
+   * Separate from `isLive`: queries read a copy of the database, because that
+   * is far faster and covers group libraries too. So the source is offline
+   * while the data is current, and this is what says so.
+   */
+  zoteroRunning: boolean;
+  /** Libraries the live API reported — personal plus groups. */
+  libraryCount: number;
 }
 
 /** A library item. */

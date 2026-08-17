@@ -33,15 +33,42 @@ pub const ZOTERO_HOST: &str = "127.0.0.1";
 /// The port Zotero's connector and local API share.
 pub const ZOTERO_PORT: u16 = 23119;
 
-/// Base URL for the local API.
-fn base() -> String {
-    format!("http://{ZOTERO_HOST}:{ZOTERO_PORT}/api/users/0")
+/// Root of the local API.
+fn api_root() -> String {
+    format!("http://{ZOTERO_HOST}:{ZOTERO_PORT}/api")
+}
+
+/// One library the API can serve.
+///
+/// Zotero has no cross-library endpoint: a query names exactly one library, so
+/// reaching a whole collection means asking each in turn. On the machine this
+/// was developed against that is twelve — 802 items in the personal library and
+/// 788 spread across eleven groups. Querying only `users/0`, which is what this
+/// did at first, silently hid half of them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LibraryRef {
+    /// The personal library.
+    User,
+    /// A group library, by its Zotero group id.
+    Group(u64),
+}
+
+impl LibraryRef {
+    /// The path segment naming this library.
+    fn path(&self) -> String {
+        match self {
+            LibraryRef::User => "users/0".to_owned(),
+            LibraryRef::Group(id) => format!("groups/{id}"),
+        }
+    }
 }
 
 /// A client for a locally running Zotero.
 #[derive(Debug, Clone)]
 pub struct LocalApi {
     http: reqwest::Client,
+    /// Every library to query. Always includes the personal one.
+    libraries: Vec<LibraryRef>,
 }
 
 /// What a probe of the local API found.
@@ -147,7 +174,47 @@ impl LocalApi {
     /// The client comes from [`yaz_core::net::http_client`] so that the trust
     /// policy in ADR-0019 has exactly one implementation.
     pub fn new(http: reqwest::Client) -> Self {
-        Self { http }
+        Self {
+            http,
+            libraries: vec![LibraryRef::User],
+        }
+    }
+
+    /// The libraries this will query.
+    pub fn libraries(&self) -> &[LibraryRef] {
+        &self.libraries
+    }
+
+    /// Ask Zotero which group libraries exist, and query those too.
+    ///
+    /// Without this only the personal library is visible, and that is not a
+    /// degradation anyone can see: the picker simply never offers half the
+    /// sources, with no error and no explanation.
+    pub async fn discover_libraries(&mut self) {
+        let url = format!("{}/users/0/groups", api_root());
+        let Ok(response) = self
+            .http
+            .get(&url)
+            .query(&[("format", "json")])
+            .timeout(std::time::Duration::from_secs(5))
+            .send()
+            .await
+        else {
+            return;
+        };
+        let Ok(body) = response.text().await else {
+            return;
+        };
+
+        #[derive(Deserialize)]
+        struct Group {
+            id: u64,
+        }
+        if let Ok(groups) = serde_json::from_str::<Vec<Group>>(&body) {
+            self.libraries = std::iter::once(LibraryRef::User)
+                .chain(groups.into_iter().map(|group| LibraryRef::Group(group.id)))
+                .collect();
+        }
     }
 
     /// Whether this source can actually answer queries.
@@ -167,7 +234,7 @@ impl LocalApi {
     pub async fn availability(&self) -> Availability {
         let response = self
             .http
-            .get(format!("{}/items", base()))
+            .get(format!("{}/users/0/items", api_root()))
             .query(&[("limit", "1"), ("format", "json")])
             .timeout(std::time::Duration::from_millis(1500))
             .send()
@@ -184,26 +251,45 @@ impl LocalApi {
         }
     }
 
-    /// Search the library.
+    /// Search every library.
+    ///
+    /// # Why this is not the query path
+    ///
+    /// One request per library, and Zotero serves them one at a time — issuing
+    /// them concurrently measured no faster. Across twelve libraries a single
+    /// search took **3.4 seconds**, against **16 ms** for the same search over
+    /// the copied database, which covers every library in one query. A picker
+    /// cannot spend that per keystroke.
+    ///
+    /// Kept correct and available because that reasoning is a measurement, not
+    /// a law: a Zotero with a cross-library endpoint would change the answer.
     pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<Item>> {
-        let url = format!("{}/items", base());
-        let response = self
-            .http
-            .get(&url)
-            .query(&[
-                ("q", query),
-                ("limit", &limit.to_string()),
-                ("format", "json"),
-                // Ask Zotero to leave out the things that are not citable
-                // rather than filtering them out after transfer.
-                ("itemType", "-attachment || note || annotation"),
-            ])
-            .send()
-            .await
-            .map_err(http)?;
+        let mut all = Vec::new();
+        for library in &self.libraries {
+            let url = format!("{}/{}/items", api_root(), library.path());
+            let response = self
+                .http
+                .get(&url)
+                .query(&[
+                    ("q", query),
+                    ("limit", &limit.to_string()),
+                    ("format", "json"),
+                    // Ask Zotero to leave out what is not citable rather than
+                    // filtering it out after transfer.
+                    ("itemType", "-attachment || note || annotation"),
+                ])
+                .send()
+                .await
+                .map_err(http)?;
 
-        let body = response.text().await.map_err(http)?;
-        parse_items(&body)
+            let body = response.text().await.map_err(http)?;
+            all.extend(parse_items(&body)?);
+            if all.len() >= limit {
+                break;
+            }
+        }
+        all.truncate(limit);
+        Ok(all)
     }
 
     /// Look one item up by its Zotero key.
@@ -211,21 +297,27 @@ impl LocalApi {
     /// A separate endpoint from search, because a key matches no searchable
     /// field — passing one to `/items?q=` finds nothing.
     pub async fn find(&self, item_key: &str) -> Result<Option<Item>> {
-        let url = format!("{}/items/{item_key}", base());
-        let response = self
-            .http
-            .get(&url)
-            .query(&[("format", "json")])
-            .send()
-            .await
-            .map_err(http)?;
+        // A key does not say which library holds it, so this asks each.
+        for library in &self.libraries {
+            let url = format!("{}/{}/items/{item_key}", api_root(), library.path());
+            let response = self
+                .http
+                .get(&url)
+                .query(&[("format", "json")])
+                .send()
+                .await
+                .map_err(http)?;
 
-        if response.status() == reqwest::StatusCode::NOT_FOUND {
-            return Ok(None);
+            if !response.status().is_success() {
+                continue;
+            }
+            let body = response.text().await.map_err(http)?;
+            // The single-item endpoint returns one envelope, not an array.
+            if let Some(item) = parse_items(&format!("[{body}]"))?.pop() {
+                return Ok(Some(item));
+            }
         }
-        let body = response.text().await.map_err(http)?;
-        // The single-item endpoint returns one envelope, not an array.
-        parse_items(&format!("[{body}]")).map(|mut items| items.pop())
+        Ok(None)
     }
 
     /// Every marked passage on an item.
@@ -245,16 +337,22 @@ impl LocalApi {
     }
 
     async fn children(&self, key: &str) -> Result<String> {
-        let url = format!("{}/items/{key}/children", base());
-        self.http
-            .get(&url)
-            .query(&[("format", "json")])
-            .send()
-            .await
-            .map_err(http)?
-            .text()
-            .await
-            .map_err(http)
+        for library in &self.libraries {
+            let url = format!("{}/{}/items/{key}/children", api_root(), library.path());
+            let response = self
+                .http
+                .get(&url)
+                .query(&[("format", "json")])
+                .send()
+                .await
+                .map_err(http)?;
+            if response.status().is_success() {
+                return response.text().await.map_err(http);
+            }
+        }
+        // An item no library admits to holding has no children; that is not an
+        // error, and reporting one would surface as a failed citation.
+        Ok("[]".to_owned())
     }
 }
 
@@ -534,6 +632,6 @@ mod tests {
         // A configurable Zotero host would be a configurable exfiltration
         // target for anything holding the `net` capability.
         assert_eq!(ZOTERO_HOST, "127.0.0.1");
-        assert!(base().starts_with("http://127.0.0.1:23119/"));
+        assert!(api_root().starts_with("http://127.0.0.1:23119/"));
     }
 }

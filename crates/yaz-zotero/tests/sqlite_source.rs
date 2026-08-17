@@ -659,3 +659,40 @@ fn copies_leaked_by_the_old_naming_scheme_are_swept_up() {
         "another library's cache must be left alone"
     );
 }
+
+/// A running Zotero does not move queries onto the slow path.
+///
+/// Regression test for the ordering ADR-0008 originally specified. Enabling
+/// Zotero's local API made the picker *worse*: the API answers one library per
+/// request, the first implementation asked only `users/0`, and a real machine
+/// keeps half its items in group libraries — so searches silently lost them
+/// while the interface reported a healthy live connection. It is also 200x
+/// slower: 3458 ms across twelve libraries against 16 ms for the copy.
+///
+/// So the copy is the query path whenever it exists, and the live API answers
+/// the cheaper question of whether Zotero is running.
+#[tokio::test]
+async fn a_running_zotero_does_not_take_over_the_query_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let data_dir = Utf8PathBuf::from_path_buf(dir.path().to_path_buf()).unwrap();
+    build_fixture(&data_dir.join("zotero.sqlite"), 125);
+
+    let config = yaz_zotero::Config {
+        data_dir: Some(data_dir),
+        scratch: scratch_in(&dir),
+    };
+    let library =
+        yaz_zotero::Library::connect(&config, yaz_core::net::http_client().unwrap()).await;
+
+    assert_eq!(
+        library.source(),
+        yaz_zotero::ActiveSource::Sqlite,
+        "the copy must answer queries whether or not Zotero is running"
+    );
+
+    // And it must actually answer, from the fixture rather than from whatever
+    // library a running Zotero happens to be serving.
+    let items = library.search("Semantic validation", 10).await.unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].key, "ITEMAAAA");
+}

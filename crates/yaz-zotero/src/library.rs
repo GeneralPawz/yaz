@@ -6,6 +6,31 @@
 //! library is a correctness problem in a citation tool, not a graceful
 //! fallback, so [`Library::source`] is not optional detail.
 //!
+//! # The offline copy is the query path, and that is a measurement
+//!
+//! [ADR-0008] ordered the sources live-first, on the reasonable assumption that
+//! a live source beats a copy. Measured against a real library, it does not:
+//!
+//! | Search | Time | Covers |
+//! | --- | ---: | --- |
+//! | Zotero local API | 3458 ms | one request **per library** |
+//! | Copied database | 16 ms | every library, one query |
+//!
+//! Zotero has no cross-library endpoint and serves requests one at a time, so
+//! the API cost is twelve round trips on the machine this was built against —
+//! and issuing them concurrently measured no faster. A picker cannot spend
+//! three seconds per keystroke.
+//!
+//! Worse, the first version asked only `users/0`, so enabling the local API
+//! made the picker *lose* the 788 items held in group libraries while
+//! confidently reporting itself connected. That is precisely the silent
+//! degradation the ADR exists to prevent, arriving through the door marked
+//! "live source".
+//!
+//! So queries read the copy, and the live API answers a different and much
+//! cheaper question: **is Zotero running?** Which is worth knowing, because it
+//! decides whether the copy can be trusted to be current.
+//!
 //! # Degrading is a runtime behaviour, not a startup one
 //!
 //! The first version of this picked a source when it connected and then used it
@@ -77,6 +102,11 @@ pub struct Library {
     pub data_dir: Option<DataDir>,
     /// What the live probe found, whatever the outcome.
     pub live_status: Availability,
+    /// Group libraries the live API reported, when it could be asked.
+    ///
+    /// Only meaningful for display: the query path reads every library from the
+    /// copy regardless.
+    pub library_count: usize,
     /// Why no source could be reached, when none could.
     pub failure: Option<String>,
 }
@@ -98,8 +128,14 @@ impl Library {
     /// anyway — a user without Zotero installed is not an error condition — so
     /// it is represented as [`ActiveSource::None`] rather than an `Err`.
     pub async fn connect(config: &Config, http: reqwest::Client) -> Self {
-        let api = LocalApi::new(http);
+        let mut api = LocalApi::new(http);
         let live_status = api.availability().await;
+        if matches!(live_status, Availability::Available) {
+            // Only for reporting. Knowing there are twelve libraries is what
+            // makes "802 of 1590 items" visible rather than invisible.
+            api.discover_libraries().await;
+        }
+        let library_count = api.libraries().len();
         let live = matches!(live_status, Availability::Available).then_some(api);
 
         // Resolved, but not opened. Resolution reads two small text files and
@@ -127,23 +163,37 @@ impl Library {
             offline_config,
             data_dir,
             live_status,
+            library_count,
             failure,
         }
     }
 
-    /// Which source is answering right now.
+    /// Which source answers queries.
     ///
-    /// Reports the offline library as available without opening it — the
-    /// database file being present is enough to answer the question, and
-    /// opening it to find out would reintroduce the startup cost this avoids.
+    /// The copy is preferred whenever it exists — see the module docs; it is two
+    /// hundred times faster and covers every library. The live API is the
+    /// fallback, not the default.
+    ///
+    /// Reports availability without opening anything: the database file being
+    /// present answers the question, and opening it to find out would
+    /// reintroduce the startup cost this avoids.
     pub fn source(&self) -> ActiveSource {
-        if self.live.is_some() && !self.demoted.load(Ordering::Relaxed) {
-            return ActiveSource::LocalApi;
-        }
         if self.offline_config.is_some() {
             return ActiveSource::Sqlite;
         }
+        if self.live.is_some() && !self.demoted.load(Ordering::Relaxed) {
+            return ActiveSource::LocalApi;
+        }
         ActiveSource::None
+    }
+
+    /// Whether Zotero is running and answering.
+    ///
+    /// Distinct from [`Library::source`]. The copy is what gets read; this says
+    /// whether the original is being actively written, which is what decides
+    /// whether the copy can be trusted to be current.
+    pub fn zotero_is_running(&self) -> bool {
+        self.live.is_some()
     }
 
     /// Whether a live source was demoted after failing a query.
@@ -199,7 +249,11 @@ impl Library {
 
     /// Search the library, or list recent items when the query is empty.
     pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<Item>> {
-        if let Some(api) = self.live_if_trusted() {
+        // The copy first: it is faster and complete. The API is consulted only
+        // when there is no copy to read.
+        if self.offline_config.is_none()
+            && let Some(api) = self.live_if_trusted()
+        {
             match api.search(query, limit).await {
                 Ok(items) => return Ok(items),
                 Err(error) => self.demote(&error),
@@ -225,7 +279,11 @@ impl Library {
     /// search on, so routing a lookup through [`Library::search`] finds nothing —
     /// for every item, not just some.
     pub async fn find(&self, item_key: &str) -> Result<Option<Item>> {
-        if let Some(api) = self.live_if_trusted() {
+        // The copy first: it is faster and complete. The API is consulted only
+        // when there is no copy to read.
+        if self.offline_config.is_none()
+            && let Some(api) = self.live_if_trusted()
+        {
             match api.find(item_key).await {
                 Ok(item) => return Ok(item),
                 Err(error) => self.demote(&error),
@@ -241,7 +299,11 @@ impl Library {
 
     /// Every marked passage on an item.
     pub async fn annotations(&self, item_key: &str) -> Result<Vec<Annotation>> {
-        if let Some(api) = self.live_if_trusted() {
+        // The copy first: it is faster and complete. The API is consulted only
+        // when there is no copy to read.
+        if self.offline_config.is_none()
+            && let Some(api) = self.live_if_trusted()
+        {
             match api.annotations(item_key).await {
                 Ok(annotations) => return Ok(annotations),
                 Err(error) => self.demote(&error),
@@ -288,6 +350,7 @@ mod tests {
             } else {
                 Availability::NotRunning
             },
+            library_count: 1,
             failure: (!live && !offline).then(|| "nothing".to_owned()),
         }
     }

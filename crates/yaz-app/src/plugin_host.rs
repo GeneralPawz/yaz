@@ -370,6 +370,16 @@ pub struct ZoteroStatus {
     live_status_key: String,
     /// Whether a live source was tried and then demoted after failing.
     was_demoted: bool,
+    /// Whether Zotero is running and answering.
+    ///
+    /// Deliberately separate from `is_live`. Queries read a copy of the
+    /// database because that is two hundred times faster and covers every
+    /// library, so the *source* is offline while the *data* is current — and
+    /// what makes it current is Zotero being the thing that last wrote the file
+    /// this copy came from.
+    zotero_running: bool,
+    /// How many libraries the live API reported, personal plus groups.
+    library_count: usize,
 }
 
 /// A library item as the picker shows it.
@@ -421,6 +431,8 @@ pub async fn plugin_zotero_status(
         detail: library.failure.clone(),
         live_status_key: library.live_status.message_key().to_owned(),
         was_demoted: library.was_demoted(),
+        zotero_running: library.zotero_is_running(),
+        library_count: library.library_count,
     })
 }
 

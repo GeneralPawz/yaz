@@ -63,19 +63,23 @@
       ? "unknown"
       : zoteroStatus.source === "none"
         ? "off"
-        : zoteroStatus.isLive
+        : // Green when Zotero is running, even though queries read a copy of
+          // the database: the copy is refreshed from a file Zotero is actively
+          // maintaining, so the data is current. Amber means the library is
+          // readable but nothing is keeping it up to date.
+          zoteroStatus.zoteroRunning
           ? "live"
           : "degraded",
   );
 
-  const healthKey = $derived(zoteroStatus ? zoteroStatus.sourceKey : "connections-unknown");
+  const healthKey = $derived(
+    !zoteroStatus
+      ? "connections-unknown"
+      : zoteroStatus.zoteroRunning
+        ? "zotero-live-available"
+        : zoteroStatus.sourceKey,
+  );
 
-  /**
-   * Ask the backend how the library is being read.
-   *
-   * Never surfaced as a failure: not having Zotero is an ordinary state, and an
-   * error banner for it would be noise on most machines.
-   */
   /**
    * Detect the installed TeX engines.
    *
