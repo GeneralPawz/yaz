@@ -33,6 +33,7 @@ yaz-compile.workspace = true
 yaz-plugin.workspace = true
 yaz-zotero.workspace = true
 yaz-obsidian.workspace = true
+yaz-vcs.workspace = true
 
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"

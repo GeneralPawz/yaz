@@ -111,6 +111,15 @@ pub struct ProjectSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub document_locale: Option<String>,
 
+    /// Which version-control backend records this project, if any.
+    ///
+    /// Absent means yaz is not recording versions. It deliberately does **not**
+    /// mean there is no history: switching version control off leaves the
+    /// repository and everything in it alone, so switching it back on finds the
+    /// history where it was left.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version_control: Option<String>,
+
     /// The pane arrangement, as the frontend serialises it.
     ///
     /// Stored opaquely on purpose. The layout tree is a interface concern —
@@ -192,6 +201,7 @@ mod tests {
                 engine: "lualatex".to_owned(),
             }),
             document_locale: Some("de-DE".to_owned()),
+            version_control: Some("git".to_owned()),
             workspace: Some(r#"{"kind":"leaf","tabs":["editor"]}"#.to_owned()),
         };
         let text = toml::to_string_pretty(&settings).expect("serialises");

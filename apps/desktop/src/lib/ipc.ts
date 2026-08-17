@@ -316,3 +316,87 @@ export interface RecentProject {
 export function recentProjects(): Promise<RecentProject[]> {
   return invoke<RecentProject[]>("recent_projects");
 }
+
+// ---------------------------------------------------------------------------
+// Version control.
+//
+// Switching it off is a settings line, never a deletion: there is deliberately
+// no command that removes a repository. See crates/yaz-app/src/vcs_commands.rs.
+// ---------------------------------------------------------------------------
+
+/** One recorded version. */
+export interface Commit {
+  id: string;
+  shortId: string;
+  summary: string;
+  author: string;
+  /** ISO-8601, formatted by the backend. */
+  timestamp: string;
+}
+
+/** A version-control backend the user could choose. */
+export interface VcsBackend {
+  id: string;
+  labelKey: string;
+  available: boolean;
+}
+
+/** Whether a project is being recorded, and the state of its history. */
+export interface VcsStatus {
+  /** Whether yaz is recording versions for this project. */
+  enabled: boolean;
+  backend: string;
+  /** Whether that backend works on this machine. */
+  available: boolean;
+  /** Whether the project has a history at all. */
+  initialised: boolean;
+  /** Whether anything differs from the last recorded version. */
+  dirty: boolean;
+  head: Commit | null;
+}
+
+/** Every backend, whether or not it works here. */
+export function vcsBackends(): Promise<VcsBackend[]> {
+  return invoke<VcsBackend[]>("vcs_backends");
+}
+
+/** Whether a project is being recorded. */
+export function vcsStatus(root: string): Promise<VcsStatus> {
+  return invoke<VcsStatus>("vcs_status", { root });
+}
+
+/** Start recording versions, creating the repository if there is none. */
+export function vcsEnable(root: string, backend: string): Promise<VcsStatus> {
+  return invoke<VcsStatus>("vcs_enable", { root, backend });
+}
+
+/** Stop recording. Leaves the repository and every version untouched. */
+export function vcsDisable(root: string): Promise<VcsStatus> {
+  return invoke<VcsStatus>("vcs_disable", { root });
+}
+
+/**
+ * Record a version.
+ *
+ * Omit `message` to have one generated from what changed. A message the author
+ * wrote always wins; the backend never overrules it.
+ */
+export function vcsCommit(
+  root: string,
+  message?: string,
+): Promise<Commit | null> {
+  return invoke<Commit | null>("vcs_commit", {
+    root,
+    message: message ?? null,
+  });
+}
+
+/** Recorded versions, most recent first. */
+export function vcsHistory(root: string): Promise<Commit[]> {
+  return invoke<Commit[]>("vcs_history", { root });
+}
+
+/** Put the project back to a recorded version. */
+export function vcsRestore(root: string, commit: string): Promise<void> {
+  return invoke<void>("vcs_restore", { root, commit });
+}

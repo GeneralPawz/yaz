@@ -15,6 +15,7 @@
 
 mod commands;
 mod plugin_host;
+mod vcs_commands;
 
 /// True when running in development mode.
 ///
@@ -66,6 +67,13 @@ fn main() {
             commands::set_project_engine,
             commands::set_project_workspace,
             commands::recent_projects,
+            vcs_commands::vcs_backends,
+            vcs_commands::vcs_status,
+            vcs_commands::vcs_enable,
+            vcs_commands::vcs_disable,
+            vcs_commands::vcs_commit,
+            vcs_commands::vcs_history,
+            vcs_commands::vcs_restore,
             commands::read_artefact,
             commands::report_ready,
             plugin_host::plugin_zotero_status,

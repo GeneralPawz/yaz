@@ -4,6 +4,8 @@
   import MenuBar, { type Menu } from "./lib/MenuBar.svelte";
   import Settings, { type Section } from "./lib/Settings.svelte";
   import StatusLight, { type Health } from "./lib/StatusLight.svelte";
+  import History from "./lib/History.svelte";
+  import Prompt from "./lib/Prompt.svelte";
   import Pane from "./lib/workspace/Pane.svelte";
   import * as layoutTree from "./lib/workspace/layout";
   import type { Node as LayoutNode, TabId } from "./lib/workspace/layout";
@@ -55,6 +57,88 @@
   let enginesLoaded = $state(false);
   let recent = $state<ipc.RecentProject[]>([]);
 
+  let vcs = $state<ipc.VcsStatus | null>(null);
+  let vcsBackends = $state<ipc.VcsBackend[]>([]);
+  let commits = $state<ipc.Commit[]>([]);
+  let vcsBusy = $state(false);
+  /** Set while the commit-message prompt is open. */
+  let askingForMessage = $state(false);
+
+  /** Refresh version-control state and history for the open project. */
+  async function refreshVcs() {
+    if (!project) {
+      vcs = null;
+      commits = [];
+      return;
+    }
+    try {
+      vcs = await ipc.vcsStatus(project.root);
+      commits = vcs.enabled ? await ipc.vcsHistory(project.root) : [];
+    } catch (error) {
+      failure = String(error);
+    }
+  }
+
+  /**
+   * Turn recording on or off.
+   *
+   * Off is a settings line: the repository and every recorded version stay
+   * exactly where they are, and switching back on finds them.
+   */
+  async function toggleVcs() {
+    if (!project) return;
+    vcsBusy = true;
+    try {
+      vcs = vcs?.enabled
+        ? await ipc.vcsDisable(project.root)
+        : await ipc.vcsEnable(project.root, vcs?.backend ?? "git");
+      commits = vcs.enabled ? await ipc.vcsHistory(project.root) : [];
+      showNotice(t(vcs.enabled ? "vcs-recording" : "vcs-not-recording"));
+    } catch (error) {
+      failure = String(error);
+    } finally {
+      vcsBusy = false;
+    }
+  }
+
+  /**
+   * Record a version.
+   *
+   * `message` absent means "you describe it" — the backend generates one from
+   * what changed. A message the author wrote is never overruled.
+   */
+  async function recordVersion(message?: string) {
+    if (!project || !vcs?.enabled) return;
+    vcsBusy = true;
+    try {
+      const commit = await ipc.vcsCommit(project.root, message);
+      if (commit) {
+        showNotice(t("vcs-committed", { id: commit.shortId }));
+      }
+      await refreshVcs();
+    } catch (error) {
+      failure = String(error);
+    } finally {
+      vcsBusy = false;
+    }
+  }
+
+  async function restoreVersion(commit: ipc.Commit) {
+    if (!project) return;
+    vcsBusy = true;
+    try {
+      await ipc.vcsRestore(project.root, commit.id);
+      showNotice(t("vcs-restored", { id: commit.shortId }));
+      // The file on disk changed underneath the editor, so re-read it.
+      if (currentFile) await openFile(currentFile);
+      await refreshVcs();
+    } catch (error) {
+      failure = String(error);
+    } finally {
+      vcsBusy = false;
+    }
+  }
+
   /** Refresh the recent list. Cheap, and only read when a menu opens. */
   async function loadRecent() {
     try {
@@ -79,6 +163,7 @@
   const tabTitles = $derived<Record<TabId, string>>({
     editor: currentFile ?? t("workspace-tab-editor"),
     pdf: t("workspace-tab-pdf"),
+    history: t("workspace-tab-history"),
   });
 
   /**
@@ -157,6 +242,14 @@
     settingsSection = section;
     settingsOpen = true;
     void loadEngines();
+    // Detecting git is a process start, so it happens when the dialog that
+    // shows the answer is opened rather than at launch.
+    if (vcsBackends.length === 0) {
+      void ipc
+        .vcsBackends()
+        .then((found) => (vcsBackends = found))
+        .catch(() => {});
+    }
   }
 
   /**
@@ -304,8 +397,13 @@
           separatorBefore: true,
           // Closed tabs come back from here. A tab that can be closed and not
           // reopened is a tab that gets closed once and then missed.
-          items: (["editor", "pdf"] as TabId[]).map((tab) => ({
-            labelKey: tab === "editor" ? "workspace-tab-editor" : "workspace-tab-pdf",
+          items: (["editor", "pdf", "history"] as TabId[]).map((tab) => ({
+            labelKey:
+              tab === "editor"
+                ? "workspace-tab-editor"
+                : tab === "pdf"
+                  ? "workspace-tab-pdf"
+                  : "workspace-tab-history",
             checked: layoutTree.isOpen(layout, tab),
             action: () => {
               updateLayout(
@@ -329,6 +427,14 @@
           labelKey: command.nameKey,
           action: () => runCommand(command.id),
         })),
+        {
+          labelKey: "vcs-commit-with-message",
+          disabled: !vcs?.enabled || !vcs.dirty || vcsBusy,
+          separatorBefore: commands.length > 0,
+          action: () => {
+            askingForMessage = true;
+          },
+        },
         {
           labelKey: "menu-tools-connections",
           separatorBefore: commands.length > 0,
@@ -444,6 +550,36 @@
       ],
     },
     {
+      id: "version-control",
+      labelKey: "vcs-title",
+      glyph: "⎇",
+      groups: [
+        {
+          titleKey: "vcs-title",
+          fields: [
+            {
+              kind: "select",
+              labelKey: "vcs-settings-backend",
+              helpKey: "vcs-settings-backend-help",
+              value: vcs?.backend ?? "git",
+              options: vcsBackends.map((backend) => ({
+                value: backend.id,
+                label: backend.available
+                  ? t(backend.labelKey)
+                  : `${t(backend.labelKey)} — ${t("engine-unavailable-suffix")}`,
+                disabled: !backend.available,
+              })),
+              onchange: (value) => void switchBackend(value),
+            },
+            {
+              kind: "note",
+              labelKey: vcs?.enabled ? "vcs-recording" : "vcs-not-recording",
+            },
+          ],
+        },
+      ],
+    },
+    {
       id: "connections",
       labelKey: "settings-section-connections",
       glyph: "⇄",
@@ -477,6 +613,20 @@
       ],
     },
   ]);
+
+  /** Change which backend records this project. */
+  async function switchBackend(id: string) {
+    if (!project) return;
+    vcsBusy = true;
+    try {
+      vcs = vcs?.enabled ? await ipc.vcsEnable(project.root, id) : { ...vcs!, backend: id };
+      await refreshVcs();
+    } catch (error) {
+      failure = String(error);
+    } finally {
+      vcsBusy = false;
+    }
+  }
 
   function closeProject() {
     project = null;
@@ -555,6 +705,7 @@
       selectedEngine = settings.engineId;
       layout = layoutTree.deserialise(settings.workspace);
       void loadRecent();
+      void refreshVcs();
       await openFile(info.entry);
     } catch (error) {
       failure = String(error);
@@ -589,6 +740,9 @@
     if (!project || !currentFile || !dirty) return;
     await ipc.writeFile(project.root, currentFile, docText);
     dirty = false;
+    // Recording is part of saving when it is switched on. A save with no edits
+    // records nothing, so this does not fill the history with empty versions.
+    if (vcs?.enabled) await recordVersion();
   }
 
   async function compile() {
@@ -639,6 +793,17 @@
     {/if}
   {:else if tab === "pdf"}
     <PdfView data={pdfData} />
+  {:else if tab === "history"}
+    <History
+      status={vcs}
+      {commits}
+      busy={vcsBusy}
+      onenable={toggleVcs}
+      onrestore={restoreVersion}
+      oncommit={() => {
+        askingForMessage = true;
+      }}
+    />
   {/if}
 {/snippet}
 
@@ -650,6 +815,26 @@
 
   <header class="toolbar">
     <span class="spacer"></span>
+
+    <!-- Recording versions is a mode, so it is a toggle rather than an action,
+         and it shows which state it is in rather than what it would do. -->
+    <button
+      type="button"
+      class="vcs"
+      class:on={vcs?.enabled}
+      disabled={!project || vcsBusy}
+      title={t(vcs?.enabled ? "vcs-recording" : "vcs-enable")}
+      aria-label={t(vcs?.enabled ? "vcs-recording" : "vcs-enable")}
+      aria-pressed={vcs?.enabled ?? false}
+      onclick={toggleVcs}
+    >
+      <svg viewBox="0 0 14 14" aria-hidden="true">
+        <circle cx="4" cy="3" r="1.8" />
+        <circle cx="4" cy="11" r="1.8" />
+        <circle cx="10.5" cy="7" r="1.8" />
+        <path d="M4 4.8v4.4M5.6 3.4h2.2a1.5 1.5 0 011.5 1.5v.6" />
+      </svg>
+    </button>
 
     <!-- Compiling is the one thing done constantly, so it gets a shape rather
          than a word: a play triangle, next to the indicator that says whether
@@ -736,6 +921,20 @@
     />
   {/if}
 
+  {#if askingForMessage}
+    <Prompt
+      titleKey="vcs-commit-title"
+      placeholderKey="vcs-commit-placeholder"
+      hintKey="vcs-commit-hint"
+      onsubmit={(value) => {
+        askingForMessage = false;
+        // Null is a dismissal; an empty string is "you describe it", which is
+        // why they are distinguished rather than both treated as cancel.
+        if (value !== null) void recordVersion(value);
+      }}
+    />
+  {/if}
+
   {#if notice}
     <output class="notice">{notice}</output>
   {/if}
@@ -797,6 +996,45 @@
 
   .spacer {
     flex: 1;
+  }
+
+  .vcs {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 1.75rem;
+    block-size: 1.75rem;
+    padding: 0;
+    background: none;
+    border: none;
+    border-radius: var(--yaz-radius-sm);
+    color: var(--yaz-text-muted);
+    cursor: pointer;
+  }
+
+  .vcs svg {
+    inline-size: 0.875rem;
+    block-size: 0.875rem;
+    fill: currentColor;
+    stroke: currentColor;
+    stroke-width: 1.2;
+  }
+
+  .vcs svg path {
+    fill: none;
+  }
+
+  .vcs.on {
+    color: var(--yaz-accent);
+  }
+
+  .vcs:hover:not(:disabled) {
+    background: var(--yaz-bg-hover);
+  }
+
+  .vcs:disabled {
+    opacity: 0.4;
+    cursor: default;
   }
 
   .play {

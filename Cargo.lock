@@ -7384,6 +7384,7 @@ dependencies = [
  "yaz-latex",
  "yaz-obsidian",
  "yaz-plugin",
+ "yaz-vcs",
  "yaz-zotero",
 ]
 
@@ -7469,6 +7470,18 @@ dependencies = [
  "tracing",
  "url",
  "yaz-core",
+]
+
+[[package]]
+name = "yaz-vcs"
+version = "0.2.0"
+dependencies = [
+ "camino",
+ "pretty_assertions",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tracing",
 ]
 
 [[package]]

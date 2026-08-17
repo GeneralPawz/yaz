@@ -257,3 +257,35 @@ menu-view-reset-layout = Reset layout
 menu-file-open-recent = Open recent
 menu-file-no-recent = No recent projects
 compile-start = Compile
+
+## Version control
+
+vcs-title = Version history
+vcs-enable = Start recording versions
+vcs-disable = Stop recording versions
+vcs-recording = Recording versions
+vcs-not-recording = Not recording versions
+vcs-unavailable = Version control is not available on this machine
+vcs-backend-git = Git
+vcs-backend-builtin = Built into yaz (not ready yet)
+vcs-settings-backend = Records with
+vcs-settings-backend-help = Git uses your own repository, so branches, remotes and hooks keep working. Switching version control off never deletes anything.
+vcs-commit-with-message = Save a version with a message…
+vcs-commit-placeholder = What changed, and why
+vcs-commit-title = Save a version
+vcs-commit-hint = Leave this empty and yaz will describe the changes for you.
+vcs-committed = Saved version { $id }
+vcs-nothing-to-commit = Nothing has changed since the last version.
+vcs-restore = Restore this version
+vcs-restored = Restored { $id }. Save a version to keep it.
+vcs-empty = No versions recorded yet.
+vcs-uncommitted = You have unsaved changes.
+vcs-off-explains = Switch version control on to keep a history of this project.
+vcs-error-unavailable = That version control system is not installed.
+vcs-error-not-initialised = This project is not under version control.
+vcs-error-would-lose-changes = Save a version first — restoring would overwrite changes that are not recorded anywhere.
+vcs-error-not-implemented = That version control system is not built yet.
+vcs-error-tool = Version control reported a problem.
+vcs-error-io = A file could not be read or written.
+vcs-error-unknown-backend = Unknown version control system.
+workspace-tab-history = History

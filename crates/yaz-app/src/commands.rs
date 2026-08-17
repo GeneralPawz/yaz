@@ -96,13 +96,13 @@ pub struct CompileResult {
 /// capability broker will inherit, and it is why the check cannot be a simple
 /// `starts_with` on the untouched input.
 fn resolve_in_root(root: &Utf8Path, relative: &str) -> Result<Utf8PathBuf> {
-    let root_canonical = dunce_canonicalize(root)?;
+    let root_canonical = canonical_root(root)?;
     let joined = root.join(relative);
 
     // A file being written may not exist yet, so canonicalise the parent and
     // re-attach the final component.
     let candidate = if joined.exists() {
-        dunce_canonicalize(&joined)?
+        canonical_root(&joined)?
     } else {
         let parent = joined
             .parent()
@@ -110,7 +110,7 @@ fn resolve_in_root(root: &Utf8Path, relative: &str) -> Result<Utf8PathBuf> {
         let file_name = joined.file_name().ok_or_else(|| {
             CommandError::new("error-fs-outside-root", "path has no final component")
         })?;
-        dunce_canonicalize(parent)?.join(file_name)
+        canonical_root(parent)?.join(file_name)
     };
 
     if !candidate.starts_with(&root_canonical) {
@@ -124,7 +124,7 @@ fn resolve_in_root(root: &Utf8Path, relative: &str) -> Result<Utf8PathBuf> {
 }
 
 /// Canonicalise, keeping the result UTF-8 and free of Windows `\\?\` prefixes.
-fn dunce_canonicalize(path: &Utf8Path) -> Result<Utf8PathBuf> {
+pub(crate) fn canonical_root(path: &Utf8Path) -> Result<Utf8PathBuf> {
     let canonical = std::fs::canonicalize(path)
         .map_err(|error| CommandError::new("error-fs-not-found", format!("{path}: {error}")))?;
     // Windows canonicalisation yields a `\\?\C:\…` extended-length path, which
@@ -137,7 +137,7 @@ fn dunce_canonicalize(path: &Utf8Path) -> Result<Utf8PathBuf> {
 /// Open a directory as a project and list its LaTeX sources.
 #[tauri::command]
 pub fn open_project(root: String) -> Result<ProjectInfo> {
-    let root = dunce_canonicalize(Utf8Path::new(&root))?;
+    let root = canonical_root(Utf8Path::new(&root))?;
 
     let mut files: Vec<String> = walkdir::WalkDir::new(root.as_std_path())
         .max_depth(8)
@@ -214,7 +214,7 @@ pub fn write_file(root: String, relative_path: String, contents: String) -> Resu
 /// Compile the project's entry document.
 #[tauri::command]
 pub fn compile_project(root: String) -> Result<CompileResult> {
-    let root = dunce_canonicalize(Utf8Path::new(&root))?;
+    let root = canonical_root(Utf8Path::new(&root))?;
     let info = open_project(root.to_string())?;
 
     if info.entry.is_empty() {
@@ -377,7 +377,7 @@ pub fn list_engines() -> Vec<EngineInfo> {
 /// Read the persisted per-project settings.
 #[tauri::command]
 pub fn get_project_settings(root: String) -> Result<ProjectSettingsDto> {
-    let root = dunce_canonicalize(Utf8Path::new(&root))?;
+    let root = canonical_root(Utf8Path::new(&root))?;
     let settings = ProjectSettings::load(&root)?;
     Ok(ProjectSettingsDto {
         engine_id: settings.engine.map(|e| e.to_id()),
@@ -435,7 +435,7 @@ fn remember_project(root: &Utf8Path) {
 /// carries how it is worked on as well as how it is built.
 #[tauri::command]
 pub fn set_project_workspace(root: String, workspace: String) -> Result<()> {
-    let root = dunce_canonicalize(Utf8Path::new(&root))?;
+    let root = canonical_root(Utf8Path::new(&root))?;
     let mut settings = ProjectSettings::load(&root)?;
     settings.workspace = Some(workspace);
     settings.save(&root)?;
@@ -445,7 +445,7 @@ pub fn set_project_workspace(root: String, workspace: String) -> Result<()> {
 /// Persist the engine choice for a project, writing `yaz.toml`.
 #[tauri::command]
 pub fn set_project_engine(root: String, engine_id: String) -> Result<()> {
-    let root = dunce_canonicalize(Utf8Path::new(&root))?;
+    let root = canonical_root(Utf8Path::new(&root))?;
 
     let choice = EngineChoice::from_id(&engine_id).ok_or_else(|| {
         CommandError::new(
