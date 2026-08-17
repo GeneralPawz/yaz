@@ -243,3 +243,11 @@ connections-connect-zotero = Connect to Zotero
 connections-reconnect-zotero = Reconnect to Zotero
 menu-tools-connections = Connections
 menu-edit-settings = Settings…
+
+## Workspace
+
+workspace-close-tab = Close tab
+workspace-tab-editor = Source
+workspace-tab-pdf = Preview
+menu-view-tabs = Tabs
+menu-view-reset-layout = Reset layout

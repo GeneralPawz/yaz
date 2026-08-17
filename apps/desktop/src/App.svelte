@@ -4,6 +4,9 @@
   import MenuBar, { type Menu } from "./lib/MenuBar.svelte";
   import Settings, { type Section } from "./lib/Settings.svelte";
   import StatusLight, { type Health } from "./lib/StatusLight.svelte";
+  import Pane from "./lib/workspace/Pane.svelte";
+  import * as layoutTree from "./lib/workspace/layout";
+  import type { Node as LayoutNode, TabId } from "./lib/workspace/layout";
   import PdfView from "./lib/PdfView.svelte";
   import Picker from "./lib/Picker.svelte";
   import { t } from "./lib/i18n";
@@ -50,6 +53,44 @@
   let settingsOpen = $state(false);
   let settingsSection = $state<string | undefined>(undefined);
   let enginesLoaded = $state(false);
+
+  /**
+   * The pane layout.
+   *
+   * Replaces a hard-coded editor-left / PDF-right grid. Every view added after
+   * those two — rich text, an outline, a diff — would otherwise have needed its
+   * own slot and its own arrangement rule; a tree costs the same for two panes
+   * or six, and "close the preview and give the source the whole window" stops
+   * being a special case.
+   */
+  let layout = $state<LayoutNode>(layoutTree.defaultLayout());
+
+  /** Tab names. A filename is data, so it is not a message key. */
+  const tabTitles = $derived<Record<TabId, string>>({
+    editor: currentFile ?? t("workspace-tab-editor"),
+    pdf: t("workspace-tab-pdf"),
+  });
+
+  /**
+   * Persist the arrangement with the project.
+   *
+   * Per project rather than globally: a thesis and a conference paper want
+   * different arrangements, and the engine choice already lives here.
+   */
+  async function saveLayout() {
+    if (!project) return;
+    try {
+      await ipc.setProjectWorkspace(project.root, layoutTree.serialise(layout));
+    } catch {
+      // A layout is a convenience. Failing to store it must not interrupt
+      // whatever the user was actually doing.
+    }
+  }
+
+  function updateLayout(next: LayoutNode | null) {
+    layout = next ?? layoutTree.defaultLayout();
+    void saveLayout();
+  }
 
   /**
    * What the status light shows.
@@ -233,6 +274,27 @@
           action: () => {
             vimMode = !vimMode;
           },
+        },
+        {
+          labelKey: "menu-view-tabs",
+          separatorBefore: true,
+          // Closed tabs come back from here. A tab that can be closed and not
+          // reopened is a tab that gets closed once and then missed.
+          items: (["editor", "pdf"] as TabId[]).map((tab) => ({
+            labelKey: tab === "editor" ? "workspace-tab-editor" : "workspace-tab-pdf",
+            checked: layoutTree.isOpen(layout, tab),
+            action: () => {
+              updateLayout(
+                layoutTree.isOpen(layout, tab)
+                  ? layoutTree.closeTab(layout, tab)
+                  : layoutTree.openTab(layout, tab),
+              );
+            },
+          })),
+        },
+        {
+          labelKey: "menu-view-reset-layout",
+          action: () => updateLayout(layoutTree.defaultLayout()),
         },
       ],
     },
@@ -459,6 +521,7 @@
       // moved off the startup path; the settings dialog resolves it when opened.
       const settings = await ipc.getProjectSettings(info.root);
       selectedEngine = settings.engineId;
+      layout = layoutTree.deserialise(settings.workspace);
       await openFile(info.entry);
     } catch (error) {
       failure = String(error);
@@ -514,6 +577,38 @@
   }
 </script>
 
+<!--
+  What each tab renders. A snippet rather than a component map, so the editor and
+  the preview keep the props they already had and the workspace stays ignorant
+  of what a tab actually is.
+-->
+{#snippet tabContent(tab: TabId)}
+  {#if tab === "editor"}
+    {#if currentFile && EditorComponent}
+      <EditorComponent
+        doc={docText}
+        docId={currentFile}
+        {vimMode}
+        onChange={(text) => {
+          docText = text;
+          dirty = true;
+        }}
+        onSave={save}
+        onReady={(api) => {
+          editorApi = api;
+          refreshCommands();
+        }}
+      />
+    {:else if currentFile}
+      <p class="empty">{t("editor-loading")}</p>
+    {:else}
+      <p class="empty">{t("workspace-no-file-open")}</p>
+    {/if}
+  {:else if tab === "pdf"}
+    <PdfView data={pdfData} />
+  {/if}
+{/snippet}
+
 <div class="app">
   <!-- The window is undecorated, so this row is the title bar. The project
        name lives here, which is where a title bar puts it — and is why the
@@ -556,32 +651,16 @@
       {/if}
     </nav>
 
-    <main class="editor-pane">
-      {#if currentFile && EditorComponent}
-        <EditorComponent
-          doc={docText}
-          docId={currentFile}
-          vimMode={vimMode}
-          onChange={(text) => {
-            docText = text;
-            dirty = true;
-          }}
-          onSave={save}
-          onReady={(api) => {
-            editorApi = api;
-            refreshCommands();
-          }}
-        />
-      {:else if currentFile}
-        <p class="empty">{t("editor-loading")}</p>
-      {:else}
-        <p class="empty">{t("workspace-no-file-open")}</p>
-      {/if}
-    </main>
-
-    <aside class="pdf-pane">
-      <PdfView data={pdfData} />
-    </aside>
+    <Pane
+      node={layout}
+      titles={tabTitles}
+      content={tabContent}
+      onmove={(tab, target, zone) =>
+        updateLayout(layoutTree.moveTab(layout, tab, target, zone))}
+      onfocus={(tab) => updateLayout(layoutTree.focusTab(layout, tab))}
+      onclose={(tab) => updateLayout(layoutTree.closeTab(layout, tab))}
+      onresize={(path, sizes) => updateLayout(layoutTree.resize(layout, path, sizes))}
+    />
   </div>
 
   {#if picker}
@@ -698,7 +777,8 @@
   .body {
     flex: 1;
     display: grid;
-    grid-template-columns: 15rem 1fr 1fr;
+    /* The file list, then the workspace, which arranges itself. */
+    grid-template-columns: 15rem 1fr;
     min-block-size: 0;
   }
 
@@ -735,17 +815,6 @@
     margin-inline-start: var(--yaz-space-2);
     color: var(--yaz-accent);
     font-size: 0.85em;
-  }
-
-  .editor-pane {
-    min-inline-size: 0;
-    overflow: hidden;
-    border-inline-end: 1px solid var(--yaz-border);
-  }
-
-  .pdf-pane {
-    min-inline-size: 0;
-    overflow: hidden;
   }
 
   .empty {

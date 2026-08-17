@@ -86,6 +86,8 @@ export interface EngineInfo {
 export interface ProjectSettings {
   engineId: string | null;
   entry: string | null;
+  /** The stored pane arrangement, or null for a project not yet arranged. */
+  workspace: string | null;
 }
 
 /**
@@ -287,4 +289,12 @@ export function zoteroSetDataDir(
   path: string | null,
 ): Promise<ZoteroStatus> {
   return invoke<ZoteroStatus>("plugin_set_zotero_data_dir", { pluginId, path });
+}
+
+/** Persist the pane arrangement for a project. */
+export function setProjectWorkspace(
+  root: string,
+  workspace: string,
+): Promise<void> {
+  return invoke<void>("set_project_workspace", { root, workspace });
 }

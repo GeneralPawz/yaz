@@ -378,7 +378,21 @@ pub fn get_project_settings(root: String) -> Result<ProjectSettingsDto> {
     Ok(ProjectSettingsDto {
         engine_id: settings.engine.map(|e| e.to_id()),
         entry: settings.entry.map(|p| p.to_string()),
+        workspace: settings.workspace,
     })
+}
+
+/// Persist the pane arrangement for a project.
+///
+/// Written through the same settings file as the engine choice, so a project
+/// carries how it is worked on as well as how it is built.
+#[tauri::command]
+pub fn set_project_workspace(root: String, workspace: String) -> Result<()> {
+    let root = dunce_canonicalize(Utf8Path::new(&root))?;
+    let mut settings = ProjectSettings::load(&root)?;
+    settings.workspace = Some(workspace);
+    settings.save(&root)?;
+    Ok(())
 }
 
 /// Persist the engine choice for a project, writing `yaz.toml`.
@@ -405,6 +419,8 @@ pub fn set_project_engine(root: String, engine_id: String) -> Result<()> {
 pub struct ProjectSettingsDto {
     engine_id: Option<String>,
     entry: Option<String>,
+    /// The pane arrangement, opaque to this layer.
+    workspace: Option<String>,
 }
 
 #[cfg(test)]
