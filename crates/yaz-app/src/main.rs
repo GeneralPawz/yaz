@@ -65,6 +65,7 @@ fn main() {
             commands::get_project_settings,
             commands::set_project_engine,
             commands::set_project_workspace,
+            commands::recent_projects,
             commands::read_artefact,
             commands::report_ready,
             plugin_host::plugin_zotero_status,

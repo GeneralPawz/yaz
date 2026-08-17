@@ -251,3 +251,9 @@ workspace-tab-editor = Source
 workspace-tab-pdf = Preview
 menu-view-tabs = Tabs
 menu-view-reset-layout = Reset layout
+
+## File menu, continued
+
+menu-file-open-recent = Open recent
+menu-file-no-recent = No recent projects
+compile-start = Compile

@@ -46,6 +46,8 @@
   /** The pane the pointer is over, and where in it, while a drag is in flight. */
   let hovering = $state<DropZone | null>(null);
   let body = $state<HTMLElement | null>(null);
+  /** True while a drag is over the tab strip rather than the pane body. */
+  let overTabs = $state(false);
   let container = $state<HTMLElement | null>(null);
 
   /**
@@ -155,7 +157,34 @@
   </div>
 {:else}
   <section class="pane">
-    <div class="tabs" role="tablist">
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="tabs"
+      class:dropping={hovering === "center" && overTabs}
+      role="tablist"
+      tabindex="-1"
+      ondragover={(event) => {
+        // Dropping onto another pane's tab strip is the natural way to say
+        // "put it in that pane", and was previously inert: only the pane body
+        // accepted drops, so aiming at the tabs did nothing at all.
+        event.preventDefault();
+        event.stopPropagation();
+        overTabs = true;
+        hovering = "center";
+      }}
+      ondragleave={() => {
+        overTabs = false;
+        hovering = null;
+      }}
+      ondrop={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const tab = event.dataTransfer?.getData("application/x-yaz-tab");
+        overTabs = false;
+        hovering = null;
+        if (tab && node.kind === "leaf") onmove(tab, node.id, "center");
+      }}
+    >
       {#each node.tabs as tab (tab)}
         <div
           class="tab"
@@ -199,7 +228,7 @@
     >
       {@render content(node.active)}
 
-      {#if hovering}
+      {#if hovering && !overTabs}
         <div class="drop {hovering}" aria-hidden="true"></div>
       {/if}
     </div>
@@ -255,6 +284,11 @@
     min-block-size: 0;
     overflow: hidden;
     background: var(--yaz-bg-primary);
+  }
+
+  .tabs.dropping {
+    background: var(--yaz-bg-selection);
+    box-shadow: inset 0 0 0 1px var(--yaz-accent);
   }
 
   .tabs {

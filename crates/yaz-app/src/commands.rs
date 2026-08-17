@@ -175,6 +175,10 @@ pub fn open_project(root: String) -> Result<ProjectInfo> {
         .cloned()
         .unwrap_or_default();
 
+    // Recorded here rather than in the frontend: this is the one place
+    // that knows the open succeeded and knows the canonical root.
+    remember_project(&root);
+
     Ok(ProjectInfo {
         root: root.to_string(),
         entry: entry.clone(),
@@ -380,6 +384,49 @@ pub fn get_project_settings(root: String) -> Result<ProjectSettingsDto> {
         entry: settings.entry.map(|p| p.to_string()),
         workspace: settings.workspace,
     })
+}
+
+/// Projects opened before, most recent first.
+///
+/// Entries whose folder has since gone are filtered out rather than offered:
+/// a menu item that always fails is worse than one that is absent.
+#[tauri::command]
+pub fn recent_projects() -> Vec<RecentProject> {
+    let Some(dir) = yaz_core::settings::config_dir() else {
+        return Vec::new();
+    };
+    yaz_core::settings::Settings::load(&dir)
+        .recent_projects
+        .into_iter()
+        .filter(|root| root.as_std_path().is_dir())
+        .map(|root| RecentProject {
+            name: root.file_name().unwrap_or(root.as_str()).to_owned(),
+            root: root.to_string(),
+        })
+        .collect()
+}
+
+/// A previously opened project, as the menu lists it.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentProject {
+    /// The folder name, which is what a menu should show.
+    name: String,
+    /// The full path, used to reopen and shown as a tooltip.
+    root: String,
+}
+
+/// Record a project as most recently opened.
+fn remember_project(root: &Utf8Path) {
+    let Some(dir) = yaz_core::settings::config_dir() else {
+        return;
+    };
+    let mut settings = yaz_core::settings::Settings::load(&dir);
+    settings.remember_project(root);
+    if let Err(error) = settings.save(&dir) {
+        // Losing the recent list is not worth failing an open over.
+        tracing::warn!(%error, "could not record the recently opened project");
+    }
 }
 
 /// Persist the pane arrangement for a project.

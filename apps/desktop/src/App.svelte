@@ -53,6 +53,16 @@
   let settingsOpen = $state(false);
   let settingsSection = $state<string | undefined>(undefined);
   let enginesLoaded = $state(false);
+  let recent = $state<ipc.RecentProject[]>([]);
+
+  /** Refresh the recent list. Cheap, and only read when a menu opens. */
+  async function loadRecent() {
+    try {
+      recent = await ipc.recentProjects();
+    } catch {
+      recent = [];
+    }
+  }
 
   /**
    * The pane layout.
@@ -228,6 +238,20 @@
       labelKey: "menu-file",
       items: [
         { labelKey: "menu-file-open-folder", action: chooseProject },
+        {
+          labelKey: "menu-file-open-recent",
+          // Titles here are folder names, which are data rather than interface
+          // copy, so they are passed through as labels and not message keys.
+          items:
+            recent.length > 0
+              ? recent.map((entry) => ({
+                  labelKey: entry.name,
+                  literalLabel: true,
+                  tooltip: entry.root,
+                  action: () => openProjectAt(entry.root),
+                }))
+              : [{ labelKey: "menu-file-no-recent", disabled: true }],
+        },
         {
           labelKey: "menu-file-save",
           action: save,
@@ -485,6 +509,10 @@
     // Plugins load after the first paint, not before it. The window is usable
     // without them, and blocking startup on a plugin would spend the budget in
     // ADR-0015 on something the user has not asked for yet.
+    // A small TOML read, so it can happen at startup without being felt - and
+    // the File menu needs it populated the first time it is opened.
+    void loadRecent();
+
     void runtime
       .start({ [ZOTERO_PLUGIN_ID]: ZoteroPlugin })
       .then(refreshCommands)
@@ -506,6 +534,10 @@
   async function chooseProject() {
     const picked = await open({ directory: true, multiple: false });
     if (typeof picked !== "string") return;
+    await openProjectAt(picked);
+  }
+
+  async function openProjectAt(picked: string) {
     failure = null;
     try {
       const info = await ipc.openProject(picked);
@@ -522,6 +554,7 @@
       const settings = await ipc.getProjectSettings(info.root);
       selectedEngine = settings.engineId;
       layout = layoutTree.deserialise(settings.workspace);
+      void loadRecent();
       await openFile(info.entry);
     } catch (error) {
       failure = String(error);
@@ -616,11 +649,22 @@
   <MenuBar {menus} title={windowTitle} />
 
   <header class="toolbar">
-    <button onclick={compile} disabled={!project || busy}>
-      {busy ? t("compile-running") : t("compile-run")}
-    </button>
-
     <span class="spacer"></span>
+
+    <!-- Compiling is the one thing done constantly, so it gets a shape rather
+         than a word: a play triangle, next to the indicator that says whether
+         the things it depends on are reachable. -->
+    <button
+      type="button"
+      class="play"
+      class:busy
+      disabled={!project || busy}
+      title={busy ? t("compile-running") : t("compile-start")}
+      aria-label={busy ? t("compile-running") : t("compile-start")}
+      onclick={compile}
+    >
+      <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 1.5l7 4.5-7 4.5z" /></svg>
+    </button>
 
     <!-- Something to glance at, not something to operate: the detail lives in
          Tools > Connections. -->
@@ -753,6 +797,57 @@
 
   .spacer {
     flex: 1;
+  }
+
+  .play {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 1.75rem;
+    block-size: 1.75rem;
+    padding: 0;
+    background: none;
+    border: none;
+    border-radius: var(--yaz-radius-sm);
+    color: var(--yaz-success);
+    cursor: pointer;
+  }
+
+  .play svg {
+    inline-size: 0.75rem;
+    block-size: 0.75rem;
+    fill: currentColor;
+  }
+
+  .play:hover:not(:disabled) {
+    background: var(--yaz-bg-hover);
+  }
+
+  .play:disabled {
+    color: var(--yaz-text-muted);
+    cursor: default;
+  }
+
+  /* Compiling can take a while with a system engine; a still triangle would
+     look like the click was missed. */
+  .play.busy svg {
+    animation: pulse-play 1.2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-play {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.4;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .play.busy svg {
+      animation: none;
+    }
   }
 
   button {

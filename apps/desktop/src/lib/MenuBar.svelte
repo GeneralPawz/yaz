@@ -35,6 +35,16 @@
     items?: MenuItem[] | undefined;
     /** A coloured dot before the label, for connection state. */
     dot?: "live" | "degraded" | "off" | "unknown" | undefined;
+    /**
+     * Treat `labelKey` as literal text rather than a message key.
+     *
+     * For entries whose text is data — a folder name in the recent list. There
+     * is no catalogue that could contain it, and translating a folder name
+     * would be wrong even if there were.
+     */
+    literalLabel?: boolean | undefined;
+    /** Shown on hover, e.g. the full path behind a folder name. */
+    tooltip?: string | undefined;
   }
 
   /** One top-level menu. */
@@ -171,7 +181,7 @@
                 {#if item.dot}
                   <span class="dot {item.dot}" aria-hidden="true"></span>
                 {/if}
-                {t(item.labelKey)}
+                {item.literalLabel ? item.labelKey : t(item.labelKey)}
                 {#if item.items?.length}
                   <span class="arrow" aria-hidden="true">›</span>
                 {/if}
@@ -185,13 +195,14 @@
                       class="item"
                       role="menuitem"
                       disabled={child.disabled}
+                      title={child.tooltip}
                       onclick={() => choose(child)}
                     >
                       <span class="tick" aria-hidden="true">{child.checked ? "✓" : ""}</span>
                       {#if child.dot}
                         <span class="dot {child.dot}" aria-hidden="true"></span>
                       {/if}
-                      {t(child.labelKey)}
+                      {child.literalLabel ? child.labelKey : t(child.labelKey)}
                     </button>
                   {/each}
                 </div>

@@ -298,3 +298,21 @@ export function setProjectWorkspace(
 ): Promise<void> {
   return invoke<void>("set_project_workspace", { root, workspace });
 }
+
+/** A project opened before. */
+export interface RecentProject {
+  /** Folder name, which is what a menu shows. */
+  name: string;
+  /** Full path, used to reopen and as the tooltip. */
+  root: string;
+}
+
+/**
+ * Projects opened before, most recent first.
+ *
+ * Folders that have since gone are filtered out by the backend: a menu entry
+ * that always fails is worse than one that is not there.
+ */
+export function recentProjects(): Promise<RecentProject[]> {
+  return invoke<RecentProject[]>("recent_projects");
+}

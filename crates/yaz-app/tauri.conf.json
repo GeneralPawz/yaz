@@ -20,7 +20,7 @@
         "minHeight": 600,
         "resizable": true,
         "fullscreen": false,
-        "dragDropEnabled": true,
+        "dragDropEnabled": false,
         "decorations": false,
         "shadow": true
       }
