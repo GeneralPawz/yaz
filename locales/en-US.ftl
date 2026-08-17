@@ -289,3 +289,10 @@ vcs-error-tool = Version control reported a problem.
 vcs-error-io = A file could not be read or written.
 vcs-error-unknown-backend = Unknown version control system.
 workspace-tab-history = History
+
+## Rich text and outline
+
+menu-view-rich-text = Rich text
+workspace-tab-outline = Outline
+outline-empty = No headings yet. Add a \section to see the document's structure.
+outline-untitled = Untitled section

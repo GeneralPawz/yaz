@@ -5,6 +5,8 @@
   import Settings, { type Section } from "./lib/Settings.svelte";
   import StatusLight, { type Health } from "./lib/StatusLight.svelte";
   import History from "./lib/History.svelte";
+  import Outline from "./lib/Outline.svelte";
+  import type { Heading } from "./lib/editor/structure";
   import Prompt from "./lib/Prompt.svelte";
   import Pane from "./lib/workspace/Pane.svelte";
   import * as layoutTree from "./lib/workspace/layout";
@@ -41,6 +43,10 @@
   let result = $state<ipc.CompileResult | null>(null);
   let pdfData = $state<Uint8Array | null>(null);
   let vimMode = $state(false);
+  /** Render the source as styled text. Same buffer, decorations only. */
+  let richText = $state(false);
+  /** Caret offset, so the outline can show where the reader is. */
+  let cursor = $state(0);
   let failure = $state<string | null>(null);
   let engines = $state<ipc.EngineInfo[]>([]);
   let selectedEngine = $state<string | null>(null);
@@ -162,6 +168,7 @@
   /** Tab names. A filename is data, so it is not a message key. */
   const tabTitles = $derived<Record<TabId, string>>({
     editor: currentFile ?? t("workspace-tab-editor"),
+    outline: t("workspace-tab-outline"),
     pdf: t("workspace-tab-pdf"),
     history: t("workspace-tab-history"),
   });
@@ -386,6 +393,13 @@
       labelKey: "menu-view",
       items: [
         {
+          labelKey: "menu-view-rich-text",
+          checked: richText,
+          action: () => {
+            richText = !richText;
+          },
+        },
+        {
           labelKey: "menu-view-vim",
           checked: vimMode,
           action: () => {
@@ -397,13 +411,8 @@
           separatorBefore: true,
           // Closed tabs come back from here. A tab that can be closed and not
           // reopened is a tab that gets closed once and then missed.
-          items: (["editor", "pdf", "history"] as TabId[]).map((tab) => ({
-            labelKey:
-              tab === "editor"
-                ? "workspace-tab-editor"
-                : tab === "pdf"
-                  ? "workspace-tab-pdf"
-                  : "workspace-tab-history",
+          items: (["editor", "pdf", "outline", "history"] as TabId[]).map((tab) => ({
+            labelKey: `workspace-tab-${tab}`,
             checked: layoutTree.isOpen(layout, tab),
             action: () => {
               updateLayout(
@@ -781,6 +790,8 @@
           dirty = true;
         }}
         onSave={save}
+        rich={richText}
+        onCursor={(offset) => (cursor = offset)}
         onReady={(api) => {
           editorApi = api;
           refreshCommands();
@@ -793,6 +804,17 @@
     {/if}
   {:else if tab === "pdf"}
     <PdfView data={pdfData} />
+  {:else if tab === "outline"}
+    <Outline
+      doc={docText}
+      file={currentFile}
+      {cursor}
+      onnavigate={(heading: Heading) => {
+        // The offsets address the raw source, which is the same buffer in both
+        // views — so this works identically in rich text.
+        editorApi?.revealRange(heading.titleFrom, heading.titleTo);
+      }}
+    />
   {:else if tab === "history"}
     <History
       status={vcs}

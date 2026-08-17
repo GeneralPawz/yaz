@@ -33,6 +33,7 @@
   import { tags } from "@lezer/highlight";
   import { vim } from "@replit/codemirror-vim";
   import type { EditorApi } from "@yaz/api";
+  import { richText, richTextEnabled, setRichText } from "./editor/richText";
 
   interface Props {
     /** Buffer contents. Changing this to a different file replaces the document. */
@@ -42,6 +43,10 @@
     onChange: (text: string) => void;
     onSave: () => void;
     vimMode: boolean;
+    /** Render LaTeX as styled text. Decorations over the same buffer. */
+    rich: boolean;
+    /** Caret moved, as an offset into the source. */
+    onCursor?: ((offset: number) => void) | undefined;
     /**
      * Handed an `EditorApi` when the view exists, and `null` when it goes away.
      *
@@ -53,7 +58,7 @@
     onReady?: (api: EditorApi | null) => void;
   }
 
-  let { doc, docId, onChange, onSave, vimMode, onReady }: Props = $props();
+  let { doc, docId, onChange, onSave, vimMode, rich, onCursor, onReady }: Props = $props();
 
   /**
    * The buffer as `@yaz/api` describes it.
@@ -81,7 +86,16 @@
         });
         instance.focus();
       },
-      getMode: () => "source",
+      getMode: () => (instance.state.field(richTextEnabled, false) ? "visual" : "source"),
+      revealRange: (from, to) => {
+        instance.dispatch({
+          selection: { anchor: from, head: to },
+          // `center` rather than the default, so a heading jumped to from
+          // the outline does not land against the top edge.
+          effects: EditorView.scrollIntoView(from, { y: "center" }),
+        });
+        instance.focus();
+      },
     };
   }
 
@@ -162,6 +176,9 @@
       // Visual mode needs a real syntax tree to hang decorations off, and a
       // StreamLanguage does not give us one (ADR-0004).
       StreamLanguage.define(stex),
+      // Rich text is decorations over this same buffer, never a second
+      // document (ADR-0004).
+      richText(),
       syntaxHighlighting(yazHighlight),
       yazTheme,
       keymap.of([
@@ -176,6 +193,11 @@
       ]),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) onChange(update.state.doc.toString());
+        // The outline highlights the section the caret is in, so it needs the
+        // position rather than the text.
+        if (update.selectionSet || update.docChanged) {
+          onCursor?.(update.state.selection.main.head);
+        }
       }),
     ];
   }
@@ -213,6 +235,11 @@
         }),
     );
 
+    // Opening straight into rich text should not need a second frame.
+    untrack(() => {
+      if (rich) instance.dispatch({ effects: setRichText.of(true) });
+    });
+
     view = instance;
     untrack(() => {
       loadedDocId = docId;
@@ -235,6 +262,12 @@
       selection: { anchor: 0 },
     });
     loadedDocId = docId;
+  });
+
+  $effect(() => {
+    // An effect rather than a reconfigure: switching view must not rebuild the
+    // editor, or the caret and the undo history go with it.
+    view?.dispatch({ effects: setRichText.of(rich) });
   });
 
   $effect(() => {

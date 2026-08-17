@@ -169,6 +169,14 @@ export interface EditorApi {
   insertAtCursor(text: string): void;
   /** Which rendering mode is active. Does not affect the buffer contents. */
   getMode(): "source" | "visual";
+  /**
+   * Select a range and scroll it into view.
+   *
+   * For navigating to something the plugin found — an outline entry, a search
+   * result, a diagnostic. Offsets address the raw source in both modes, because
+   * there is only one buffer (ADR-0004).
+   */
+  revealRange(from: number, to: number): void;
 }
 
 /**

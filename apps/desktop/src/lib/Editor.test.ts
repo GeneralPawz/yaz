@@ -40,6 +40,7 @@ function mount(doc = "hello", docId = "a.tex") {
       doc,
       docId,
       vimMode: false,
+      rich: false,
       onChange,
       onSave: () => {},
       onReady: ready,
@@ -118,5 +119,64 @@ describe("Editor", () => {
     await tick();
     currentApi(ready).insertAtCursor("y");
     expect(onChange).toHaveBeenCalled();
+  });
+});
+
+describe("rich text", () => {
+  it("reports the mode from the editor rather than from a prop", async () => {
+    const { component, ready } = mount("hello");
+    await tick();
+    const api = currentApi(ready);
+    expect(api.getMode()).toBe("source");
+
+    await component.rerender({ rich: true });
+    await tick();
+    expect(api.getMode()).toBe("visual");
+  });
+
+  it("does not rebuild the view when the view mode changes", async () => {
+    // Rebuilding would lose the caret and the undo history — the same failure
+    // the document-change path already had.
+    const { component, ready } = mount("hello");
+    await tick();
+    const before = ready.mock.calls.length;
+
+    await component.rerender({ rich: true });
+    await tick();
+    await component.rerender({ rich: false });
+    await tick();
+
+    expect(ready.mock.calls.length).toBe(before);
+  });
+
+  it("edits the LaTeX source, because there is only one document", async () => {
+    // ADR-0004: rich text is decorations over the buffer, not a second model.
+    // So what comes back out is the raw source, markup and all.
+    const source = String.raw`\section{Title}` + "\n\nBody.";
+    const { component, ready } = mount(source, "a.tex");
+    await tick();
+    await component.rerender({ rich: true });
+    await tick();
+
+    const api = currentApi(ready);
+    expect(api.getText()).toBe(source);
+
+    api.revealRange(0, 0);
+    api.insertAtCursor(String.raw`\emph{new} `);
+    expect(api.getText()).toContain(String.raw`\emph{new}`);
+    // And the file the compiler sees is still LaTeX.
+    expect(api.getText()).toContain(String.raw`\section{Title}`);
+  });
+
+  it("can select a range for navigation", async () => {
+    const source = String.raw`\section{Findings}` + "\nprose";
+    const { ready } = mount(source, "a.tex");
+    await tick();
+    const api = currentApi(ready);
+
+    // The offsets the outline hands over address the raw source.
+    api.revealRange(9, 17);
+    const selection = api.getSelection();
+    expect(source.slice(selection.from, selection.to)).toBe("Findings");
   });
 });
