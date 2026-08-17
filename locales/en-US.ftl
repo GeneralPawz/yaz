@@ -217,3 +217,10 @@ connections-obsidian = Obsidian
 connections-not-configured = Not configured
 connections-reading-offline = Reading a copy of the library on disk
 connections-source = Source: { $source }
+
+## Window controls
+
+window-minimise = Minimise
+window-maximise = Maximise
+window-restore = Restore
+window-close = Close

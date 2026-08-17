@@ -203,6 +203,19 @@
     },
   ]);
 
+  /**
+   * What the title bar shows.
+   *
+   * The folder name rather than the full path: the path was a long absolute
+   * string across the top of the window, and the useful part is the last
+   * segment.
+   */
+  const windowTitle = $derived.by(() => {
+    if (!project) return t("app-name");
+    const name = project.root.replace(/[\/]+$/, "").split(/[\/]/).pop();
+    return name ? `${name} — ${t("app-name")}` : t("app-name");
+  });
+
   function closeProject() {
     project = null;
     currentFile = null;
@@ -332,7 +345,10 @@
 </script>
 
 <div class="app">
-  <MenuBar {menus} />
+  <!-- The window is undecorated, so this row is the title bar. The project
+       name lives here, which is where a title bar puts it — and is why the
+       long absolute path came out of the toolbar. -->
+  <MenuBar {menus} title={windowTitle} />
 
   <header class="toolbar">
     <button onclick={compile} disabled={!project || busy}>

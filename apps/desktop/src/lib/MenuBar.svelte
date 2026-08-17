@@ -1,5 +1,5 @@
 <!--
-  The application menu.
+  The application menu, which is also the window's title bar.
 
   A normal desktop menu bar rather than a row of buttons: it is where people
   already look for "open", it keeps the toolbar from growing a button per
@@ -12,6 +12,7 @@
   "Find…" tells them it is coming.
 -->
 <script lang="ts">
+  import { getCurrentWindow } from "@tauri-apps/api/window";
   import { t } from "./i18n";
 
   /** One entry in a menu. */
@@ -35,9 +36,37 @@
 
   interface Props {
     menus: Menu[];
+    /** Shown in the middle of the bar, where a title bar puts it. */
+    title: string;
   }
 
-  let { menus }: Props = $props();
+  let { menus, title }: Props = $props();
+
+  /**
+   * The window is undecorated, so this row *is* the title bar.
+   *
+   * Which means it owes the user everything the system bar was providing:
+   * dragging, double-click to maximise, and the three buttons. Taking the
+   * decorations away without putting those back would be a straight downgrade.
+   */
+  const appWindow = getCurrentWindow();
+  let maximized = $state(false);
+
+  async function syncMaximized() {
+    try {
+      maximized = await appWindow.isMaximized();
+    } catch {
+      // Not running under Tauri — a browser preview, or a test.
+    }
+  }
+
+  $effect(() => {
+    void syncMaximized();
+    const unlisten = appWindow.onResized(() => void syncMaximized());
+    return () => {
+      void unlisten.then((off) => off());
+    };
+  });
 
   /** Index of the open menu, or null. */
   let open = $state<number | null>(null);
@@ -75,8 +104,8 @@
 
 <svelte:window on:keydown={onkeydown} />
 
-<nav class="bar" bind:this={bar} aria-label={t("app-name")}>
-  <!-- The wordmark, not an image: it is two characters, and a file would be a
+<nav class="bar" bind:this={bar} aria-label={t("app-name")} data-tauri-drag-region>
+  <!-- The wordmark, not an image: it is one character, and a file would be a
        request, a cache entry and an asset to theme for the sake of a glyph. -->
   <span class="mark" aria-hidden="true">y</span>
 
@@ -115,6 +144,52 @@
       {/if}
     </div>
   {/each}
+
+  <!-- The drag region has to be the empty space, not the whole bar: a menu
+       button inside a drag region swallows the click on some platforms. -->
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <h1
+    class="drag"
+    data-tauri-drag-region
+    ondblclick={() => appWindow.toggleMaximize()}
+  >
+    <span class="title-text" data-tauri-drag-region>{title}</span>
+  </h1>
+
+  <div class="controls">
+    <button
+      type="button"
+      class="control"
+      aria-label={t("window-minimise")}
+      onclick={() => appWindow.minimize()}
+    >
+      <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5h10" /></svg>
+    </button>
+    <button
+      type="button"
+      class="control"
+      aria-label={maximized ? t("window-restore") : t("window-maximise")}
+      onclick={() => appWindow.toggleMaximize()}
+    >
+      {#if maximized}
+        <svg viewBox="0 0 10 10" aria-hidden="true">
+          <path d="M2.5 2.5V0.5h7v7h-2" /><rect x="0.5" y="2.5" width="7" height="7" />
+        </svg>
+      {:else}
+        <svg viewBox="0 0 10 10" aria-hidden="true">
+          <rect x="0.5" y="0.5" width="9" height="9" />
+        </svg>
+      {/if}
+    </button>
+    <button
+      type="button"
+      class="control close"
+      aria-label={t("window-close")}
+      onclick={() => appWindow.close()}
+    >
+      <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10" /></svg>
+    </button>
+  </div>
 </nav>
 
 <style>
@@ -137,6 +212,63 @@
     margin-inline-end: var(--yaz-space-2);
     font-weight: 700;
     color: var(--yaz-accent);
+  }
+
+  .drag {
+    margin: 0;
+    font: inherit;
+    font-weight: 400;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* The bar is short; without this the drag area collapses to the text. */
+    align-self: stretch;
+    min-inline-size: var(--yaz-space-6);
+    overflow: hidden;
+  }
+
+  .title-text {
+    color: var(--yaz-text-muted);
+    font-size: var(--yaz-font-size-sm);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+
+  .controls {
+    display: flex;
+    align-self: stretch;
+  }
+
+  .control {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 2.85rem;
+    background: none;
+    border: none;
+    color: var(--yaz-text-secondary);
+    cursor: pointer;
+  }
+
+  .control:hover {
+    background: var(--yaz-bg-hover);
+  }
+
+  /* Windows convention, and the one control where a mistake is expensive. */
+  .control.close:hover {
+    background: var(--yaz-error);
+    color: var(--yaz-text-on-accent);
+  }
+
+  .control svg {
+    inline-size: 0.625rem;
+    block-size: 0.625rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1;
   }
 
   .menu {
