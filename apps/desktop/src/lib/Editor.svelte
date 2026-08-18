@@ -51,6 +51,19 @@
     /** How the gutter numbers lines, if at all. */
     numbering: LineNumbering;
     /**
+     * Set the text on a sheet of paper rather than filling the pane.
+     *
+     * The sheet is the size the document declares, so what is on screen has
+     * the proportions of what will come out of the printer. It is not a
+     * preview — the lines do not break where LaTeX will break them, and
+     * claiming otherwise would be worse than not showing a page at all.
+     */
+    pageView: boolean;
+    /** The page's proportions, in millimetres. */
+    page: { width: number; height: number };
+    /** How large the text is drawn, as a percentage. */
+    zoom: number;
+    /**
      * The shortcuts, already resolved against the user's preferences.
      *
      * Passed in rather than read here: the registry is the application's, and
@@ -79,6 +92,9 @@
     vimMode,
     rich,
     numbering,
+    pageView,
+    page,
+    zoom,
     shortcuts,
     onCursor,
     onReady,
@@ -330,12 +346,66 @@
   });
 </script>
 
-<div class="editor" bind:this={host}></div>
+<!--
+  The page's width is set in millimetres and its content scaled by the zoom, so
+  that "100%" means the sheet is drawn at its real proportions and a change of
+  zoom is one number rather than a recalculation of everything on it.
+-->
+<div
+  class="editor"
+  class:paged={pageView}
+  style:--yaz-page-width="{page.width}mm"
+  style:--yaz-page-height="{page.height}mm"
+  style:--yaz-zoom={zoom / 100}
+  bind:this={host}
+></div>
 
 <style>
   .editor {
     block-size: 100%;
     inline-size: 100%;
     overflow: hidden;
+  }
+
+  /* Zoom applies whether or not the page is showing: someone reading a long
+     document wants larger text on a full-width pane too. */
+  .editor :global(.cm-content) {
+    font-size: calc(var(--yaz-font-size-base) * var(--yaz-zoom, 1));
+  }
+
+  /* The page. A sheet of the declared size, centred on the surround, with the
+     text inside it — the editor still owns the scrolling, so a long document
+     scrolls as one continuous sheet rather than paginating. Pagination is
+     LaTeX's answer and arrives with the PDF; guessing at it here would put two
+     different page breaks in front of the same author. */
+  .editor.paged {
+    background: var(--yaz-pdf-bg);
+    overflow: auto;
+  }
+
+  .editor.paged :global(.cm-editor) {
+    background: transparent;
+  }
+
+  .editor.paged :global(.cm-scroller) {
+    justify-content: center;
+  }
+
+  .editor.paged :global(.cm-content) {
+    inline-size: calc(var(--yaz-page-width) * var(--yaz-zoom, 1));
+    max-inline-size: calc(var(--yaz-page-width) * var(--yaz-zoom, 1));
+    min-block-size: calc(var(--yaz-page-height) * var(--yaz-zoom, 1));
+    box-sizing: border-box;
+    /* A typical one-inch margin, so the measure on screen is close to the
+       measure on paper. */
+    padding: 25mm 25mm;
+    margin-block: var(--yaz-space-4);
+    background: var(--yaz-bg-primary);
+    box-shadow: 0 2px 12px var(--yaz-pdf-page-shadow);
+  }
+
+  .editor.paged :global(.cm-gutters) {
+    background: transparent;
+    border: none;
   }
 </style>

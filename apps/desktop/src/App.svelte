@@ -1,9 +1,22 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
   import type { EditorApi } from "@yaz/api";
-  import MenuBar, { type Menu } from "./lib/MenuBar.svelte";
+  import type { Menu } from "./lib/MenuBar.svelte";
+  import Ribbon, { type RibbonTab } from "./lib/Ribbon.svelte";
+  import TitleBar from "./lib/TitleBar.svelte";
+  import StatusBar from "./lib/StatusBar.svelte";
+  import { countWords } from "./lib/editor/wordCount";
+  import {
+    DEFAULT_PAPER,
+    LANGUAGES,
+    PAPER_DIMENSIONS,
+    PAPER_SIZES,
+    readProperties,
+    setProperty,
+  } from "./lib/editor/properties";
+  import type { Properties } from "./lib/editor/properties";
   import Settings, { type Section } from "./lib/Settings.svelte";
-  import StatusLight, { type Health } from "./lib/StatusLight.svelte";
+  import type { Health } from "./lib/StatusLight.svelte";
   import History from "./lib/History.svelte";
   import Outline from "./lib/Outline.svelte";
   import type { Heading } from "./lib/editor/structure";
@@ -56,6 +69,8 @@
   let busy = $state(false);
   let result = $state<ipc.CompileResult | null>(null);
   let pdfData = $state<Uint8Array | null>(null);
+  /** How many pages the compiled PDF has, for the status bar. */
+  let pdfPages = $state<number | null>(null);
   let vimMode = $state(false);
   /** Render the source as styled text. Same buffer, decorations only. */
   let richText = $state(false);
@@ -80,6 +95,28 @@
   let filesOpen = $state(true);
   /** Whether the editor sets the text on a page rather than filling the pane. */
   let pageView = $state(false);
+  /** How large the text is drawn, as a percentage. */
+  let zoom = $state(100);
+  /** Whether the ribbon's body shows, and which way it runs. */
+  let ribbonOpen = $state(true);
+  let ribbonVertical = $state(false);
+  /** Whether saving happens by itself. */
+  let autosave = $state(false);
+  /** What is in the title bar's search box. */
+  let search = $state("");
+
+  /**
+   * The standardised things the document declares.
+   *
+   * Read out of the source rather than held beside it: there is one document
+   * and it is the `.tex` (ADR-0004), so a co-author who writes `\author{}` by
+   * hand and one who uses the ribbon are editing the same thing.
+   */
+  const properties = $derived<Properties>(readProperties(docText));
+  const paperSize = $derived(
+    PAPER_DIMENSIONS[properties.paper] ?? PAPER_DIMENSIONS[DEFAULT_PAPER]!,
+  );
+  const wordCount = $derived(countWords(docText));
 
   /**
    * How the application looks and what language it speaks.
@@ -361,6 +398,39 @@
     }
     buildingTheme = false;
   }
+
+  /**
+   * Change one of the document's declared properties.
+   *
+   * Written into the source through the editor rather than to the file, so it
+   * is one undo step and the editor's view of the document never diverges from
+   * the shell's.
+   */
+  function changeProperty(key: keyof Properties, value: string) {
+    const edit = setProperty(docText, key, value);
+    if (!edit) return;
+    if (editorApi) {
+      editorApi.replaceRange(edit.from, edit.to, edit.insert);
+      return;
+    }
+    // No editor open: the file is still the document, so edit the text and let
+    // the usual save path carry it.
+    docText = docText.slice(0, edit.from) + edit.insert + docText.slice(edit.to);
+    dirty = true;
+  }
+
+  /**
+   * Save by itself, once the typing stops.
+   *
+   * Debounced rather than on every keystroke: a save is a write to disk and,
+   * with version control on, a commit — doing either per character would make
+   * the history unreadable and the disk busy for no benefit.
+   */
+  $effect(() => {
+    if (!autosave || !dirty || !currentFile) return;
+    const timer = setTimeout(() => void save(), 1200);
+    return () => clearTimeout(timer);
+  });
 
   /** Keep the keyboard the user arranged. */
   async function saveKeys() {
@@ -749,7 +819,18 @@
           separatorBefore: true,
           // Closed tabs come back from here. A tab that can be closed and not
           // reopened is a tab that gets closed once and then missed.
-          items: (["editor", "pdf", "outline", "history"] as TabId[]).map((tab) => ({
+          items: [
+            {
+              // Not a workspace tab — a shell region. It is listed here because
+              // this is where someone looks to get a part of the window back,
+              // and a ribbon nobody can find again is a ribbon nobody collapses.
+              labelKey: "ribbon-title",
+              checked: ribbonOpen,
+              action: () => {
+                ribbonOpen = !ribbonOpen;
+              },
+            },
+            ...(["editor", "pdf", "outline", "history"] as TabId[]).map((tab) => ({
             labelKey: `workspace-tab-${tab}`,
             checked: layoutTree.isOpen(layout, tab),
             action: () => {
@@ -759,7 +840,8 @@
                   : layoutTree.openTab(layout, tab),
               );
             },
-          })),
+            })),
+          ],
         },
         {
           labelKey: "menu-view-reset-layout",
@@ -824,6 +906,171 @@
       ],
     },
   ]);
+
+  /**
+   * The ribbon, built from the menus plus the tabs only it can have.
+   *
+   * The menus are not rewritten: each becomes a tab, its plain entries become
+   * buttons and its flyouts become dropdowns. One declaration, two shapes —
+   * otherwise every command would have to be added in both places, and one of
+   * them would fall behind.
+   *
+   * Layout and Document are the tabs that justify the ribbon existing. They let
+   * someone set a paper size or an author without knowing that those are a
+   * package option and a preamble command, which is the whole point.
+   */
+  const ribbonTabs = $derived<RibbonTab[]>([
+    ...menus.map((menu) => ({
+      id: menu.labelKey,
+      labelKey: menu.labelKey,
+      groups: [
+        {
+          titleKey: menu.labelKey,
+          controls: menu.items.map((item) =>
+            item.items?.length
+              ? { kind: "menu" as const, labelKey: item.labelKey, items: item.items }
+              : {
+                  kind: "action" as const,
+                  labelKey: item.labelKey,
+                  disabled: item.disabled,
+                  checked: item.checked,
+                  onclick: () => void item.action?.(),
+                },
+          ),
+        },
+      ],
+    })),
+    {
+      id: "layout",
+      labelKey: "ribbon-layout",
+      groups: [
+        {
+          titleKey: "ribbon-page-setup",
+          controls: [
+            {
+              kind: "select" as const,
+              labelKey: "ribbon-paper",
+              value: properties.paper,
+              options: PAPER_SIZES.map((size) => ({
+                value: size,
+                label: t(`paper-${size}`),
+              })),
+              onchange: (value: string) => changeProperty("paper", value),
+            },
+          ],
+        },
+        {
+          titleKey: "ribbon-view",
+          controls: [
+            {
+              kind: "action" as const,
+              labelKey: "menu-view-page",
+              glyph: "▭",
+              checked: pageView,
+              onclick: () => (pageView = !pageView),
+            },
+            {
+              kind: "action" as const,
+              labelKey: "ribbon-vertical",
+              glyph: "▤",
+              checked: ribbonVertical,
+              onclick: () => (ribbonVertical = !ribbonVertical),
+            },
+          ],
+        },
+      ],
+    },
+    {
+      id: "document",
+      labelKey: "ribbon-document",
+      groups: [
+        {
+          titleKey: "ribbon-title-block",
+          controls: [
+            {
+              kind: "text" as const,
+              labelKey: "ribbon-doc-title",
+              value: properties.title,
+              onchange: (value: string) => changeProperty("title", value),
+            },
+            {
+              kind: "text" as const,
+              labelKey: "ribbon-doc-author",
+              value: properties.author,
+              onchange: (value: string) => changeProperty("author", value),
+            },
+            {
+              kind: "text" as const,
+              labelKey: "ribbon-doc-date",
+              placeholderKey: "ribbon-doc-date-today",
+              value: properties.date,
+              onchange: (value: string) => changeProperty("date", value),
+            },
+          ],
+        },
+        {
+          titleKey: "settings-document-locale",
+          controls: [
+            {
+              kind: "select" as const,
+              labelKey: "settings-document-locale",
+              value: properties.language,
+              options: [
+                { value: "", label: t("status-language-unset") },
+                ...LANGUAGES.map((language) => ({
+                  value: language.option,
+                  label: t(language.labelKey),
+                })),
+              ],
+              onchange: (value: string) => changeProperty("language", value),
+            },
+          ],
+        },
+      ],
+    },
+    {
+      // The buttons that used to sit beside the title bar. Gathered rather than
+      // scattered, until there is a reason to put each somewhere better.
+      id: "work",
+      labelKey: "ribbon-work",
+      groups: [
+        {
+          titleKey: "ribbon-work",
+          controls: [
+            {
+              kind: "action" as const,
+              labelKey: "compile-run",
+              glyph: "▶",
+              disabled: !project || busy,
+              onclick: () => void compile(),
+            },
+            {
+              kind: "action" as const,
+              labelKey: "view-mode-source",
+              glyph: "⟨⟩",
+              checked: !richText,
+              onclick: () => (richText = !richText),
+            },
+            {
+              kind: "action" as const,
+              labelKey: vcs?.enabled ? "vcs-recording" : "vcs-enable",
+              glyph: "⑂",
+              disabled: !project || vcsBusy,
+              checked: vcs?.enabled,
+              onclick: () => void toggleVcs(),
+            },
+            {
+              kind: "action" as const,
+              labelKey: "connections-title",
+              glyph: "◈",
+              onclick: () => void connectZotero(),
+            },
+          ],
+        },
+      ],
+    },
+  ]);
+
 
   /**
    * What the title bar shows.
@@ -1261,6 +1508,9 @@
         rich={richText}
         {numbering}
         {shortcuts}
+        {pageView}
+        page={paperSize}
+        {zoom}
         onCursor={(offset) => (cursor = offset)}
         onReady={(api) => {
           editorApi = api;
@@ -1273,7 +1523,7 @@
       <p class="empty">{t("workspace-no-file-open")}</p>
     {/if}
   {:else if tab === "pdf"}
-    <PdfView data={pdfData} onclickpoint={jumpToSource} />
+    <PdfView data={pdfData} onclickpoint={jumpToSource} onpages={(n) => (pdfPages = n)} />
   {:else if tab === "outline"}
     <Outline
       doc={docText}
@@ -1312,93 +1562,40 @@
   <!-- The window is undecorated, so this row is the title bar. The project
        name lives here, which is where a title bar puts it — and is why the
        long absolute path came out of the toolbar. -->
-  <MenuBar {menus} title={windowTitle} />
+  <!-- The window is undecorated, so this row is the title bar. What is on
+       it is what you reach for without thinking about which part of the
+       application it belongs to; everything else went to the ribbon. -->
+  <TitleBar
+    title={windowTitle}
+    {dirty}
+    canSave={Boolean(currentFile)}
+    onsave={save}
+    {autosave}
+    onautosave={(on) => (autosave = on)}
+    onundo={() => showNotice(t("menu-not-implemented"))}
+    onredo={() => showNotice(t("menu-not-implemented"))}
+    {search}
+    onsearch={(value) => (search = value)}
+  />
 
-  <header class="toolbar">
-    <span class="spacer"></span>
-
-    <!-- Preview and source are the two ways of looking at the same buffer, and
-         switching between them happens often enough that a menu is too far.
-         The icon shows the mode you are in, like the version-control one
-         beside it, rather than the one you would get. -->
-    <button
-      type="button"
-      class="view-mode"
-      class:on={richText}
-      title={richText ? t("view-mode-show-source") : t("view-mode-show-rich")}
-      aria-label={richText ? t("view-mode-rich") : t("view-mode-source")}
-      aria-pressed={richText}
-      onclick={() => {
-        richText = !richText;
-      }}
-    >
-      {#if richText}
-        <!-- Lines of set text, as a page reads. -->
-        <svg viewBox="0 0 14 14" aria-hidden="true">
-          <path
-            d="M2 3h10M2 6h10M2 9h7"
-            stroke-linecap="round"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.4"
-          />
-        </svg>
-      {:else}
-        <!-- Angle brackets, as source reads. -->
-        <svg viewBox="0 0 14 14" aria-hidden="true">
-          <path
-            d="M5 3.5L1.8 7 5 10.5M9 3.5L12.2 7 9 10.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.4"
-          />
-        </svg>
-      {/if}
-    </button>
-
-    <!-- Recording versions is a mode, so it is a toggle rather than an action,
-         and it shows which state it is in rather than what it would do. -->
-    <button
-      type="button"
-      class="vcs"
-      class:on={vcs?.enabled}
-      disabled={!project || vcsBusy}
-      title={t(vcs?.enabled ? "vcs-recording" : "vcs-enable")}
-      aria-label={t(vcs?.enabled ? "vcs-recording" : "vcs-enable")}
-      aria-pressed={vcs?.enabled ?? false}
-      onclick={toggleVcs}
-    >
-      <svg viewBox="0 0 14 14" aria-hidden="true">
-        <circle cx="4" cy="3" r="1.8" />
-        <circle cx="4" cy="11" r="1.8" />
-        <circle cx="10.5" cy="7" r="1.8" />
-        <path d="M4 4.8v4.4M5.6 3.4h2.2a1.5 1.5 0 011.5 1.5v.6" />
-      </svg>
-    </button>
-
-    <!-- Compiling is the one thing done constantly, so it gets a shape rather
-         than a word: a play triangle, next to the indicator that says whether
-         the things it depends on are reachable. -->
-    <button
-      type="button"
-      class="play"
-      class:busy
-      disabled={!project || busy}
-      title={busy ? t("compile-running") : t("compile-start")}
-      aria-label={busy ? t("compile-running") : t("compile-start")}
-      onclick={compile}
-    >
-      <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 1.5l7 4.5-7 4.5z" /></svg>
-    </button>
-
-    <!-- Something to glance at, not something to operate: the detail lives in
-         Tools > Connections. -->
-    <StatusLight {health} labelKey={healthKey} onclick={connectZotero} />
-  </header>
+  {#if !ribbonVertical}
+    <Ribbon
+      tabs={ribbonTabs}
+      orientation="horizontal"
+      expanded={ribbonOpen}
+      ontoggle={() => (ribbonOpen = !ribbonOpen)}
+    />
+  {/if}
 
   <div class="body" class:narrow={!filesOpen}>
+    {#if ribbonVertical}
+      <Ribbon
+        tabs={ribbonTabs}
+        orientation="vertical"
+        expanded={ribbonOpen}
+        ontoggle={() => (ribbonOpen = !ribbonOpen)}
+      />
+    {/if}
     <nav
       class="files"
       class:collapsed={!filesOpen}
@@ -1513,27 +1710,34 @@
     <output class="notice">{notice}</output>
   {/if}
 
-  <footer class="status">
-    {#if failure}
-      <span class="error">{failure}</span>
-    {:else if result}
-      <span class={result.succeeded ? "ok" : "error"}>
-        {result.succeeded
+  <StatusBar
+    compileMessage={failure ??
+      (result
+        ? result.succeeded
           ? t("compile-succeeded", { seconds: (result.elapsedMs / 1000).toFixed(1) })
-          : t("compile-failed")}
-      </span>
-      <span class="muted">{result.engineId}</span>
-      {#if errorCount > 0}
-        <span class="muted">{t("compile-diagnostics-count", { count: errorCount })}</span>
-      {/if}
-    {:else}
-      <span class="muted">{t("app-tagline")}</span>
-    {/if}
-    <span class="spacer"></span>
-    {#if currentFile}
-      <span class="muted">{currentFile}{dirty ? " •" : ""}</span>
-    {/if}
-  </footer>
+          : t("compile-failed")
+        : null)}
+    compileFailed={Boolean(failure) || (result !== null && !result.succeeded)}
+    compileErrors={errorCount}
+    {health}
+    healthLabel={t(healthKey)}
+    onhealth={connectZotero}
+    page={null}
+    pages={pdfPages}
+    words={wordCount}
+    language={properties.language}
+    languages={LANGUAGES.map((language) => ({
+      value: language.option,
+      label: t(language.labelKey),
+    }))}
+    onlanguage={(value) => changeProperty("language", value)}
+    {pageView}
+    onpageview={() => (pageView = !pageView)}
+    rich={richText}
+    onsource={() => (richText = !richText)}
+    {zoom}
+    onzoom={(percent) => (zoom = percent)}
+  />
 </div>
 
 <style>
@@ -1545,142 +1749,6 @@
     color: var(--yaz-text-primary);
     font-family: var(--yaz-font-ui);
     font-size: var(--yaz-font-size-base);
-  }
-
-  .toolbar,
-  .status {
-    display: flex;
-    align-items: center;
-    gap: var(--yaz-space-3);
-    padding-inline: var(--yaz-space-3);
-    background: var(--yaz-bg-secondary);
-    border-block-end: 1px solid var(--yaz-border);
-  }
-
-  .toolbar {
-    padding-block: var(--yaz-space-2);
-  }
-
-  .status {
-    border-block-end: none;
-    border-block-start: 1px solid var(--yaz-border);
-    padding-block: var(--yaz-space-1);
-    font-size: 0.85em;
-  }
-
-  .spacer {
-    flex: 1;
-  }
-
-  .vcs,
-  .view-mode {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    inline-size: 1.75rem;
-    block-size: 1.75rem;
-    padding: 0;
-    background: none;
-    border: none;
-    border-radius: var(--yaz-radius-sm);
-    color: var(--yaz-text-muted);
-    cursor: pointer;
-  }
-
-  .view-mode svg {
-    inline-size: 0.875rem;
-    block-size: 0.875rem;
-  }
-
-  /* Preview is the mode that changes what you see, so it is the one that shows
-     as engaged; source is the resting state. */
-  .view-mode.on {
-    color: var(--yaz-accent);
-  }
-
-  .view-mode:hover {
-    background: var(--yaz-bg-hover);
-    color: var(--yaz-text-primary);
-  }
-
-  .view-mode.on:hover {
-    color: var(--yaz-accent-hover);
-  }
-
-  .vcs svg {
-    inline-size: 0.875rem;
-    block-size: 0.875rem;
-    fill: currentColor;
-    stroke: currentColor;
-    stroke-width: 1.2;
-  }
-
-  .vcs svg path {
-    fill: none;
-  }
-
-  .vcs.on {
-    color: var(--yaz-accent);
-  }
-
-  .vcs:hover:not(:disabled) {
-    background: var(--yaz-bg-hover);
-  }
-
-  .vcs:disabled {
-    opacity: 0.4;
-    cursor: default;
-  }
-
-  .play {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    inline-size: 1.75rem;
-    block-size: 1.75rem;
-    padding: 0;
-    background: none;
-    border: none;
-    border-radius: var(--yaz-radius-sm);
-    color: var(--yaz-success);
-    cursor: pointer;
-  }
-
-  .play svg {
-    inline-size: 0.75rem;
-    block-size: 0.75rem;
-    fill: currentColor;
-  }
-
-  .play:hover:not(:disabled) {
-    background: var(--yaz-bg-hover);
-  }
-
-  .play:disabled {
-    color: var(--yaz-text-muted);
-    cursor: default;
-  }
-
-  /* Compiling can take a while with a system engine; a still triangle would
-     look like the click was missed. */
-  .play.busy svg {
-    animation: pulse-play 1.2s ease-in-out infinite;
-  }
-
-  @keyframes pulse-play {
-    0%,
-    100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.4;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .play.busy svg {
-      animation: none;
-    }
   }
 
   button {
@@ -1800,17 +1868,8 @@
     margin: 0;
   }
 
-  .ok {
-    color: var(--yaz-success);
-  }
 
-  .error {
-    color: var(--yaz-error);
-  }
 
-  .muted {
-    color: var(--yaz-text-muted);
-  }
 
   .notice {
     position: fixed;

@@ -427,3 +427,47 @@ theme-token-heading-1 = Chapter
 theme-token-heading-2 = Section
 theme-token-heading-3 = Subsection
 theme-token-heading-4 = Sub-subsection
+
+## The ribbon
+
+ribbon-title = Ribbon
+ribbon-layout = Layout
+ribbon-document = Document
+ribbon-work = Work
+ribbon-page-setup = Page setup
+ribbon-paper = Format
+ribbon-view = View
+ribbon-vertical = Down the side
+ribbon-title-block = Title block
+ribbon-doc-title = Title
+ribbon-doc-author = Author
+ribbon-doc-date = Date
+ribbon-doc-date-today = Today
+
+paper-a4paper = A4
+paper-a5paper = A5
+paper-letterpaper = Letter
+paper-legalpaper = Legal
+paper-b5paper = B5
+
+language-english = English
+language-german = German
+language-french = French
+language-spanish = Spanish
+language-italian = Italian
+
+## The title bar
+
+titlebar-autosave-on = Saving by itself
+titlebar-autosave-off = Save by itself
+titlebar-search = Search
+titlebar-account = Account
+
+## The status bar
+
+status-page = Page { $page } of { $pages }
+status-words = { $words } words (estimated)
+status-zoom = Zoom
+status-zoom-set = Set the zoom level
+status-page-view = Page
+status-language-unset = No language set

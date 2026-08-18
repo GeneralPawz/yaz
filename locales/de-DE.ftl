@@ -428,3 +428,47 @@ theme-token-heading-1 = Kapitel
 theme-token-heading-2 = Abschnitt
 theme-token-heading-3 = Unterabschnitt
 theme-token-heading-4 = Unter-Unterabschnitt
+
+## Das Menüband
+
+ribbon-title = Menüband
+ribbon-layout = Layout
+ribbon-document = Dokument
+ribbon-work = Arbeit
+ribbon-page-setup = Seite einrichten
+ribbon-paper = Format
+ribbon-view = Ansicht
+ribbon-vertical = An der Seite
+ribbon-title-block = Titelei
+ribbon-doc-title = Titel
+ribbon-doc-author = Autorin oder Autor
+ribbon-doc-date = Datum
+ribbon-doc-date-today = Heute
+
+paper-a4paper = A4
+paper-a5paper = A5
+paper-letterpaper = Letter
+paper-legalpaper = Legal
+paper-b5paper = B5
+
+language-english = Englisch
+language-german = Deutsch
+language-french = Französisch
+language-spanish = Spanisch
+language-italian = Italienisch
+
+## Die Titelleiste
+
+titlebar-autosave-on = Speichert von selbst
+titlebar-autosave-off = Von selbst speichern
+titlebar-search = Suchen
+titlebar-account = Konto
+
+## Die Statusleiste
+
+status-page = Seite { $page } von { $pages }
+status-words = { $words } Wörter (geschätzt)
+status-zoom = Zoom
+status-zoom-set = Zoomstufe festlegen
+status-page-view = Seite
+status-language-unset = Keine Sprache gesetzt

@@ -38,9 +38,11 @@
      * only place that knows the page's size and the scale it was drawn at.
      */
     onclickpoint?: ((page: number, x: number, y: number) => void) | undefined;
+    /** How many pages the document has, once it is known. */
+    onpages?: ((pages: number) => void) | undefined;
   }
 
-  let { data, onclickpoint }: Props = $props();
+  let { data, onclickpoint, onpages }: Props = $props();
 
   let container: HTMLDivElement;
   let renderError = $state<string | null>(null);
@@ -123,6 +125,7 @@
         }
 
         container.replaceChildren(...rendered);
+        onpages?.(doc.numPages);
       } catch (error) {
         if (!cancelled) renderError = String(error);
       }
