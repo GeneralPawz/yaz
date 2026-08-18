@@ -144,21 +144,22 @@ export const richTextEnabled = StateField.define<boolean>({
   },
 });
 
-/** Show or hide the preamble. */
-export const setFrontmatterCollapsed = StateEffect.define<boolean>();
+/** Show or hide the LaTeX around the text. */
+export const setWrapperCollapsed = StateEffect.define<boolean>();
 
 /**
- * Whether the preamble is folded away.
+ * Whether the LaTeX wrapping the text is folded away.
  *
  * Collapsed to begin with. The preamble is machinery — `\usepackage` lines,
- * margins, macro definitions — and a view whose purpose is to show the document
- * as it will read should not open on half a page of configuration.
+ * margins, macro definitions — and `\end{document}` is punctuation for the
+ * compiler. A view whose purpose is to show the document as it will read
+ * should not open on half a page of configuration.
  */
-export const frontmatterCollapsed = StateField.define<boolean>({
+export const wrapperCollapsed = StateField.define<boolean>({
   create: () => true,
   update(value, transaction) {
     for (const effect of transaction.effects) {
-      if (effect.is(setFrontmatterCollapsed)) return effect.value;
+      if (effect.is(setWrapperCollapsed)) return effect.value;
     }
     return value;
   },
@@ -209,44 +210,60 @@ class RenderedWidget extends WidgetType {
   }
 }
 
-/** The clickable line that stands in for — or sits above — the preamble. */
-class FrontmatterWidget extends WidgetType {
-  constructor(readonly collapsed: boolean) {
+/**
+ * The ornament that marks where the text begins and where it ends.
+ *
+ * A fleuron rather than a labelled button. What is folded away is not content
+ * — it is the LaTeX that wraps the content — so the mark should read as
+ * typography and not as a control: quiet, centred, the same weight as a page
+ * ornament in a printed book. It says it is clickable when the pointer is over
+ * it, which is when that is worth knowing.
+ *
+ * The two glyphs are a pair, U+2767 and U+2766, one the mirror of the other,
+ * which is what makes them read as opening and closing rather than as two
+ * decorations. Each carries U+FE0E so the platform draws the letterform and
+ * not an emoji.
+ */
+class BoundaryWidget extends WidgetType {
+  constructor(
+    readonly place: "start" | "end",
+    readonly collapsed: boolean,
+  ) {
     super();
   }
 
-  override eq(other: FrontmatterWidget): boolean {
-    return other.collapsed === this.collapsed;
+  override eq(other: BoundaryWidget): boolean {
+    return other.place === this.place && other.collapsed === this.collapsed;
   }
 
   override toDOM(view: EditorView): HTMLElement {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "cm-yaz-frontmatter";
+    button.className = `cm-yaz-boundary cm-yaz-boundary-${this.place}`;
     button.setAttribute("aria-expanded", String(!this.collapsed));
+    button.setAttribute(
+      "aria-label",
+      this.place === "start" ? t("editor-text-start") : t("editor-text-end"),
+    );
     // Written out rather than as one `t(condition ? a : b)`, so that the
     // message-key check can see both keys at the call site (ADR-0011).
     button.title = this.collapsed
-      ? t("editor-frontmatter-expand")
-      : t("editor-frontmatter-collapse");
+      ? t("editor-wrapper-show")
+      : t("editor-wrapper-hide");
 
-    const marker = document.createElement("span");
-    marker.className = "cm-yaz-frontmatter-marker";
-    // Decorative: the label says what this is and the button says whether it is
-    // open, so a screen reader gains nothing from the triangle.
-    marker.setAttribute("aria-hidden", "true");
-    marker.textContent = this.collapsed ? "▸" : "▾";
+    const glyph = document.createElement("span");
+    glyph.className = "cm-yaz-boundary-glyph";
+    // Decorative: the label above already says what this is.
+    glyph.setAttribute("aria-hidden", "true");
+    glyph.textContent = this.place === "start" ? "❧︎" : "❦︎";
 
-    const label = document.createElement("span");
-    label.textContent = t("editor-frontmatter");
-
-    button.append(marker, label);
+    button.append(glyph);
     // Without this the editor takes focus and moves the selection before the
     // click lands, scrolling the view for no reason.
     button.addEventListener("mousedown", (event) => event.preventDefault());
     button.addEventListener("click", (event) => {
       event.preventDefault();
-      view.dispatch({ effects: setFrontmatterCollapsed.of(!this.collapsed) });
+      view.dispatch({ effects: setWrapperCollapsed.of(!this.collapsed) });
       view.focus();
     });
     return button;
@@ -266,14 +283,49 @@ class FrontmatterWidget extends WidgetType {
  * does not show.
  */
 class Covered {
+  /**
+   * Claimed ranges, sorted by start and never overlapping.
+   *
+   * Both properties are held by {@link claim} being the only way in: a range
+   * that would overlap is refused rather than stored. That is what lets a
+   * lookup be a binary search over two neighbours instead of a walk through
+   * everything claimed so far — which on a long document is thousands of
+   * ranges, asked thousands of times, on the keystroke path.
+   */
   private readonly spans: { from: number; to: number }[] = [];
 
-  add(from: number, to: number): void {
-    this.spans.push({ from, to });
+  /** Take a range, or report that something already holds part of it. */
+  claim(from: number, to: number): boolean {
+    if (from >= to) return false;
+    const at = this.firstFrom(from);
+    if (this.collides(at, from, to)) return false;
+    this.spans.splice(at, 0, { from, to });
+    return true;
   }
 
+  /** Whether anything already holds part of this range. */
   overlaps(from: number, to: number): boolean {
-    return this.spans.some((span) => from < span.to && to > span.from);
+    return from < to && this.collides(this.firstFrom(from), from, to);
+  }
+
+  /** Index of the first claimed range starting at or after `from`. */
+  private firstFrom(from: number): number {
+    let low = 0;
+    let high = this.spans.length;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if (this.spans[middle]!.from < from) low = middle + 1;
+      else high = middle;
+    }
+    return low;
+  }
+
+  /** Whether the range meets the claim before `at` or the one at it. */
+  private collides(at: number, from: number, to: number): boolean {
+    const before = this.spans[at - 1];
+    if (before && before.to > from) return true;
+    const after = this.spans[at];
+    return Boolean(after && after.from < to);
   }
 }
 
@@ -299,9 +351,7 @@ function replace(
   to: number,
   widget?: WidgetType,
 ): boolean {
-  if (from >= to) return false;
-  if (pass.covered.overlaps(from, to)) return false;
-  pass.covered.add(from, to);
+  if (!pass.covered.claim(from, to)) return false;
   pass.ranges.push(
     (widget ? Decoration.replace({ widget }) : hidden).range(from, to),
   );
@@ -317,7 +367,7 @@ function replace(
  * one, off-screen, does not, so scrolling changes what the text looks like.
  *
  * This is linear in document length and runs on edits — about 2 ms for a
- * paper-sized file and 12 ms for a hundred-page manuscript, against the 16 ms
+ * paper-sized file and 11 ms for a hundred-page manuscript, against the 16 ms
  * ADR-0015 gives the whole keystroke. `keystroke.test.ts` holds that line. The
  * buffer is one paper, and when that stops being true the Lezer grammar
  * arriving in phase 4 gives an incremental tree to hang this off instead.
@@ -338,7 +388,7 @@ function build(state: EditorState): DecorationSet {
     covered: new Covered(),
   };
 
-  frontmatter(pass);
+  boundaries(pass);
   tables(pass);
   mathematics(pass);
   lists(pass);
@@ -359,36 +409,105 @@ function build(state: EditorState): DecorationSet {
  */
 const PREAMBLE_LIMIT = 65536;
 
-/** The range the fold covers: the preamble, out to the end of its last line. */
-function foldRange(doc: Text): { from: number; to: number } | null {
+/** What the wrapper covers: the preamble, and the `\end{document}` line. */
+interface Wrapper {
+  /** Everything up to and including the `\begin{document}` line. */
+  start: { from: number; to: number };
+  /** The `\end{document}` line, with the line break that precedes it. */
+  end: { from: number; to: number } | null;
+}
+
+/**
+ * The ranges the boundary marks stand in for.
+ *
+ * `null` when there is no `\begin{document}` at all, which is what an
+ * `\input`-ed chapter looks like: it is all text, so there is no boundary to
+ * draw. A `\begin{document}` with no `\end` is a document being written, and
+ * gets its opening mark without a closing one.
+ */
+function wrapper(doc: Text): Wrapper | null {
   const found = preamble(
     doc.sliceString(0, Math.min(doc.length, PREAMBLE_LIMIT)),
   );
   if (!found) return null;
+
   // Out to the end of the line, so folding does not leave the remains of the
-  // `\begin{document}` line hanging above the document.
-  return { from: found.from, to: doc.lineAt(found.to).to };
+  // `\begin{document}` line hanging above the text.
+  const start = { from: found.from, to: doc.lineAt(found.to).to };
+
+  // Searched from the end and bounded, for the same reason the preamble is
+  // searched from the start and bounded: this runs on every keystroke, and
+  // `doc.toString()` on a hundred-page manuscript allocates the whole
+  // manuscript to find something that is on the last line.
+  const tail = Math.max(0, doc.length - CLOSING_LIMIT);
+  const closingInTail = doc.sliceString(tail).lastIndexOf(END_DOCUMENT);
+  const closing = closingInTail === -1 ? -1 : tail + closingInTail;
+  if (closing === -1 || closing < start.to) return { start, end: null };
+
+  const line = doc.lineAt(closing);
+  // Only when it is the whole line. `text. \end{document}` on one line has the
+  // author's own words on it.
+  if (line.text.trim() !== END_DOCUMENT) return { start, end: null };
+  // Swallow the line break before it, or an empty line is left behind.
+  return {
+    start,
+    end: { from: Math.max(line.from - 1, start.to), to: line.to },
+  };
 }
 
-/** The preamble, folded behind a line that expands it. */
-function frontmatter(pass: Pass): void {
-  const found = foldRange(pass.state.doc);
+/** What closes a document. */
+const END_DOCUMENT = "\\end{document}";
+
+/**
+ * How far back from the end `\end{document}` is looked for.
+ *
+ * Small, because it is on the last line of every real document. What follows
+ * it, if anything, is a stray comment.
+ */
+const CLOSING_LIMIT = 4096;
+
+/** The LaTeX around the text, folded behind a mark at each end. */
+function boundaries(pass: Pass): void {
+  const found = wrapper(pass.state.doc);
   if (!found) return;
 
-  const to = found.to;
-
-  if (!pass.state.field(frontmatterCollapsed, false)) {
+  if (!pass.state.field(wrapperCollapsed, false)) {
+    // Expanded, the marks sit where they would be when collapsed — above the
+    // preamble and below the last line — so clicking one again puts things
+    // back where they were, rather than somewhere else.
     pass.ranges.push(
       Decoration.widget({
-        widget: new FrontmatterWidget(false),
+        widget: new BoundaryWidget("start", false),
         block: true,
         side: -1,
-      }).range(0),
+      }).range(found.start.from),
     );
+    if (found.end) {
+      pass.ranges.push(
+        Decoration.widget({
+          widget: new BoundaryWidget("end", false),
+          block: true,
+          side: 1,
+        }).range(pass.state.doc.length),
+      );
+    }
     return;
   }
 
-  replace(pass, found.from, to, new FrontmatterWidget(true));
+  replace(
+    pass,
+    found.start.from,
+    found.start.to,
+    new BoundaryWidget("start", true),
+  );
+  if (found.end) {
+    replace(
+      pass,
+      found.end.from,
+      found.end.to,
+      new BoundaryWidget("end", true),
+    );
+  }
 }
 
 /** Tables, drawn from their source. */
@@ -415,7 +534,7 @@ function tables(pass: Pass): void {
     if (touched(pass.state, table.from, table.to)) {
       // Claimed even while revealed, so nothing else decorates the source the
       // author is currently editing.
-      pass.covered.add(table.from, table.to);
+      pass.covered.claim(table.from, table.to);
       continue;
     }
 
@@ -432,7 +551,7 @@ function tables(pass: Pass): void {
 function mathematics(pass: Pass): void {
   const draw = (from: number, to: number, html: string, display: boolean) => {
     if (touched(pass.state, from, to)) {
-      pass.covered.add(from, to);
+      pass.covered.claim(from, to);
       return;
     }
     replace(
@@ -528,7 +647,7 @@ function lists(pass: Pass): void {
         : escapeHtml(itemLabel(list.name, depth, position));
 
     if (touched(pass.state, marker.from, marker.to)) {
-      pass.covered.add(marker.from, marker.to);
+      pass.covered.claim(marker.from, marker.to);
       return;
     }
     replace(
@@ -759,7 +878,7 @@ const decorations = StateField.define<DecorationSet>({
     // Selection changes matter as much as edits: moving the caret into a
     // construct is what reveals its markup.
     const toggled = transaction.effects.some(
-      (effect) => effect.is(setRichText) || effect.is(setFrontmatterCollapsed),
+      (effect) => effect.is(setRichText) || effect.is(setWrapperCollapsed),
     );
     if (
       transaction.docChanged ||
@@ -788,52 +907,68 @@ function after<T>(
 }
 
 /**
- * Keep the cursor out of the folded preamble.
+ * Keep the cursor out of the folded LaTeX.
  *
  * A cursor inside a replacement is invisible, and typing at it edits text the
- * author cannot see — `\usepackage` lines, in this case. It is reachable in
- * ordinary use: opening a file puts the cursor at offset zero, which is inside
- * the fold.
+ * author cannot see — `\usepackage` lines, or `\end{document}`. It is
+ * reachable in ordinary use: opening a file puts the cursor at offset zero,
+ * which is inside the opening fold.
  *
- * So an empty selection landing in the fold is moved to just after it. A
- * non-empty one is left alone: selecting everything and typing means replacing
- * everything, and that includes the preamble.
+ * So an empty selection landing in a fold is moved to the nearest position
+ * outside it. A non-empty one is left alone: selecting everything and typing
+ * means replacing everything, and that includes the wrapper.
  */
 const cursorStaysOutOfTheFold = EditorState.transactionFilter.of(
   (transaction) => {
     if (!after(transaction, richTextEnabled, setRichText, false))
       return transaction;
-    if (
-      !after(transaction, frontmatterCollapsed, setFrontmatterCollapsed, true)
-    ) {
+    if (!after(transaction, wrapperCollapsed, setWrapperCollapsed, true)) {
       return transaction;
     }
 
     const selection = transaction.newSelection;
     if (!selection.ranges.some((range) => range.empty)) return transaction;
 
-    const fold = foldRange(transaction.newDoc);
-    if (!fold) return transaction;
-    // Nowhere to move to: the file ends at `\begin{document}`.
-    const target = fold.to + 1;
-    if (target > transaction.newDoc.length) return transaction;
+    const found = wrapper(transaction.newDoc);
+    if (!found) return transaction;
+
+    // Each fold names where a cursor caught inside it should go. The target is
+    // always outside the range that catches, or the moved cursor would be
+    // caught again and the filter would never settle.
+    const traps: { from: number; to: number; target: number }[] = [];
+    if (found.start.to + 1 <= transaction.newDoc.length) {
+      traps.push({
+        from: found.start.from,
+        to: found.start.to,
+        target: found.start.to + 1,
+      });
+    }
+    if (found.end) {
+      traps.push({
+        from: found.end.from + 1,
+        to: found.end.to,
+        target: found.end.from,
+      });
+    }
+
+    const trapping = (position: number) =>
+      traps.find((trap) => position >= trap.from && position <= trap.to);
+
     if (
-      !selection.ranges.some(
-        (range) =>
-          range.empty && range.to >= fold.from && range.from <= fold.to,
-      )
+      !selection.ranges.some((range) => range.empty && trapping(range.from))
     ) {
       return transaction;
     }
 
-    const moved = selection.ranges.map((range) =>
-      range.empty && range.to >= fold.from && range.from <= fold.to
-        ? EditorSelection.cursor(target)
-        : range,
-    );
+    const moved = selection.ranges.map((range) => {
+      const trap = range.empty ? trapping(range.from) : undefined;
+      return trap ? EditorSelection.cursor(trap.target) : range;
+    });
     return [
       transaction,
-      { selection: EditorSelection.create(moved, selection.mainIndex) },
+      {
+        selection: EditorSelection.create(moved, selection.mainIndex),
+      },
     ];
   },
 );
@@ -843,7 +978,7 @@ export function richText(): Extension {
   // Order matters: `decorations` reads the two flags as it is created.
   return [
     richTextEnabled,
-    frontmatterCollapsed,
+    wrapperCollapsed,
     decorations,
     cursorStaysOutOfTheFold,
     theme,
@@ -923,23 +1058,37 @@ const theme = EditorView.baseTheme({
   ".cm-yaz-list-3": { paddingInlineStart: "4.5rem" },
   ".cm-yaz-list-4": { paddingInlineStart: "6rem" },
 
-  ".cm-yaz-frontmatter": {
-    font: "inherit",
-    fontFamily: "var(--yaz-font-ui)",
-    fontSize: "var(--yaz-font-size-sm)",
-    color: "var(--yaz-text-muted)",
-    background: "var(--yaz-bg-secondary)",
-    border: "1px solid var(--yaz-border)",
-    borderRadius: "var(--yaz-radius-sm)",
-    padding: "0 var(--yaz-space-2)",
-    cursor: "pointer",
-    display: "inline-flex",
+  // A page ornament, not a control: centred, quiet, and the same width as the
+  // text it bounds. The rules either side are what make one glyph read as a
+  // boundary rather than as a stray character in the document.
+  ".cm-yaz-boundary": {
+    display: "flex",
     alignItems: "center",
-    gap: "var(--yaz-space-2)",
+    gap: "var(--yaz-space-4)",
+    inlineSize: "100%",
+    font: "inherit",
+    color: "var(--yaz-text-muted)",
+    background: "none",
+    border: "none",
+    padding: "var(--yaz-space-2) 0",
+    cursor: "pointer",
+    opacity: "0.45",
+    transition: "opacity 120ms ease, color 120ms ease",
   },
-  ".cm-yaz-frontmatter:hover": {
-    color: "var(--yaz-text-primary)",
-    background: "var(--yaz-bg-hover)",
+  ".cm-yaz-boundary::before, .cm-yaz-boundary::after": {
+    content: '""',
+    flex: "1",
+    blockSize: "1px",
+    background: "currentColor",
   },
-  ".cm-yaz-frontmatter-marker": { color: "var(--yaz-text-muted)" },
+  ".cm-yaz-boundary:hover, .cm-yaz-boundary:focus-visible": {
+    opacity: "1",
+    color: "var(--yaz-text-secondary)",
+  },
+  ".cm-yaz-boundary-glyph": {
+    fontSize: "1.15em",
+    lineHeight: "1",
+    // Some platforms would otherwise draw these as emoji.
+    fontVariantEmoji: "text",
+  },
 });

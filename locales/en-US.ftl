@@ -297,8 +297,20 @@ workspace-tab-outline = Outline
 outline-empty = No headings yet. Add a \section to see the document's structure.
 outline-untitled = Untitled section
 
-## The folded preamble
+## The marks that bound the text
 
-editor-frontmatter = Frontmatter
-editor-frontmatter-expand = Show the preamble
-editor-frontmatter-collapse = Hide the preamble
+editor-text-start = Start of the text
+editor-text-end = End of the text
+editor-wrapper-show = Show the LaTeX around the text
+editor-wrapper-hide = Hide the LaTeX around the text
+
+## Views and line numbering
+
+view-mode-preview = Preview
+view-mode-source = Source
+view-mode-show-preview = Show the document as it will read
+view-mode-show-source = Show the LaTeX source
+menu-view-line-numbers = Line numbers
+menu-view-line-numbers-off = None
+menu-view-line-numbers-absolute = Absolute
+menu-view-line-numbers-relative = Relative

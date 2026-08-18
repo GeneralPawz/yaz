@@ -14,7 +14,7 @@ import { EditorSelection, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
-import { richText, setFrontmatterCollapsed, setRichText } from "./richText";
+import { richText, setRichText, setWrapperCollapsed } from "./richText";
 
 beforeAll(() => {
   // CodeMirror measures its own layout; jsdom implements neither of these.
@@ -245,7 +245,7 @@ describe("tables", () => {
   });
 });
 
-describe("the frontmatter fold", () => {
+describe("the marks that bound the text", () => {
   const doc = [
     "\\documentclass{article}",
     "\\usepackage{amsmath}",
@@ -254,52 +254,88 @@ describe("the frontmatter fold", () => {
     "\\end{document}",
   ].join("\n");
 
-  it("hides the preamble behind one line", () => {
+  it("hides the LaTeX at both ends", () => {
     const view = mount(doc);
     const shown = visible(view);
     expect(shown).not.toContain("\\documentclass");
     expect(shown).not.toContain("\\usepackage");
-    expect(shown).toContain("Frontmatter");
+    expect(shown).not.toContain("\\end{document}");
     expect(shown).toContain("The body.");
   });
 
-  it("expands and collapses when the line is clicked", () => {
+  it("draws a mark at the start and a mark at the end", () => {
     const view = mount(doc);
-    const fold = view.contentDOM.querySelector(".cm-yaz-frontmatter");
-    expect(fold).not.toBeNull();
+    const marks = view.contentDOM.querySelectorAll(".cm-yaz-boundary");
+    expect(marks).toHaveLength(2);
+    expect(marks[0]!.className).toContain("cm-yaz-boundary-start");
+    expect(marks[1]!.className).toContain("cm-yaz-boundary-end");
+  });
 
-    fold!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  it("says what each mark is, for a reader who cannot see it", () => {
+    // The glyph carries no meaning to a screen reader, so the button does.
+    const view = mount(doc);
+    const marks = [...view.contentDOM.querySelectorAll(".cm-yaz-boundary")];
+    expect(marks.map((mark) => mark.getAttribute("aria-label"))).toEqual([
+      "Start of the text",
+      "End of the text",
+    ]);
+  });
+
+  it("expands and collapses when a mark is clicked", () => {
+    const view = mount(doc);
+    const mark = view.contentDOM.querySelector(".cm-yaz-boundary");
+    expect(mark).not.toBeNull();
+
+    mark!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(visible(view)).toContain("\\usepackage{amsmath}");
+    expect(visible(view)).toContain("\\end{document}");
 
-    const open = view.contentDOM.querySelector(".cm-yaz-frontmatter");
+    const open = view.contentDOM.querySelector(".cm-yaz-boundary");
     open!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(visible(view)).not.toContain("\\usepackage{amsmath}");
+  });
+
+  it("keeps both marks when the wrapper is showing", () => {
+    // They are how it is put back, so they cannot disappear when it opens.
+    const view = mount(doc);
+    view.dispatch({ effects: setWrapperCollapsed.of(false) });
+    expect(view.contentDOM.querySelectorAll(".cm-yaz-boundary")).toHaveLength(
+      2,
+    );
   });
 
   it("says whether it is open", () => {
     const view = mount(doc);
     expect(
       view.contentDOM
-        .querySelector(".cm-yaz-frontmatter")
+        .querySelector(".cm-yaz-boundary")
         ?.getAttribute("aria-expanded"),
     ).toBe("false");
-    view.dispatch({ effects: setFrontmatterCollapsed.of(false) });
+    view.dispatch({ effects: setWrapperCollapsed.of(false) });
     expect(
       view.contentDOM
-        .querySelector(".cm-yaz-frontmatter")
+        .querySelector(".cm-yaz-boundary")
         ?.getAttribute("aria-expanded"),
     ).toBe("true");
   });
 
-  it("will not let the cursor sit inside the fold", () => {
-    // Opening a file puts the cursor at offset zero, which is inside the fold.
-    // A cursor inside a replacement is invisible, so typing there would edit
-    // `\usepackage` lines the author cannot see.
+  it("will not let the cursor sit inside the folded LaTeX", () => {
+    // Opening a file puts the cursor at offset zero, which is inside the
+    // opening fold. A cursor inside a replacement is invisible, so typing
+    // there would edit `\usepackage` lines the author cannot see.
     const view = mount(doc);
     expect(view.state.selection.main.head).toBe(doc.indexOf("The body."));
 
     caret(view, 5);
     expect(view.state.selection.main.head).toBe(doc.indexOf("The body."));
+  });
+
+  it("will not let the cursor sit inside the closing fold either", () => {
+    const view = mount(doc);
+    caret(view, doc.indexOf("\\end{document}") + 4);
+    expect(view.state.selection.main.head).toBe(
+      doc.indexOf("The body.") + "The body.".length,
+    );
   });
 
   it("types into the body, not the preamble", () => {
@@ -317,18 +353,27 @@ describe("the frontmatter fold", () => {
     expect(view.state.selection.main.from).toBe(0);
   });
 
-  it("lets the cursor back in once the fold is open", () => {
+  it("lets the cursor back in once the wrapper is showing", () => {
     const view = mount(doc);
-    view.dispatch({ effects: setFrontmatterCollapsed.of(false) });
+    view.dispatch({ effects: setWrapperCollapsed.of(false) });
     caret(view, 5);
     expect(view.state.selection.main.head).toBe(5);
   });
 
+  it("marks the start alone when the document does not close", () => {
+    // A file being written has no `\end{document}` yet, and inventing a
+    // closing mark for one would be marking the end of nothing.
+    const view = mount("\\documentclass{article}\n\\begin{document}\nText.");
+    const marks = view.contentDOM.querySelectorAll(".cm-yaz-boundary");
+    expect(marks).toHaveLength(1);
+    expect(marks[0]!.className).toContain("cm-yaz-boundary-start");
+  });
+
   it("leaves a fragment with no preamble alone", () => {
-    // An `\input`-ed chapter has no `\begin{document}`, and folding its first
-    // line away would hide the author's actual first paragraph.
+    // An `\input`-ed chapter is all text, so there is no boundary to draw, and
+    // folding its first line away would hide the author's first paragraph.
     const view = mount("Intro.\n\\section{Chapter}\nText.");
-    expect(view.contentDOM.querySelector(".cm-yaz-frontmatter")).toBeNull();
+    expect(view.contentDOM.querySelector(".cm-yaz-boundary")).toBeNull();
     expect(visible(view)).toContain("Chapter");
   });
 });
@@ -422,7 +467,7 @@ describe("a whole paper", () => {
     expect(view.state.doc.toString()).toContain("We show $\\alpha_{");
   });
 
-  it("keeps the document out of the fold when it is collapsed", () => {
+  it("keeps the LaTeX wrapper out of the way when it is collapsed", () => {
     const view = mount(paper);
     expect(visible(view)).not.toContain("\\usepackage");
     expect(visible(view)).toContain("Introduction");

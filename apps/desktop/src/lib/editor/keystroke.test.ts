@@ -8,9 +8,13 @@
  * searching every list was cubic, and nothing said so until it was measured.
  *
  * The bound below is a tripwire, not the budget. It is far above what this
- * costs — around 12 ms for 100 KiB here, ~2 ms for a paper-sized file — so
- * that a slow CI machine does not fail it, while a change that reintroduces a
- * complexity class does.
+ * costs — around 11 ms for a hundred-page manuscript here, ~2 ms for a
+ * paper-sized file — so that a slow CI machine does not fail it, while a
+ * change that reintroduces a complexity class does.
+ *
+ * Two have been caught this way since. Tracking which of thousands of ranges
+ * were already claimed by walking the list each time was quadratic, and cost
+ * 7 ms of the 18 it then took.
  *
  * The numbers are jsdom's, so they are indicative rather than the real thing;
  * a webview does the layout this does not.

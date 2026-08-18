@@ -41,6 +41,7 @@ function mount(doc = "hello", docId = "a.tex") {
       docId,
       vimMode: false,
       rich: false,
+      numbering: "absolute" as const,
       onChange,
       onSave: () => {},
       onReady: ready,

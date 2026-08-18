@@ -7,6 +7,8 @@
   import History from "./lib/History.svelte";
   import Outline from "./lib/Outline.svelte";
   import type { Heading } from "./lib/editor/structure";
+  import { LINE_NUMBERING } from "./lib/editor/lineNumbers";
+  import type { LineNumbering } from "./lib/editor/lineNumbers";
   import Prompt from "./lib/Prompt.svelte";
   import Pane from "./lib/workspace/Pane.svelte";
   import * as layoutTree from "./lib/workspace/layout";
@@ -47,6 +49,14 @@
   let richText = $state(false);
   /** Caret offset, so the outline can show where the reader is. */
   let cursor = $state(0);
+  /**
+   * How the gutter numbers lines.
+   *
+   * Absolute to begin with, because that is what a compiler error names. Prose
+   * does not want numbers at all and Vim wants them relative, which is why
+   * this is three states rather than a checkbox.
+   */
+  let numbering = $state<LineNumbering>("absolute");
   let failure = $state<string | null>(null);
   let engines = $state<ipc.EngineInfo[]>([]);
   let selectedEngine = $state<string | null>(null);
@@ -405,6 +415,19 @@
           action: () => {
             vimMode = !vimMode;
           },
+        },
+        {
+          labelKey: "menu-view-line-numbers",
+          separatorBefore: true,
+          items: LINE_NUMBERING.map((mode) => ({
+            labelKey: `menu-view-line-numbers-${mode}`,
+            // A tick rather than a radio dot: the menu has no radio group, and
+            // exactly one of the three is always ticked, which reads the same.
+            checked: numbering === mode,
+            action: () => {
+              numbering = mode;
+            },
+          })),
         },
         {
           labelKey: "menu-view-tabs",
@@ -791,6 +814,7 @@
         }}
         onSave={save}
         rich={richText}
+        {numbering}
         onCursor={(offset) => (cursor = offset)}
         onReady={(api) => {
           editorApi = api;
@@ -837,6 +861,47 @@
 
   <header class="toolbar">
     <span class="spacer"></span>
+
+    <!-- Preview and source are the two ways of looking at the same buffer, and
+         switching between them happens often enough that a menu is too far.
+         The icon shows the mode you are in, like the version-control one
+         beside it, rather than the one you would get. -->
+    <button
+      type="button"
+      class="view-mode"
+      class:on={richText}
+      title={richText ? t("view-mode-show-source") : t("view-mode-show-preview")}
+      aria-label={richText ? t("view-mode-preview") : t("view-mode-source")}
+      aria-pressed={richText}
+      onclick={() => {
+        richText = !richText;
+      }}
+    >
+      {#if richText}
+        <!-- Lines of set text, as a page reads. -->
+        <svg viewBox="0 0 14 14" aria-hidden="true">
+          <path
+            d="M2 3h10M2 6h10M2 9h7"
+            stroke-linecap="round"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+          />
+        </svg>
+      {:else}
+        <!-- Angle brackets, as source reads. -->
+        <svg viewBox="0 0 14 14" aria-hidden="true">
+          <path
+            d="M5 3.5L1.8 7 5 10.5M9 3.5L12.2 7 9 10.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+          />
+        </svg>
+      {/if}
+    </button>
 
     <!-- Recording versions is a mode, so it is a toggle rather than an action,
          and it shows which state it is in rather than what it would do. -->
@@ -1020,7 +1085,8 @@
     flex: 1;
   }
 
-  .vcs {
+  .vcs,
+  .view-mode {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1032,6 +1098,26 @@
     border-radius: var(--yaz-radius-sm);
     color: var(--yaz-text-muted);
     cursor: pointer;
+  }
+
+  .view-mode svg {
+    inline-size: 0.875rem;
+    block-size: 0.875rem;
+  }
+
+  /* Preview is the mode that changes what you see, so it is the one that shows
+     as engaged; source is the resting state. */
+  .view-mode.on {
+    color: var(--yaz-accent);
+  }
+
+  .view-mode:hover {
+    background: var(--yaz-bg-hover);
+    color: var(--yaz-text-primary);
+  }
+
+  .view-mode.on:hover {
+    color: var(--yaz-accent-hover);
   }
 
   .vcs svg {

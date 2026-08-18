@@ -4,7 +4,6 @@
   import {
     EditorView,
     keymap,
-    lineNumbers,
     highlightActiveLine,
     highlightActiveLineGutter,
     drawSelection,
@@ -34,6 +33,8 @@
   import { vim } from "@replit/codemirror-vim";
   import type { EditorApi } from "@yaz/api";
   import { richText, richTextEnabled, setRichText } from "./editor/richText";
+  import { lineNumbering } from "./editor/lineNumbers";
+  import type { LineNumbering } from "./editor/lineNumbers";
 
   interface Props {
     /** Buffer contents. Changing this to a different file replaces the document. */
@@ -45,6 +46,8 @@
     vimMode: boolean;
     /** Render LaTeX as styled text. Decorations over the same buffer. */
     rich: boolean;
+    /** How the gutter numbers lines, if at all. */
+    numbering: LineNumbering;
     /** Caret moved, as an offset into the source. */
     onCursor?: ((offset: number) => void) | undefined;
     /**
@@ -58,7 +61,17 @@
     onReady?: (api: EditorApi | null) => void;
   }
 
-  let { doc, docId, onChange, onSave, vimMode, rich, onCursor, onReady }: Props = $props();
+  let {
+    doc,
+    docId,
+    onChange,
+    onSave,
+    vimMode,
+    rich,
+    numbering,
+    onCursor,
+    onReady,
+  }: Props = $props();
 
   /**
    * The buffer as `@yaz/api` describes it.
@@ -104,6 +117,7 @@
   let loadedDocId = "";
 
   const vimCompartment = new Compartment();
+  const numberCompartment = new Compartment();
 
   /*
    * Colours come from the theme token contract, never literals — ADR-0010 makes
@@ -157,7 +171,9 @@
 
   function baseExtensions() {
     return [
-      lineNumbers(),
+      // The line-number gutter is not here: it lives in a compartment, so that
+      // switching it off or over to relative numbers reconfigures the view
+      // rather than rebuilding the document.
       highlightActiveLineGutter(),
       highlightActiveLine(),
       foldGutter(),
@@ -230,7 +246,11 @@
             doc,
             // Vim goes in a compartment so it can be toggled without rebuilding
             // the document, which would lose the undo history and cursor.
-            extensions: [vimCompartment.of(vimMode ? vim() : []), ...baseExtensions()],
+            extensions: [
+              vimCompartment.of(vimMode ? vim() : []),
+              numberCompartment.of(lineNumbering(numbering)),
+              ...baseExtensions(),
+            ],
           }),
         }),
     );
@@ -273,6 +293,14 @@
   $effect(() => {
     view?.dispatch({
       effects: vimCompartment.reconfigure(vimMode ? vim() : []),
+    });
+  });
+
+  // A compartment for the same reason Vim has one: changing the gutter must
+  // not rebuild the document.
+  $effect(() => {
+    view?.dispatch({
+      effects: numberCompartment.reconfigure(lineNumbering(numbering)),
     });
   });
 </script>
