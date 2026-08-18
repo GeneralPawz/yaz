@@ -8,6 +8,16 @@
   import Outline from "./lib/Outline.svelte";
   import type { Heading } from "./lib/editor/structure";
   import { LINE_NUMBERING } from "./lib/editor/lineNumbers";
+  import { KeyDispatcher } from "./lib/keys/dispatcher";
+  import {
+    DEFAULT_PREFERENCES,
+    SUITES,
+    conflicts,
+    describe as describeBinding,
+    isOptional,
+    resolve as resolveShortcuts,
+  } from "./lib/keys/registry";
+  import type { CommandId, KeyPreferences, SuiteId } from "./lib/keys/registry";
   import type { LineNumbering } from "./lib/editor/lineNumbers";
   import Prompt from "./lib/Prompt.svelte";
   import ThemeBuilder from "./lib/ThemeBuilder.svelte";
@@ -68,6 +78,8 @@
    */
   let filesPinned = $state(true);
   let filesOpen = $state(true);
+  /** Whether the editor sets the text on a page rather than filling the pane. */
+  let pageView = $state(false);
 
   /**
    * How the application looks and what language it speaks.
@@ -84,6 +96,18 @@
   });
   let themes = $state<ipc.ThemeInfo[]>([]);
   let buildingTheme = $state(false);
+
+  /**
+   * What the keyboard does.
+   *
+   * The registry declares every shortcut; this is only what the user changed —
+   * suites switched off, bindings replaced. Kept whole rather than as a list of
+   * bindings so that adding a shortcut in a later version reaches people who
+   * have customised others.
+   */
+  let keyPreferences = $state<KeyPreferences>(DEFAULT_PREFERENCES);
+  const shortcuts = $derived(resolveShortcuts(keyPreferences));
+  const keyConflicts = $derived(conflicts(shortcuts));
 
   /** Put the chosen theme and mode on the document. */
   async function applyAppearance() {
@@ -263,6 +287,15 @@
       try {
         appearance = await ipc.getAppearance();
         themes = await ipc.listThemes();
+        // The stored suites are strings: a settings file written by a later
+        // version can name a group this one has never heard of, and the
+        // registry ignores what it does not recognise rather than refusing to
+        // start.
+        const stored = await ipc.getKeyPreferences();
+        keyPreferences = {
+          disabledSuites: stored.disabledSuites as SuiteId[],
+          overrides: stored.overrides,
+        };
       } catch {
         // Defaults are already in place, and an interface that will not start
         // because it could not read a colour preference would be worse.
@@ -328,6 +361,92 @@
     }
     buildingTheme = false;
   }
+
+  /** Keep the keyboard the user arranged. */
+  async function saveKeys() {
+    try {
+      await ipc.setKeyPreferences(keyPreferences);
+    } catch (error) {
+      failure = String(error);
+    }
+  }
+
+  /**
+   * Do what a shortcut asked for.
+   *
+   * The window-scoped half of the registry ends up here. The editor-scoped
+   * half never does — those run inside CodeMirror, where they can see the
+   * document.
+   */
+  function runShortcut(command: CommandId) {
+    switch (command) {
+      case "view.toggleRichText":
+        richText = !richText;
+        return;
+      case "view.toggleSource":
+        richText = false;
+        return;
+      case "view.togglePageView":
+        pageView = !pageView;
+        return;
+      case "view.toggleFiles":
+        filesPinned = !filesPinned;
+        filesOpen = filesPinned;
+        return;
+      case "view.lineNumbers":
+        // Round the three states rather than to a fixed one: a shortcut that
+        // always lands on the same setting is half a shortcut.
+        numbering =
+          LINE_NUMBERING[
+            (LINE_NUMBERING.indexOf(numbering) + 1) % LINE_NUMBERING.length
+          ] ?? "absolute";
+        return;
+      case "navigate.outline":
+        updateLayout(
+          layoutTree.isOpen(layout, "outline")
+            ? layoutTree.closeTab(layout, "outline")
+            : layoutTree.openTab(layout, "outline"),
+        );
+        return;
+      case "document.compile":
+        void compile();
+        return;
+      case "document.recordVersion":
+        askingForMessage = true;
+        return;
+      default:
+        // Editor-scoped commands reach CodeMirror instead, and anything else
+        // is a command declared but not yet wired — which the settings list
+        // will show as bound to a key that does nothing.
+        return;
+    }
+  }
+
+  /**
+   * The keyboard, at the window.
+   *
+   * Capture phase, so a chord prefix is taken before CodeMirror is asked for
+   * it. Everything else falls through untouched, which is what lets the editor
+   * keep its own bindings.
+   */
+  $effect(() => {
+    const dispatcher = new KeyDispatcher(runShortcut);
+    dispatcher.update(shortcuts);
+
+    const onkeydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        dispatcher.cancel();
+        return;
+      }
+      if (dispatcher.handle(event)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+
+    window.addEventListener("keydown", onkeydown, true);
+    return () => window.removeEventListener("keydown", onkeydown, true);
+  });
 
   /** Refresh the recent list. Cheap, and only read when a menu opens. */
   async function loadRecent() {
@@ -852,6 +971,62 @@
       ],
     },
     {
+      id: "keys",
+      labelKey: "settings-section-keys",
+      glyph: "⌨",
+      groups: [
+        {
+          titleKey: "keys-suites",
+          fields: SUITES.map((suite) => ({
+            kind: "toggle" as const,
+            labelKey: suite.labelKey,
+            helpKey: suite.helpKey,
+            value: !keyPreferences.disabledSuites.includes(suite.id),
+            onchange: (on: boolean) => {
+              // The core cannot be switched off. Offering the switch and
+              // ignoring it would be worse than not offering it, so it is
+              // shown as already on and stays that way.
+              if (!isOptional(suite.id)) return;
+              keyPreferences = {
+                ...keyPreferences,
+                disabledSuites: on
+                  ? keyPreferences.disabledSuites.filter((id) => id !== suite.id)
+                  : [...keyPreferences.disabledSuites, suite.id],
+              };
+              void saveKeys();
+            },
+          })),
+        },
+        ...SUITES.map((suite) => ({
+          titleKey: suite.labelKey,
+          fields: shortcuts
+            .filter((shortcut) => shortcut.suites.includes(suite.id))
+            .map((shortcut) => ({
+              kind: "shortcut" as const,
+              labelKey: shortcut.labelKey,
+              binding: describeBinding(shortcut.binding),
+              active: shortcut.active,
+              conflicting: [...keyConflicts.values()].some((ids) =>
+                ids.includes(shortcut.id),
+              ),
+              changed: shortcut.changed,
+              onrebind: (binding: string) => {
+                keyPreferences = {
+                  ...keyPreferences,
+                  overrides: { ...keyPreferences.overrides, [shortcut.id]: binding },
+                };
+                void saveKeys();
+              },
+              onreset: () => {
+                const { [shortcut.id]: _removed, ...rest } = keyPreferences.overrides;
+                keyPreferences = { ...keyPreferences, overrides: rest };
+                void saveKeys();
+              },
+            })),
+        })),
+      ],
+    },
+    {
       id: "version-control",
       labelKey: "vcs-title",
       glyph: "⎇",
@@ -1085,6 +1260,7 @@
         onSave={save}
         rich={richText}
         {numbering}
+        {shortcuts}
         onCursor={(offset) => (cursor = offset)}
         onReady={(api) => {
           editorApi = api;

@@ -127,6 +127,14 @@ const TABLE_ENVIRONMENTS: Record<string, number> = {
 /** Lists whose items get a marker. */
 const LIST_ENVIRONMENTS = ["itemize", "enumerate", "description"];
 
+/**
+ * Environments that set their contents apart as quoted.
+ *
+ * Styled in place like a list and for the same reason: a quotation is
+ * somebody's words, and the author has to be able to type into them.
+ */
+const QUOTE_ENVIRONMENTS = ["quote", "quotation", "verse"];
+
 /** Bullets by nesting depth, as LaTeX itself sets them. */
 const BULLETS = ["•", "◦", "▪", "·"];
 
@@ -392,6 +400,7 @@ function build(state: EditorState): DecorationSet {
   tables(pass);
   mathematics(pass);
   lists(pass);
+  quotes(pass);
   inlineMarkup(pass);
 
   // Sorting is CodeMirror's, which knows how line, mark and replace decorations
@@ -432,8 +441,15 @@ function wrapper(doc: Text): Wrapper | null {
   if (!found) return null;
 
   // Out to the end of the line, so folding does not leave the remains of the
-  // `\begin{document}` line hanging above the text.
-  const start = { from: found.from, to: doc.lineAt(found.to).to };
+  // `\begin{document}` line hanging above the text — and on through
+  // `\maketitle`, which is machinery rather than writing: it produces the
+  // title block from what the preamble already declared, and leaving it
+  // stranded on its own above the first paragraph would show the seam this
+  // mark exists to hide.
+  const start = {
+    from: found.from,
+    to: titleBlockEnd(doc, doc.lineAt(found.to).number),
+  };
 
   // Searched from the end and bounded, for the same reason the preamble is
   // searched from the start and bounded: this runs on every keystroke, and
@@ -457,6 +473,36 @@ function wrapper(doc: Text): Wrapper | null {
 
 /** What closes a document. */
 const END_DOCUMENT = "\\end{document}";
+
+/**
+ * Commands that belong to the title block rather than to the text.
+ *
+ * Deliberately short. Anything absorbed here disappears behind the mark, so
+ * this may only hold commands that produce no writing of their own —
+ * `\tableofcontents` is not among them, because a contents page is something
+ * the reader looks at.
+ */
+const TITLE_BLOCK = /^\\(maketitle|thispagestyle\{[^}]*\})$/;
+
+/**
+ * How far the opening fold reaches, given the `\begin{document}` line.
+ *
+ * Absorbs blank lines and title-block commands, but only if a title-block
+ * command is actually reached — otherwise a document that simply starts with a
+ * blank line would have it eaten, and the first paragraph would sit tight
+ * against the mark.
+ */
+function titleBlockEnd(doc: Text, beginLine: number): number {
+  let end = doc.line(beginLine).to;
+  for (let number = beginLine + 1; number <= doc.lines; number += 1) {
+    const line = doc.line(number);
+    const text = line.text.trim();
+    if (text === "") continue;
+    if (!TITLE_BLOCK.test(text)) break;
+    end = line.to;
+  }
+  return end;
+}
 
 /**
  * How far back from the end `\end{document}` is looked for.
@@ -739,6 +785,36 @@ function indent(
 }
 
 /**
+ * Quotations: the environment lines hidden, the words set apart.
+ *
+ * Indented and in the prose face rather than drawn as a widget, because the
+ * text inside is the author's and has to stay editable — the same reason lists
+ * are styled in place.
+ */
+function quotes(pass: Pass): void {
+  for (const quote of environments(pass.text, QUOTE_ENVIRONMENTS)) {
+    for (const [from, to] of [
+      [quote.from, quote.bodyFrom],
+      [quote.bodyTo, quote.to],
+    ]) {
+      if (touched(pass.state, from!, to!)) continue;
+      const whole = lineHide(pass.state, from!, to!);
+      replace(pass, whole?.from ?? from!, whole?.to ?? to!);
+    }
+
+    const first = pass.state.doc.lineAt(quote.bodyFrom).number + 1;
+    const last = pass.state.doc.lineAt(quote.bodyTo).number - 1;
+    for (let number = first; number <= last; number += 1) {
+      const line = pass.state.doc.line(number);
+      if (pass.covered.overlaps(line.from, line.to)) continue;
+      pass.ranges.push(
+        Decoration.line({ class: "cm-yaz-quote" }).range(line.from),
+      );
+    }
+  }
+}
+
+/**
  * Headings and inline commands.
  *
  * The styling mark is applied whatever else is happening — a mark over replaced
@@ -996,16 +1072,43 @@ export function richText(): Extension {
 const theme = EditorView.baseTheme({
   ".cm-yaz-heading": {
     fontWeight: "700",
-    color: "var(--yaz-text-primary)",
   },
+  // One colour token per level, each defaulting to the body colour — so a
+  // theme that says nothing gets headings that are merely larger, and one that
+  // wants to colour the document's structure can.
+  //
   // `\part` and `\chapter` are rare in a paper but enormous when used.
-  ".cm-yaz-h0": { fontSize: "1.9em", lineHeight: "1.3" },
-  ".cm-yaz-h1": { fontSize: "1.65em", lineHeight: "1.3" },
-  ".cm-yaz-h2": { fontSize: "1.4em", lineHeight: "1.35" },
-  ".cm-yaz-h3": { fontSize: "1.2em", lineHeight: "1.4" },
-  ".cm-yaz-h4": { fontSize: "1.08em" },
-  ".cm-yaz-h5": { fontSize: "1em", fontStyle: "italic" },
-  ".cm-yaz-h6": { fontSize: "1em", fontStyle: "italic" },
+  ".cm-yaz-h0": {
+    fontSize: "1.9em",
+    lineHeight: "1.3",
+    color: "var(--yaz-heading-0)",
+  },
+  ".cm-yaz-h1": {
+    fontSize: "1.65em",
+    lineHeight: "1.3",
+    color: "var(--yaz-heading-1)",
+  },
+  ".cm-yaz-h2": {
+    fontSize: "1.4em",
+    lineHeight: "1.35",
+    color: "var(--yaz-heading-2)",
+  },
+  ".cm-yaz-h3": {
+    fontSize: "1.2em",
+    lineHeight: "1.4",
+    color: "var(--yaz-heading-3)",
+  },
+  ".cm-yaz-h4": { fontSize: "1.08em", color: "var(--yaz-heading-4)" },
+  ".cm-yaz-h5": {
+    fontSize: "1em",
+    fontStyle: "italic",
+    color: "var(--yaz-heading-5)",
+  },
+  ".cm-yaz-h6": {
+    fontSize: "1em",
+    fontStyle: "italic",
+    color: "var(--yaz-heading-6)",
+  },
   ".cm-yaz-strong": { fontWeight: "700", color: "var(--yaz-text-primary)" },
   ".cm-yaz-emphasis": { fontStyle: "italic" },
   ".cm-yaz-mono": { fontFamily: "var(--yaz-font-mono)" },
@@ -1053,6 +1156,16 @@ const theme = EditorView.baseTheme({
     display: "inline-block",
     minInlineSize: "1.6em",
   },
+  // A quotation is set in from both edges and marked down the side, which is
+  // how print does it and what makes it read as someone else's words.
+  ".cm-yaz-quote": {
+    paddingInlineStart: "1.5rem",
+    paddingInlineEnd: "1.5rem",
+    borderInlineStart: "2px solid var(--yaz-border)",
+    color: "var(--yaz-text-secondary)",
+    fontStyle: "italic",
+  },
+
   ".cm-yaz-list": { paddingInlineStart: "1.5rem" },
   ".cm-yaz-list-2": { paddingInlineStart: "3rem" },
   ".cm-yaz-list-3": { paddingInlineStart: "4.5rem" },

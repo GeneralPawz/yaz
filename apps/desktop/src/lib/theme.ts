@@ -176,6 +176,16 @@ export const THEME_TOKENS: readonly TokenGroup[] = [
     ],
   },
   {
+    titleKey: "theme-group-headings",
+    fields: [
+      { token: "yaz-heading-0", labelKey: "theme-token-heading-0" },
+      { token: "yaz-heading-1", labelKey: "theme-token-heading-1" },
+      { token: "yaz-heading-2", labelKey: "theme-token-heading-2" },
+      { token: "yaz-heading-3", labelKey: "theme-token-heading-3" },
+      { token: "yaz-heading-4", labelKey: "theme-token-heading-4" },
+    ],
+  },
+  {
     titleKey: "theme-group-pdf",
     fields: [{ token: "yaz-pdf-bg", labelKey: "theme-token-pdf-bg" }],
   },

@@ -35,6 +35,8 @@
   import { richText, richTextEnabled, setRichText } from "./editor/richText";
   import { lineNumbering } from "./editor/lineNumbers";
   import type { LineNumbering } from "./editor/lineNumbers";
+  import { editorKeymap } from "./keys/editorKeys";
+  import type { ResolvedShortcut } from "./keys/registry";
 
   interface Props {
     /** Buffer contents. Changing this to a different file replaces the document. */
@@ -48,6 +50,14 @@
     rich: boolean;
     /** How the gutter numbers lines, if at all. */
     numbering: LineNumbering;
+    /**
+     * The shortcuts, already resolved against the user's preferences.
+     *
+     * Passed in rather than read here: the registry is the application's, and
+     * an editor that reached for it directly would be a second place shortcuts
+     * come from.
+     */
+    shortcuts: ResolvedShortcut[];
     /** Caret moved, as an offset into the source. */
     onCursor?: ((offset: number) => void) | undefined;
     /**
@@ -69,6 +79,7 @@
     vimMode,
     rich,
     numbering,
+    shortcuts,
     onCursor,
     onReady,
   }: Props = $props();
@@ -118,6 +129,7 @@
 
   const vimCompartment = new Compartment();
   const numberCompartment = new Compartment();
+  const keyCompartment = new Compartment();
 
   /*
    * Colours come from the theme token contract, never literals — ADR-0010 makes
@@ -204,7 +216,11 @@
         ...defaultKeymap,
         ...historyKeymap,
         ...foldKeymap,
-        ...completionKeymap,
+        // Completion's own `Ctrl-Space` is dropped: the window takes that as
+        // the prefix every yaz shortcut hangs off, so the binding could never
+        // fire. It is re-registered as `edit.complete` on `Ctrl+Shift+Space`,
+        // where it is listed and rebindable rather than quietly gone.
+        ...completionKeymap.filter((binding) => binding.key !== "Mod-Space"),
         ...searchKeymap,
       ]),
       EditorView.updateListener.of((update) => {
@@ -249,6 +265,7 @@
             extensions: [
               vimCompartment.of(vimMode ? vim() : []),
               numberCompartment.of(lineNumbering(numbering)),
+              keyCompartment.of(editorKeymap(shortcuts, { save: onSave })),
               ...baseExtensions(),
             ],
           }),
@@ -301,6 +318,14 @@
   $effect(() => {
     view?.dispatch({
       effects: numberCompartment.reconfigure(lineNumbering(numbering)),
+    });
+  });
+
+  // Rebinding a shortcut in settings takes effect where the caret is, without
+  // the document being rebuilt underneath it.
+  $effect(() => {
+    view?.dispatch({
+      effects: keyCompartment.reconfigure(editorKeymap(shortcuts, { save: onSave })),
     });
   });
 </script>

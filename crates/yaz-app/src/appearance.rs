@@ -19,7 +19,7 @@
 use camino::{Utf8Path, Utf8PathBuf};
 use serde::{Deserialize, Serialize};
 use yaz_core::Error;
-use yaz_core::settings::{ColourMode, Settings};
+use yaz_core::settings::{ColourMode, KeyPreferences, Settings};
 
 use crate::commands::{CommandError, Result};
 
@@ -267,4 +267,22 @@ fn write(path: &Utf8PathBuf, contents: &str) -> Result<()> {
             source,
         })?,
     )
+}
+
+/// What the user changed about the keyboard.
+///
+/// Stored with the other application settings rather than per project: a
+/// keyboard belongs to the person, not to the paper.
+#[tauri::command]
+pub fn get_key_preferences() -> Result<KeyPreferences> {
+    Ok(Settings::load(&config_dir()?).keys)
+}
+
+/// Store the keyboard changes.
+#[tauri::command]
+pub fn set_key_preferences(preferences: KeyPreferences) -> Result<()> {
+    let directory = config_dir()?;
+    let mut settings = Settings::load(&directory);
+    settings.keys = preferences;
+    Ok(settings.save(&directory)?)
 }

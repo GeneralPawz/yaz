@@ -384,3 +384,47 @@ theme-token-syntax-comment = Kommentare
 theme-token-syntax-string = Zeichenketten
 theme-token-syntax-reference = Verweise
 theme-token-pdf-bg = Fläche um die Seite
+
+## Formatierung
+
+format-bold = Fett
+format-italic = Kursiv
+format-underline = Unterstrichen
+format-monospace = Feste Breite
+format-small-caps = Kapitälchen
+format-quote = Zitat
+format-heading-1 = Überschrift 1
+format-heading-2 = Überschrift 2
+format-heading-3 = Überschrift 3
+format-clear = Formatierung entfernen
+
+## Tastatur
+
+settings-section-keys = Tastatur
+keys-suites = Gruppen
+keys-suite-core = Grundlegendes
+keys-suite-core-help = Speichern, Suchen, Vervollständigen. Lässt sich nicht abschalten.
+keys-suite-yaz = yaz
+keys-suite-yaz-help = Alles hinter Strg+Leertaste: Ansichten, Übersetzen, Versionen.
+keys-suite-word = Word
+keys-suite-word-help = Was man aus einer Textverarbeitung schon kennt.
+keys-suite-lists = Listen
+keys-suite-lists-help = Eingabe beginnt den nächsten Punkt, Tab macht einen Unterpunkt daraus.
+keys-list-continue = Nächster Listenpunkt
+keys-list-indent = Zum Unterpunkt machen
+keys-list-outdent = Eine Ebene herausheben
+keys-complete = Vervollständigung vorschlagen
+keys-press = Tasten drücken…
+keys-unbound = Nicht belegt
+keys-reset = Zurücksetzen
+keys-conflict = Ein anderes Tastenkürzel belegt diese Tasten.
+menu-view-page = Seitenansicht
+
+## Weitere Überschriftenfarben
+
+theme-group-headings = Überschriften
+theme-token-heading-0 = Teil
+theme-token-heading-1 = Kapitel
+theme-token-heading-2 = Abschnitt
+theme-token-heading-3 = Unterabschnitt
+theme-token-heading-4 = Unter-Unterabschnitt

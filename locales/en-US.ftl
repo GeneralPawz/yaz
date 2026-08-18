@@ -383,3 +383,47 @@ theme-token-syntax-comment = Comments
 theme-token-syntax-string = Strings
 theme-token-syntax-reference = References
 theme-token-pdf-bg = Page surround
+
+## Formatting
+
+format-bold = Bold
+format-italic = Italic
+format-underline = Underline
+format-monospace = Monospace
+format-small-caps = Small capitals
+format-quote = Quotation
+format-heading-1 = Heading 1
+format-heading-2 = Heading 2
+format-heading-3 = Heading 3
+format-clear = Clear formatting
+
+## Keyboard
+
+settings-section-keys = Keyboard
+keys-suites = Groups
+keys-suite-core = Essentials
+keys-suite-core-help = Save, find, complete. These cannot be switched off.
+keys-suite-yaz = yaz
+keys-suite-yaz-help = Everything behind Ctrl+Space: views, compiling, versions.
+keys-suite-word = Word
+keys-suite-word-help = What someone arriving from a word processor already knows.
+keys-suite-lists = Lists
+keys-suite-lists-help = Enter starts the next item, Tab makes it a sub-item.
+keys-list-continue = Next list item
+keys-list-indent = Make it a sub-item
+keys-list-outdent = Lift it out one level
+keys-complete = Suggest a completion
+keys-press = Press the keys…
+keys-unbound = Not bound
+keys-reset = Put it back
+keys-conflict = Another shortcut uses these keys.
+menu-view-page = Page view
+
+## More heading colours
+
+theme-group-headings = Headings
+theme-token-heading-0 = Part
+theme-token-heading-1 = Chapter
+theme-token-heading-2 = Section
+theme-token-heading-3 = Subsection
+theme-token-heading-4 = Sub-subsection

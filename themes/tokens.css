@@ -18,7 +18,7 @@
    * Bumped when tokens are added. Token names, once published, are effectively
    * permanent: renaming one breaks every theme.
    */
-  --yaz-tokens-version: 2;
+  --yaz-tokens-version: 3;
 
   /* ---- Surfaces --------------------------------------------------------- */
   --yaz-bg-primary: #ffffff;
@@ -70,6 +70,22 @@
   --yaz-syntax-string: #b8770b;
   --yaz-syntax-reference: #2f6ce2;
   --yaz-syntax-error: var(--yaz-error);
+
+  /* ---- Headings ---------------------------------------------------------
+   * One per level, so a theme can colour a document's structure. They inherit
+   * the body colour by default: a heading that is merely larger and bolder is
+   * what most documents want, and a theme that wants otherwise says so.
+   *
+   * Seven, matching LaTeX's own ladder: part, chapter, section, subsection,
+   * subsubsection, paragraph, subparagraph.
+   */
+  --yaz-heading-0: var(--yaz-text-primary);
+  --yaz-heading-1: var(--yaz-text-primary);
+  --yaz-heading-2: var(--yaz-text-primary);
+  --yaz-heading-3: var(--yaz-text-primary);
+  --yaz-heading-4: var(--yaz-text-primary);
+  --yaz-heading-5: var(--yaz-text-primary);
+  --yaz-heading-6: var(--yaz-text-primary);
 
   /* ---- PDF viewer ------------------------------------------------------- */
   --yaz-pdf-bg: #52565c;

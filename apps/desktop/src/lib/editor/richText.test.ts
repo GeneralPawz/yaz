@@ -360,6 +360,40 @@ describe("the marks that bound the text", () => {
     expect(view.state.selection.main.head).toBe(5);
   });
 
+  it("hides \\maketitle with the rest of the machinery", () => {
+    // It produces the title block from what the preamble already declared, so
+    // leaving it stranded above the first paragraph shows the seam the mark
+    // exists to hide.
+    const view = mount(
+      [
+        "\\documentclass{article}",
+        "\\title{A Paper}",
+        "\\begin{document}",
+        "\\maketitle",
+        "",
+        "The body.",
+        "\\end{document}",
+      ].join("\n"),
+    );
+    expect(visible(view)).not.toContain("\\maketitle");
+    expect(visible(view)).toContain("The body.");
+  });
+
+  it("does not eat a blank line when there is no title block", () => {
+    // Absorbing trailing blank lines unconditionally would pull the first
+    // paragraph up against the mark.
+    const doc = [
+      "\\documentclass{article}",
+      "\\begin{document}",
+      "",
+      "The body.",
+      "\\end{document}",
+    ].join("\n");
+    const view = mount(doc);
+    expect(view.state.doc.toString()).toBe(doc);
+    expect(visible(view)).toContain("The body.");
+  });
+
   it("marks the start alone when the document does not close", () => {
     // A file being written has no `\end{document}` yet, and inventing a
     // closing mark for one would be marking the end of nothing.

@@ -47,6 +47,26 @@ pub struct Settings {
     /// project cannot record that it was opened before it is opened.
     #[serde(default)]
     pub recent_projects: Vec<Utf8PathBuf>,
+
+    /// What the user changed about the keyboard.
+    #[serde(default)]
+    pub keys: KeyPreferences,
+}
+
+/// Changes to the shipped keyboard shortcuts.
+///
+/// Only the differences. The shortcuts themselves are declared in the frontend
+/// registry, so storing the whole set here would mean a shortcut added in a
+/// later version never reaching anyone who had customised another.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyPreferences {
+    /// Groups of shortcuts switched off wholesale, by tag.
+    #[serde(default)]
+    pub disabled_suites: Vec<String>,
+    /// Bindings the user replaced, by command. An empty string means unbound.
+    #[serde(default)]
+    pub overrides: std::collections::BTreeMap<String, String>,
 }
 
 impl Default for Settings {
@@ -59,6 +79,7 @@ impl Default for Settings {
             interface_locale: "en-US".to_owned(),
             check_for_updates: false,
             recent_projects: Vec::new(),
+            keys: KeyPreferences::default(),
         }
     }
 }

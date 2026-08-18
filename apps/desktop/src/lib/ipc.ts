@@ -495,3 +495,22 @@ export async function saveTheme(
 export async function installTheme(source: string): Promise<ThemeInfo> {
   return invoke<ThemeInfo>("install_theme", { source });
 }
+
+// ---------------------------------------------------------------------------
+// The keyboard.
+
+/** What the user changed about the shortcuts. */
+export interface KeyPreferencesDto {
+  disabledSuites: string[];
+  overrides: Record<string, string>;
+}
+
+export async function getKeyPreferences(): Promise<KeyPreferencesDto> {
+  return invoke<KeyPreferencesDto>("get_key_preferences");
+}
+
+export async function setKeyPreferences(
+  preferences: KeyPreferencesDto,
+): Promise<void> {
+  return invoke("set_key_preferences", { preferences });
+}

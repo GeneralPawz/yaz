@@ -40,6 +40,21 @@
         actionKey: string;
         onclick: () => void;
       }
+    | {
+        kind: "shortcut";
+        labelKey: string;
+        /** The binding as a person reads it, e.g. `Ctrl+Space, R`. */
+        binding: string;
+        /** Whether it is switched on at all. */
+        active: boolean;
+        /** Whether another shortcut claims the same keys. */
+        conflicting: boolean;
+        /** Whether it has been changed from what it shipped with. */
+        changed: boolean;
+        /** Called with a new binding, or an empty string to unbind. */
+        onrebind: (binding: string) => void;
+        onreset: () => void;
+      }
     | { kind: "note"; labelKey: string };
 
   /** A group of fields under a heading. */
@@ -80,7 +95,46 @@
       sections[0],
   );
 
+  /** Which binding is waiting to be pressed, by its label. */
+  let capturing = $state<string | null>(null);
+
+  /**
+   * Take the pressed combination as the new binding.
+   *
+   * Modifiers alone are ignored: someone reaching for Ctrl+Shift+K presses
+   * Ctrl first, and taking that as the answer would bind the shortcut to a
+   * key they had not finished pressing.
+   */
+  function capture(event: KeyboardEvent, field: Extract<Field, { kind: "shortcut" }>) {
+    if (capturing !== field.labelKey) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (["Control", "Meta", "Alt", "Shift"].includes(event.key)) return;
+    if (event.key === "Escape") {
+      capturing = null;
+      return;
+    }
+    if (event.key === "Backspace" || event.key === "Delete") {
+      field.onrebind("");
+      capturing = null;
+      return;
+    }
+
+    const parts: string[] = [];
+    if (event.ctrlKey || event.metaKey) parts.push("Mod");
+    if (event.altKey) parts.push("Alt");
+    if (event.shiftKey) parts.push("Shift");
+    const key = event.key === " " ? "Space" : event.key;
+    parts.push(key.length === 1 ? key.toLowerCase() : key);
+
+    field.onrebind(parts.join("-"));
+    capturing = null;
+  }
+
   function onkeydown(event: KeyboardEvent) {
+    // While capturing, every key belongs to the binding being set.
+    if (capturing) return;
     if (event.key === "Escape") {
       event.preventDefault();
       onclose();
@@ -154,6 +208,44 @@
                       {/if}
                       {#if field.warningKey}
                         <p class="warn">{t(field.warningKey)}</p>
+                      {/if}
+                    </div>
+                  </div>
+                {:else if field.kind === "shortcut"}
+                  <div class="row" class:inactive={!field.active}>
+                    <span class="label">{t(field.labelKey)}</span>
+                    <div class="control keys">
+                      <!-- The binding is captured by pressing it, not typed.
+                           Asking someone to write `Mod-Shift-k` means teaching
+                           them a notation to change one key. -->
+                      <button
+                        type="button"
+                        class="binding"
+                        class:capturing={capturing === field.labelKey}
+                        class:conflict={field.conflicting}
+                        onclick={() =>
+                          (capturing = capturing === field.labelKey ? null : field.labelKey)}
+                        onkeydown={(event) => capture(event, field)}
+                      >
+                        {#if capturing === field.labelKey}
+                          {t("keys-press")}
+                        {:else}
+                          {field.binding || t("keys-unbound")}
+                        {/if}
+                      </button>
+                      {#if field.changed}
+                        <button
+                          type="button"
+                          class="reset"
+                          title={t("keys-reset")}
+                          aria-label={t("keys-reset")}
+                          onclick={field.onreset}
+                        >
+                          ↺
+                        </button>
+                      {/if}
+                      {#if field.conflicting}
+                        <p class="warn">{t("keys-conflict")}</p>
                       {/if}
                     </div>
                   </div>
@@ -350,6 +442,57 @@
     border-radius: var(--yaz-radius-md);
     padding-block: var(--yaz-space-1);
     padding-inline: var(--yaz-space-2);
+  }
+
+  .keys {
+    display: flex;
+    align-items: center;
+    gap: var(--yaz-space-2);
+    flex-wrap: wrap;
+  }
+
+  .binding {
+    font-family: var(--yaz-font-mono);
+    font-size: var(--yaz-font-size-sm);
+    color: var(--yaz-text-primary);
+    background: var(--yaz-bg-secondary);
+    border: 1px solid var(--yaz-border);
+    border-radius: var(--yaz-radius-sm);
+    padding: var(--yaz-space-1) var(--yaz-space-2);
+    min-inline-size: 8rem;
+    cursor: pointer;
+  }
+
+  .binding:hover {
+    background: var(--yaz-bg-hover);
+  }
+
+  .binding.capturing {
+    border-color: var(--yaz-accent);
+    color: var(--yaz-accent);
+  }
+
+  .binding.conflict {
+    border-color: var(--yaz-warning);
+  }
+
+  .reset {
+    font: inherit;
+    color: var(--yaz-text-muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0 var(--yaz-space-1);
+  }
+
+  .reset:hover {
+    color: var(--yaz-text-primary);
+  }
+
+  /* A shortcut whose suite is switched off still shows, greyed: hiding it
+     would make "why does Ctrl+B do nothing?" unanswerable from here. */
+  .row.inactive {
+    opacity: 0.5;
   }
 
   .action {
