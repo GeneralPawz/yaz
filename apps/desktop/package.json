@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "The yaz desktop frontend \u2014 application shell, editor host, PDF host.",
+  "description": "The yaz desktop frontend — application shell, editor host, PDF host.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -25,6 +25,7 @@
     "@tauri-apps/api": "^2.1.1",
     "@tauri-apps/plugin-dialog": "^2.2.0",
     "@yaz/api": "workspace:*",
+    "katex": "^0.18.4",
     "pdfjs-dist": "^6.2.108"
   },
   "devDependencies": {

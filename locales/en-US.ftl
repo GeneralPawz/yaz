@@ -296,3 +296,9 @@ menu-view-rich-text = Rich text
 workspace-tab-outline = Outline
 outline-empty = No headings yet. Add a \section to see the document's structure.
 outline-untitled = Untitled section
+
+## The folded preamble
+
+editor-frontmatter = Frontmatter
+editor-frontmatter-expand = Show the preamble
+editor-frontmatter-collapse = Hide the preamble

@@ -27,6 +27,16 @@ export default defineConfig({
     // The webview is always current, so there is no legacy browser to serve.
     target: "esnext",
     sourcemap: true,
+    // Never inline a font as a `data:` URI.
+    //
+    // The content security policy in tauri.conf.json is `default-src 'self'`
+    // with no `font-src`, so a `data:` font is refused by the webview. Vite
+    // inlines any asset under 4 kB by default, and three of KaTeX's twenty font
+    // files are under it — the ones that draw large brackets and integral
+    // signs. The result would be a formula that renders with the wrong
+    // delimiters and no error anywhere.
+    assetsInlineLimit: (file) =>
+      /\.(woff2?|ttf|eot)$/i.test(file) ? false : undefined,
   },
 
   // Tauri surfaces these; without them the frontend cannot tell dev from

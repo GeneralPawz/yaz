@@ -12,9 +12,13 @@ import {
   braceCommands,
   commentRanges,
   documentTitle,
+  environments,
   headings,
+  itemMarkers,
+  mathSpans,
   matchBrace,
   plainText,
+  preamble,
 } from "./structure";
 
 describe("matchBrace", () => {
@@ -135,7 +139,9 @@ describe("commentRanges", () => {
 describe("plainText", () => {
   it("keeps the words and drops the markup", () => {
     expect(plainText("The \\emph{good} bit")).toBe("The good bit");
-    expect(plainText("\\textbf{Bold} and \\textit{italic}")).toBe("Bold and italic");
+    expect(plainText("\\textbf{Bold} and \\textit{italic}")).toBe(
+      "Bold and italic",
+    );
   });
 
   it("keeps escaped characters as themselves", () => {
@@ -150,7 +156,9 @@ describe("plainText", () => {
 
 describe("documentTitle", () => {
   it("reads the title", () => {
-    expect(documentTitle("\\title{A Paper}\n\\begin{document}")).toBe("A Paper");
+    expect(documentTitle("\\title{A Paper}\n\\begin{document}")).toBe(
+      "A Paper",
+    );
   });
 
   it("strips markup from it", () => {
@@ -176,7 +184,10 @@ describe("braceCommands", () => {
 
   it("reports nested commands as well as the outer one", () => {
     // The rich-text view styles them independently, so both are needed.
-    const found = braceCommands(String.raw`\textbf{very \emph{good}}`, ["textbf", "emph"]);
+    const found = braceCommands(String.raw`\textbf{very \emph{good}}`, [
+      "textbf",
+      "emph",
+    ]);
     expect(found.map((f) => f.command).sort()).toEqual(["emph", "textbf"]);
   });
 
@@ -195,5 +206,139 @@ describe("braceCommands", () => {
     const found = braceCommands(`% \\emph{hidden}\n\\emph{shown}`, ["emph"]);
     expect(found).toHaveLength(1);
     expect(found[0]!.argFrom).toBeGreaterThan(15);
+  });
+});
+
+describe("environments", () => {
+  it("pairs begin with end", () => {
+    const text = "\\begin{itemize}\nbody\n\\end{itemize}";
+    const [found] = environments(text, ["itemize"]);
+    expect(text.slice(found!.from, found!.to)).toBe(text);
+    expect(text.slice(found!.bodyFrom, found!.bodyTo)).toBe("\nbody\n");
+  });
+
+  it("nests the same environment correctly", () => {
+    // A list inside a list is ordinary, and pairing by position rather than by
+    // a stack would close the outer one at the inner `\end`.
+    const text =
+      "\\begin{itemize}\n\\begin{itemize}\nx\n\\end{itemize}\n\\end{itemize}";
+    const found = environments(text, ["itemize"]);
+    expect(found).toHaveLength(2);
+    expect(found[0]!.from).toBe(0);
+    expect(found[0]!.to).toBe(text.length);
+    expect(found[1]!.depth).toBe(1);
+  });
+
+  it("reports them in reading order", () => {
+    // The stack closes them innermost-first, which is not the order a reader
+    // or a decoration builder wants.
+    const found = environments("\\begin{a}\\begin{b}\\end{b}\\end{a}");
+    expect(found.map((environment) => environment.name)).toEqual(["a", "b"]);
+  });
+
+  it("ignores an unmatched end", () => {
+    // Half-written source is the normal state of a document being typed.
+    const found = environments(
+      "\\end{itemize}\n\\begin{itemize}\nx\n\\end{itemize}",
+    );
+    expect(found).toHaveLength(1);
+  });
+
+  it("is not fooled by a command that starts the same way", () => {
+    expect(environments("\\beginning{x}")).toHaveLength(0);
+  });
+
+  it("skips a commented-out environment", () => {
+    expect(environments("% \\begin{itemize}\n\\end{itemize}")).toHaveLength(0);
+  });
+
+  it("keeps the star in the name", () => {
+    expect(environments("\\begin{align*}x\\end{align*}")[0]!.name).toBe(
+      "align*",
+    );
+  });
+});
+
+describe("mathSpans", () => {
+  it("finds inline and display delimiters", () => {
+    const text = "a $x$ b $$y$$ c \\(z\\) d \\[w\\]";
+    const found = mathSpans(text);
+    expect(found.map((span) => text.slice(span.bodyFrom, span.bodyTo))).toEqual(
+      ["x", "y", "z", "w"],
+    );
+    expect(found.map((span) => span.display)).toEqual([
+      false,
+      true,
+      false,
+      true,
+    ]);
+  });
+
+  it("does not read an escaped dollar as mathematics", () => {
+    // `\$5` is a price.
+    expect(mathSpans("costs \\$5 and \\$10")).toEqual([]);
+  });
+
+  it("refuses to run across a blank line", () => {
+    // Which is what stops two prices in a draft turning the words between them
+    // into a formula. It is also LaTeX's own rule.
+    expect(mathSpans("costs $5 and\n\n$10 more")).toEqual([]);
+  });
+
+  it("ignores mathematics in a comment", () => {
+    expect(mathSpans("% $x$\n$y$")).toHaveLength(1);
+  });
+
+  it("leaves an unterminated formula alone", () => {
+    expect(mathSpans("half written $x^2")).toEqual([]);
+  });
+
+  it("ignores empty delimiters", () => {
+    expect(mathSpans("nothing $$ here")).toEqual([]);
+  });
+});
+
+describe("preamble", () => {
+  it("runs to the end of the begin", () => {
+    const text = "\\documentclass{article}\n\\begin{document}\nBody";
+    const found = preamble(text);
+    expect(text.slice(found!.from, found!.to)).toBe(
+      "\\documentclass{article}\n\\begin{document}",
+    );
+  });
+
+  it("is null for a fragment", () => {
+    // An `\input`-ed chapter has no preamble, and folding its first line away
+    // would hide the author's actual first paragraph.
+    expect(preamble("\\section{Chapter}\nText.")).toBeNull();
+  });
+
+  it("ignores a commented-out one", () => {
+    const text = "% \\begin{document}\n\\begin{document}\nBody";
+    expect(preamble(text)!.to).toBe(text.indexOf("\\begin{document}", 5) + 16);
+  });
+});
+
+describe("itemMarkers", () => {
+  it("finds items and the space after them", () => {
+    const text = "\\item one\n\\item two";
+    const found = itemMarkers(text);
+    expect(found).toHaveLength(2);
+    expect(text.slice(found[0]!.from, found[0]!.to)).toBe("\\item ");
+  });
+
+  it("reads the optional label", () => {
+    const text = "\\item[Term] meaning";
+    const [found] = itemMarkers(text);
+    expect(text.slice(found!.labelFrom!, found!.labelTo!)).toBe("Term");
+    expect(text.slice(found!.from, found!.to)).toBe("\\item[Term] ");
+  });
+
+  it("is not fooled by a longer command", () => {
+    expect(itemMarkers("\\itemsep 2pt")).toHaveLength(0);
+  });
+
+  it("skips a commented-out item", () => {
+    expect(itemMarkers("% \\item hidden\n\\item shown")).toHaveLength(1);
   });
 });
