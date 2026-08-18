@@ -10,12 +10,14 @@
   import { LINE_NUMBERING } from "./lib/editor/lineNumbers";
   import type { LineNumbering } from "./lib/editor/lineNumbers";
   import Prompt from "./lib/Prompt.svelte";
+  import ThemeBuilder from "./lib/ThemeBuilder.svelte";
+  import * as theming from "./lib/theme";
+  import { setLocale, availableLocales, t } from "./lib/i18n";
   import Pane from "./lib/workspace/Pane.svelte";
   import * as layoutTree from "./lib/workspace/layout";
   import type { Node as LayoutNode, TabId } from "./lib/workspace/layout";
   import PdfView from "./lib/PdfView.svelte";
   import Picker from "./lib/Picker.svelte";
-  import { t } from "./lib/i18n";
   import * as ipc from "./lib/ipc";
   import { PluginRuntime, type PickerRequest } from "./lib/plugins/host";
   import ZoteroPlugin from "../../../plugins/zotero/src/main";
@@ -57,6 +59,55 @@
    * this is three states rather than a checkbox.
    */
   let numbering = $state<LineNumbering>("absolute");
+  /**
+   * Whether the file list is showing, and whether it stays showing.
+   *
+   * Pinned is the resting state: a file list you have to summon is a file list
+   * you stop using. Unpinned it collapses to a strip and gives its width back
+   * to the document, which is what a long writing session wants.
+   */
+  let filesPinned = $state(true);
+  let filesOpen = $state(true);
+
+  /**
+   * How the application looks and what language it speaks.
+   *
+   * Held here rather than read where it is needed, because a theme is one
+   * attribute on the document and a language is a catalogue swap: both are
+   * application-wide by nature, and threading them through components would
+   * make every component care about something none of them decide.
+   */
+  let appearance = $state<ipc.Appearance>({
+    theme: theming.BUNDLED_THEME,
+    colourMode: "system",
+    interfaceLocale: "en-US",
+  });
+  let themes = $state<ipc.ThemeInfo[]>([]);
+  let buildingTheme = $state(false);
+
+  /** Put the chosen theme and mode on the document. */
+  async function applyAppearance() {
+    theming.applyAppearance(appearance.theme, appearance.colourMode);
+    setLocale(appearance.interfaceLocale);
+    try {
+      theming.applyStylesheet(await ipc.themeStylesheet(appearance.theme));
+    } catch {
+      // A theme whose file has gone leaves the token defaults in place, which
+      // is a working interface rather than an unstyled one.
+      theming.applyStylesheet("");
+    }
+  }
+
+  /** Store the appearance and put it into effect. */
+  async function changeAppearance(next: Partial<ipc.Appearance>) {
+    appearance = { ...appearance, ...next };
+    await applyAppearance();
+    try {
+      await ipc.setAppearance(appearance);
+    } catch (error) {
+      failure = String(error);
+    }
+  }
   let failure = $state<string | null>(null);
   let engines = $state<ipc.EngineInfo[]>([]);
   let selectedEngine = $state<string | null>(null);
@@ -153,6 +204,129 @@
     } finally {
       vcsBusy = false;
     }
+  }
+
+  /**
+   * Jump to the source behind a point in the compiled PDF.
+   *
+   * The PDF is a rendering of the file being edited, so a click in it is a
+   * question about the source — "what wrote this?" — and answering it is what
+   * makes the two panes one document rather than two windows.
+   *
+   * A location in a file that is not the open one opens that file first. A
+   * location outside the project is reported rather than silently ignored:
+   * more often than not it is a package, and knowing that is the answer.
+   */
+  async function jumpToSource(page: number, x: number, y: number) {
+    if (!project || !result?.synctexPath) return;
+    try {
+      const found = await ipc.locateInSource(project.root, result.synctexPath, page, x, y);
+      if (!found) return;
+      if (!found.inProject) {
+        showNotice(t("synctex-outside-project", { path: found.path }));
+        return;
+      }
+      if (found.path !== currentFile) await openFile(found.path);
+      revealLine(found.line);
+    } catch (error) {
+      failure = String(error);
+    }
+  }
+
+  /**
+   * Put the cursor on a line of the open document.
+   *
+   * Offsets rather than a line API because the buffer is the `.tex` in both
+   * views (ADR-0004), so counting line breaks in the text the shell already
+   * holds gives the same answer the editor would.
+   */
+  function revealLine(line: number) {
+    let start = 0;
+    for (let current = 1; current < line; current += 1) {
+      const next = docText.indexOf("\n", start);
+      if (next === -1) break;
+      start = next + 1;
+    }
+    const end = docText.indexOf("\n", start);
+    editorApi?.revealRange(start, end === -1 ? docText.length : end);
+  }
+
+  /**
+   * Read the stored appearance before anything is painted.
+   *
+   * `system` has to keep following the system, so the change listener outlives
+   * this: a machine that switches to dark at sunset should take the
+   * application with it.
+   */
+  $effect(() => {
+    void (async () => {
+      try {
+        appearance = await ipc.getAppearance();
+        themes = await ipc.listThemes();
+      } catch {
+        // Defaults are already in place, and an interface that will not start
+        // because it could not read a colour preference would be worse.
+      }
+      await applyAppearance();
+    })();
+
+    return theming.watchSystemMode(() => {
+      if (appearance.colourMode === "system") {
+        theming.applyAppearance(appearance.theme, appearance.colourMode);
+      }
+    });
+  });
+
+  /**
+   * Install a theme bundle the user points at.
+   *
+   * A folder rather than a zip: unzipping is something every desktop already
+   * does, and asking yaz to do it too would mean carrying an archive library
+   * for a step the file manager finished a moment ago.
+   */
+  async function installTheme() {
+    const chosen = await open({ directory: true, multiple: false });
+    if (typeof chosen !== "string") return;
+    try {
+      const installed = await ipc.installTheme(chosen);
+      themes = await ipc.listThemes();
+      showNotice(t("theme-installed", { name: installed.name }));
+      await changeAppearance({ theme: installed.id });
+    } catch (error) {
+      failure = String(error);
+    }
+  }
+
+  /** Write a built theme somewhere the user can share it from. */
+  async function exportTheme(_id: string, css: string, manifest: string) {
+    const chosen = await open({ directory: true, multiple: false });
+    if (typeof chosen !== "string") return;
+    try {
+      const written = await ipc.exportTheme(chosen, manifest, css);
+      showNotice(t("theme-exported", { path: written }));
+    } catch (error) {
+      failure = String(error);
+    }
+  }
+
+  /**
+   * Use a theme that was just built.
+   *
+   * It is written into the themes folder first, because "use this" has to
+   * survive closing the window — a theme that exists only in the builder's
+   * state would vanish on the next start and take the interface's appearance
+   * with it.
+   */
+  async function applyBuiltTheme(id: string, name: string, css: string, manifest: string) {
+    try {
+      await ipc.saveTheme(manifest, css);
+      themes = await ipc.listThemes();
+      await changeAppearance({ theme: id });
+      showNotice(t("theme-installed", { name }));
+    } catch (error) {
+      failure = String(error);
+    }
+    buildingTheme = false;
   }
 
   /** Refresh the recent list. Cheap, and only read when a menu opens. */
@@ -347,9 +521,11 @@
     {
       labelKey: "menu-file",
       items: [
-        { labelKey: "menu-file-open-folder", action: chooseProject },
+        { labelKey: "menu-file-open-folder",
+          icon: "folder" as const, action: chooseProject },
         {
           labelKey: "menu-file-open-recent",
+          icon: "clock" as const,
           // Titles here are folder names, which are data rather than interface
           // copy, so they are passed through as labels and not message keys.
           items:
@@ -364,17 +540,20 @@
         },
         {
           labelKey: "menu-file-save",
+          icon: "save" as const,
           action: save,
           disabled: !currentFile || !dirty,
         },
         {
           labelKey: "menu-file-compile",
+          icon: "play" as const,
           action: compile,
           disabled: !project || busy,
           separatorBefore: true,
         },
         {
           labelKey: "menu-file-close-project",
+          icon: "close" as const,
           action: closeProject,
           disabled: !project,
           separatorBefore: true,
@@ -384,16 +563,20 @@
     {
       labelKey: "menu-edit",
       items: [
-        { labelKey: "menu-edit-undo", action: notImplemented, disabled: true },
-        { labelKey: "menu-edit-redo", action: notImplemented, disabled: true },
+        { labelKey: "menu-edit-undo",
+          icon: "undo" as const, action: notImplemented, disabled: true },
+        { labelKey: "menu-edit-redo",
+          icon: "redo" as const, action: notImplemented, disabled: true },
         {
           labelKey: "menu-edit-find",
+          icon: "search" as const,
           action: notImplemented,
           disabled: true,
           separatorBefore: true,
         },
         {
           labelKey: "menu-edit-settings",
+          icon: "settings" as const,
           action: () => openSettings("engine"),
           separatorBefore: true,
         },
@@ -404,6 +587,7 @@
       items: [
         {
           labelKey: "menu-view-rich-text",
+          icon: "text" as const,
           checked: richText,
           action: () => {
             richText = !richText;
@@ -411,13 +595,24 @@
         },
         {
           labelKey: "menu-view-vim",
+          icon: "wrench" as const,
           checked: vimMode,
           action: () => {
             vimMode = !vimMode;
           },
         },
         {
+          labelKey: "menu-view-files",
+          icon: "list" as const,
+          checked: filesPinned,
+          action: () => {
+            filesPinned = !filesPinned;
+            filesOpen = filesPinned;
+          },
+        },
+        {
           labelKey: "menu-view-line-numbers",
+          icon: "numbers" as const,
           separatorBefore: true,
           items: LINE_NUMBERING.map((mode) => ({
             labelKey: `menu-view-line-numbers-${mode}`,
@@ -431,6 +626,7 @@
         },
         {
           labelKey: "menu-view-tabs",
+          icon: "layout" as const,
           separatorBefore: true,
           // Closed tabs come back from here. A tab that can be closed and not
           // reopened is a tab that gets closed once and then missed.
@@ -448,6 +644,7 @@
         },
         {
           labelKey: "menu-view-reset-layout",
+          icon: "layout" as const,
           action: () => updateLayout(layoutTree.defaultLayout()),
         },
       ],
@@ -461,6 +658,7 @@
         })),
         {
           labelKey: "vcs-commit-with-message",
+          icon: "branch" as const,
           disabled: !vcs?.enabled || !vcs.dirty || vcsBusy,
           separatorBefore: commands.length > 0,
           action: () => {
@@ -469,6 +667,7 @@
         },
         {
           labelKey: "menu-tools-connections",
+          icon: "plug" as const,
           separatorBefore: commands.length > 0,
           // A flyout rather than a dialog: connecting is one click, and the
           // detail belongs next to the thing it describes.
@@ -492,10 +691,13 @@
     {
       labelKey: "menu-help",
       items: [
-        { labelKey: "menu-help-documentation", action: notImplemented, disabled: true },
-        { labelKey: "menu-help-report-issue", action: notImplemented, disabled: true },
+        { labelKey: "menu-help-documentation",
+          icon: "book" as const, action: notImplemented, disabled: true },
+        { labelKey: "menu-help-report-issue",
+          icon: "bug" as const, action: notImplemented, disabled: true },
         {
           labelKey: "menu-help-about",
+          icon: "info" as const,
           action: notImplemented,
           disabled: true,
           separatorBefore: true,
@@ -577,6 +779,74 @@
                   : undefined,
             },
             ...(project ? [] : [{ kind: "note" as const, labelKey: "settings-engine-no-project" }]),
+          ],
+        },
+      ],
+    },
+    {
+      id: "appearance",
+      labelKey: "settings-appearance",
+      glyph: "◐",
+      groups: [
+        {
+          titleKey: "settings-appearance",
+          fields: [
+            {
+              kind: "select" as const,
+              labelKey: "settings-theme",
+              helpKey: "settings-theme-help",
+              value: appearance.theme,
+              // A theme's name is its author's, so it is data and not a
+              // message key — translating it would be renaming someone's work.
+              options: themes.map((theme) => ({ value: theme.id, label: theme.name })),
+              onchange: (id: string) => void changeAppearance({ theme: id }),
+            },
+            {
+              kind: "select" as const,
+              labelKey: "settings-colour-mode",
+              value: appearance.colourMode,
+              options: theming.COLOUR_MODES.map((mode) => ({
+                value: mode,
+                label: t(`settings-colour-mode-${mode}`),
+              })),
+              onchange: (mode: string) =>
+                void changeAppearance({ colourMode: mode as ipc.Appearance["colourMode"] }),
+            },
+            {
+              kind: "select" as const,
+              labelKey: "settings-interface-locale",
+              helpKey: "settings-interface-locale-help",
+              value: appearance.interfaceLocale,
+              // Endonyms: a language list is read by people looking for their
+              // own, and someone who cannot read the current interface can
+              // still find "Deutsch".
+              options: availableLocales.map((entry) => ({
+                value: entry.code,
+                label: entry.name,
+              })),
+              onchange: (code: string) => void changeAppearance({ interfaceLocale: code }),
+            },
+          ],
+        },
+        {
+          titleKey: "settings-appearance-build",
+          fields: [
+            {
+              kind: "button" as const,
+              labelKey: "settings-appearance-build",
+              helpKey: "settings-appearance-build-help",
+              actionKey: "settings-appearance-build-open",
+              onclick: () => {
+                settingsOpen = false;
+                buildingTheme = true;
+              },
+            },
+            {
+              kind: "button" as const,
+              labelKey: "settings-appearance-install",
+              actionKey: "settings-appearance-install",
+              onclick: () => void installTheme(),
+            },
           ],
         },
       ],
@@ -827,7 +1097,7 @@
       <p class="empty">{t("workspace-no-file-open")}</p>
     {/if}
   {:else if tab === "pdf"}
-    <PdfView data={pdfData} />
+    <PdfView data={pdfData} onclickpoint={jumpToSource} />
   {:else if tab === "outline"}
     <Outline
       doc={docText}
@@ -853,6 +1123,15 @@
   {/if}
 {/snippet}
 
+{#if buildingTheme}
+  <ThemeBuilder
+    mode={theming.resolveMode(appearance.colourMode)}
+    onapply={applyBuiltTheme}
+    onexport={exportTheme}
+    onclose={() => (buildingTheme = false)}
+  />
+{/if}
+
 <div class="app">
   <!-- The window is undecorated, so this row is the title bar. The project
        name lives here, which is where a title bar puts it — and is why the
@@ -870,8 +1149,8 @@
       type="button"
       class="view-mode"
       class:on={richText}
-      title={richText ? t("view-mode-show-source") : t("view-mode-show-preview")}
-      aria-label={richText ? t("view-mode-preview") : t("view-mode-source")}
+      title={richText ? t("view-mode-show-source") : t("view-mode-show-rich")}
+      aria-label={richText ? t("view-mode-rich") : t("view-mode-source")}
       aria-pressed={richText}
       onclick={() => {
         richText = !richText;
@@ -943,8 +1222,40 @@
     <StatusLight {health} labelKey={healthKey} onclick={connectZotero} />
   </header>
 
-  <div class="body">
-    <nav class="files">
+  <div class="body" class:narrow={!filesOpen}>
+    <nav
+      class="files"
+      class:collapsed={!filesOpen}
+      onmouseenter={() => (filesOpen = true)}
+      onmouseleave={() => {
+        if (!filesPinned) filesOpen = false;
+      }}
+    >
+      <!-- The pin is the only control the strip needs: everything else about
+           the list is the list. -->
+      <div class="files-bar">
+        <button
+          type="button"
+          class="pin"
+          class:on={filesPinned}
+          title={filesPinned ? t("files-unpin") : t("files-pin")}
+          aria-label={filesPinned ? t("files-unpin") : t("files-pin")}
+          aria-pressed={filesPinned}
+          onclick={() => {
+            filesPinned = !filesPinned;
+            filesOpen = filesPinned;
+          }}
+        >
+          <svg viewBox="0 0 14 14" aria-hidden="true">
+            <path
+              d="M9 1.5l3.5 3.5-1.6 1.6-1-.4-2.4 2.4.5 2.1-1 1-4.2-4.2 1-1 2.1.5 2.4-2.4-.4-1z"
+              fill="currentColor"
+              stroke="none"
+            />
+            <path d="M4.3 9.7L1.5 12.5" stroke="currentColor" stroke-width="1.3" fill="none" />
+          </svg>
+        </button>
+      </div>
       {#if !project}
         <p class="empty">{t("workspace-no-project")}</p>
       {:else if project.files.length === 0}
@@ -1221,6 +1532,55 @@
     /* The file list, then the workspace, which arranges itself. */
     grid-template-columns: 15rem 1fr;
     min-block-size: 0;
+    transition: grid-template-columns 140ms ease;
+  }
+
+  /* Collapsed, the list keeps a strip: something to point at to get it back,
+     and somewhere for the pin to live. A pane that vanishes completely is one
+     the user has to remember exists. */
+  .body.narrow {
+    grid-template-columns: 1.75rem 1fr;
+  }
+
+  .files.collapsed ul,
+  .files.collapsed .empty {
+    display: none;
+  }
+
+  .files-bar {
+    display: flex;
+    justify-content: flex-end;
+    padding: var(--yaz-space-1);
+  }
+
+  .pin {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 1.25rem;
+    block-size: 1.25rem;
+    padding: 0;
+    background: none;
+    border: none;
+    border-radius: var(--yaz-radius-sm);
+    color: var(--yaz-text-muted);
+    cursor: pointer;
+    opacity: 0.6;
+  }
+
+  .pin svg {
+    inline-size: 0.75rem;
+    block-size: 0.75rem;
+  }
+
+  .pin:hover {
+    opacity: 1;
+    background: var(--yaz-bg-hover);
+  }
+
+  .pin.on {
+    opacity: 1;
+    color: var(--yaz-accent);
   }
 
   .files {

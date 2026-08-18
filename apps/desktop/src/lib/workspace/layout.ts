@@ -153,7 +153,9 @@ export function openTab(node: Node, tab: TabId, targetPane?: string): Node {
 
   const target = targetPane ?? leaves(node)[0]?.id;
   const placed = mapNode(node, (pane) =>
-    pane.id === target ? { ...pane, tabs: [...pane.tabs, tab], active: tab } : pane,
+    pane.id === target
+      ? { ...pane, tabs: [...pane.tabs, tab], active: tab }
+      : pane,
   );
   return placed ?? leaf([tab]);
 }
@@ -251,7 +253,9 @@ function isNode(value: unknown): value is Node {
   if (typeof value !== "object" || value === null) return false;
   const node = value as Partial<Split> & Partial<Leaf>;
   if (node.kind === "leaf") {
-    return Array.isArray(node.tabs) && node.tabs.every((t) => typeof t === "string");
+    return (
+      Array.isArray(node.tabs) && node.tabs.every((t) => typeof t === "string")
+    );
   }
   if (node.kind === "split") {
     return (
@@ -280,7 +284,9 @@ function withFreshIds(node: Node): Node {
     direction: node.direction,
     children: node.children.map(withFreshIds),
     sizes: normalise(
-      node.children.map((_, index) => node.sizes?.[index] ?? 1 / node.children.length),
+      node.children.map(
+        (_, index) => node.sizes?.[index] ?? 1 / node.children.length,
+      ),
     ),
   };
 }

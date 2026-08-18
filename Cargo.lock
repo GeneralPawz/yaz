@@ -7393,6 +7393,7 @@ name = "yaz-compile"
 version = "0.2.0"
 dependencies = [
  "camino",
+ "flate2",
  "insta",
  "pretty_assertions",
  "serde",

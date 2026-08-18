@@ -41,6 +41,8 @@ export interface CompileResult {
   succeeded: boolean;
   /** Absolute path to the PDF, when one was produced. */
   pdfPath: string | null;
+  /** Absolute path to the SyncTeX database, which inverse search reads. */
+  synctexPath: string | null;
   diagnostics: CompileDiagnostic[];
   /** Which engine ran, e.g. `tectonic` or `system:pdflatex`. */
   engineId: string;
@@ -125,6 +127,38 @@ export function reportReady(): Promise<number> {
 }
 
 /** Read a produced artefact as bytes — used to hand the PDF to pdf.js. */
+/** Where in the source a point in the PDF came from. */
+export interface SourceLocation {
+  /** Project-relative when `inProject`, absolute otherwise. */
+  path: string;
+  inProject: boolean;
+  /** One-based. */
+  line: number;
+}
+
+/**
+ * Inverse search: which source line produced a point in the PDF.
+ *
+ * `x` and `y` are PDF points from the top left of the page. Resolves to `null`
+ * when the database has nothing to say, which is what a click on a blank part
+ * of a page is.
+ */
+export async function locateInSource(
+  root: string,
+  synctexPath: string,
+  page: number,
+  x: number,
+  y: number,
+): Promise<SourceLocation | null> {
+  return invoke<SourceLocation | null>("locate_in_source", {
+    root,
+    synctexPath,
+    page,
+    x,
+    y,
+  });
+}
+
 export async function readArtefact(path: string): Promise<Uint8Array> {
   const bytes = await invoke<number[]>("read_artefact", { path });
   return new Uint8Array(bytes);
@@ -399,4 +433,65 @@ export function vcsHistory(root: string): Promise<Commit[]> {
 /** Put the project back to a recorded version. */
 export function vcsRestore(root: string, commit: string): Promise<void> {
   return invoke<void>("vcs_restore", { root, commit });
+}
+
+// ---------------------------------------------------------------------------
+// Appearance: themes, colour mode, interface language.
+
+/** A theme that can be chosen. */
+export interface ThemeInfo {
+  id: string;
+  /** The author's own name for it, so it is data rather than a message key. */
+  name: string;
+  author: string;
+  version: string;
+  description: string;
+  /** Whether it ships with the application. */
+  bundled: boolean;
+}
+
+/** What the interface looks like and speaks. */
+export interface Appearance {
+  theme: string;
+  colourMode: "system" | "light" | "dark";
+  interfaceLocale: string;
+}
+
+export async function getAppearance(): Promise<Appearance> {
+  return invoke<Appearance>("get_appearance");
+}
+
+export async function setAppearance(appearance: Appearance): Promise<void> {
+  return invoke("set_appearance", { appearance });
+}
+
+export async function listThemes(): Promise<ThemeInfo[]> {
+  return invoke<ThemeInfo[]>("list_themes");
+}
+
+/** The stylesheet of an installed theme; empty for the bundled one. */
+export async function themeStylesheet(id: string): Promise<string> {
+  return invoke<string>("theme_stylesheet", { id });
+}
+
+/** Write a theme bundle into a folder. Resolves to where it was written. */
+export async function exportTheme(
+  directory: string,
+  manifest: string,
+  css: string,
+): Promise<string> {
+  return invoke<string>("export_theme", { directory, manifest, css });
+}
+
+/** Write a theme bundle into the themes folder, ready to be chosen. */
+export async function saveTheme(
+  manifest: string,
+  css: string,
+): Promise<ThemeInfo> {
+  return invoke<ThemeInfo>("save_theme", { manifest, css });
+}
+
+/** Copy a theme bundle into the themes folder. */
+export async function installTheme(source: string): Promise<ThemeInfo> {
+  return invoke<ThemeInfo>("install_theme", { source });
 }

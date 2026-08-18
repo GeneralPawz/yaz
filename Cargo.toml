@@ -53,6 +53,10 @@ camino = { version = "1", features = ["serde1"] }
 notify = "8"
 notify-debouncer-full = "0.7"
 walkdir = "2"
+# Reading the SyncTeX database, which engines write gzipped. `rust_backend`
+# rather than the zlib C library: ADR-0014 makes a dependency without a native
+# aarch64 path a blocker, and miniz_oxide is pure Rust with nothing to link.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 
 # Misc
 semver = { version = "1", features = ["serde"] }

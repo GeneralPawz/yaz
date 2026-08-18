@@ -31,7 +31,7 @@ pub enum ColourMode {
 /// Top-level application settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
-    /// Active theme identifier, e.g. `yaz-dark`.
+    /// Active theme identifier, e.g. `yaz`. A theme provides both modes.
     pub theme: String,
     /// Light/dark resolution strategy.
     pub colour_mode: ColourMode,
@@ -52,7 +52,9 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            theme: "yaz-dark".to_owned(),
+            // One theme, both modes: which one shows is `colour_mode`, not a
+            // second theme (ADR-0010).
+            theme: "yaz".to_owned(),
             colour_mode: ColourMode::System,
             interface_locale: "en-US".to_owned(),
             check_for_updates: false,

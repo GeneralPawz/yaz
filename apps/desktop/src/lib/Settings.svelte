@@ -32,6 +32,14 @@
         value: boolean;
         onchange: (value: boolean) => void;
       }
+    | {
+        kind: "button";
+        labelKey: string;
+        helpKey?: string | undefined;
+        /** Text on the button. The label beside it says what it is for. */
+        actionKey: string;
+        onclick: () => void;
+      }
     | { kind: "note"; labelKey: string };
 
   /** A group of fields under a heading. */
@@ -146,6 +154,18 @@
                       {/if}
                       {#if field.warningKey}
                         <p class="warn">{t(field.warningKey)}</p>
+                      {/if}
+                    </div>
+                  </div>
+                {:else if field.kind === "button"}
+                  <div class="row">
+                    <span class="label">{t(field.labelKey)}</span>
+                    <div class="control">
+                      <button type="button" class="action" onclick={field.onclick}>
+                        {t(field.actionKey)}
+                      </button>
+                      {#if field.helpKey}
+                        <p class="help">{t(field.helpKey)}</p>
                       {/if}
                     </div>
                   </div>
@@ -330,6 +350,20 @@
     border-radius: var(--yaz-radius-md);
     padding-block: var(--yaz-space-1);
     padding-inline: var(--yaz-space-2);
+  }
+
+  .action {
+    font: inherit;
+    color: var(--yaz-text-primary);
+    background: var(--yaz-bg-secondary);
+    border: 1px solid var(--yaz-border);
+    border-radius: var(--yaz-radius-sm);
+    padding: var(--yaz-space-1) var(--yaz-space-3);
+    cursor: pointer;
+  }
+
+  .action:hover {
+    background: var(--yaz-bg-hover);
   }
 
   .toggle {

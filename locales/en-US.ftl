@@ -248,7 +248,7 @@ menu-edit-settings = Settings…
 
 workspace-close-tab = Close tab
 workspace-tab-editor = Source
-workspace-tab-pdf = Preview
+workspace-tab-pdf = PDF
 menu-view-tabs = Tabs
 menu-view-reset-layout = Reset layout
 
@@ -306,11 +306,80 @@ editor-wrapper-hide = Hide the LaTeX around the text
 
 ## Views and line numbering
 
-view-mode-preview = Preview
+view-mode-rich = Rich text
 view-mode-source = Source
-view-mode-show-preview = Show the document as it will read
+view-mode-show-rich = Show the document as it will read
 view-mode-show-source = Show the LaTeX source
 menu-view-line-numbers = Line numbers
 menu-view-line-numbers-off = None
 menu-view-line-numbers-absolute = Absolute
 menu-view-line-numbers-relative = Relative
+
+## The file list
+
+menu-view-files = File list
+files-pin = Keep the file list open
+files-unpin = Let the file list collapse
+
+## Following the PDF back to the source
+
+synctex-outside-project = That came from { $path }, which is outside this project.
+
+## Appearance
+
+settings-theme-help = A theme provides both light and dark.
+settings-interface-locale-help = The document's own language is a project setting, set separately.
+settings-appearance-build = Build a theme
+settings-appearance-build-help = Start from the theme you are using and change what you like.
+settings-appearance-build-open = Build theme…
+settings-appearance-install = Install a theme…
+theme-error-manifest = That folder does not contain a theme.
+theme-error-modes = A theme has to provide both light and dark.
+theme-installed = Installed { $name }.
+theme-exported = Written to { $path }.
+
+## The theme builder
+
+theme-builder-title = Theme builder
+theme-builder-name = Name
+theme-builder-author = Author
+theme-builder-mode-light = Light
+theme-builder-mode-dark = Dark
+theme-builder-editing = Editing the { $mode } palette. The window shows it as you go.
+theme-builder-apply = Use this theme
+theme-builder-export = Export…
+theme-builder-reset = Start over
+theme-builder-close = Close
+theme-group-surfaces = Surfaces
+theme-group-text = Text
+theme-group-accent = Accent
+theme-group-state = State
+theme-group-borders = Borders
+theme-group-editor = Editor
+theme-group-syntax = Syntax highlighting
+theme-group-pdf = PDF viewer
+theme-token-bg-primary = Background
+theme-token-bg-secondary = Panels
+theme-token-bg-tertiary = Raised surfaces
+theme-token-bg-overlay = Dialogs
+theme-token-text-primary = Text
+theme-token-text-secondary = Secondary text
+theme-token-text-muted = Muted text
+theme-token-accent = Accent
+theme-token-accent-hover = Accent, hovered
+theme-token-text-on-accent = Text on accent
+theme-token-success = Success
+theme-token-warning = Warning
+theme-token-error = Error
+theme-token-border = Borders
+theme-token-border-strong = Strong borders
+theme-token-editor-bg = Editor background
+theme-token-editor-gutter-bg = Gutter
+theme-token-editor-cursor = Cursor
+theme-token-syntax-command = Commands
+theme-token-syntax-environment = Environments
+theme-token-syntax-math = Mathematics
+theme-token-syntax-comment = Comments
+theme-token-syntax-string = Strings
+theme-token-syntax-reference = References
+theme-token-pdf-bg = Page surround

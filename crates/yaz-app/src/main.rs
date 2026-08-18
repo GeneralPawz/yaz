@@ -13,6 +13,7 @@
 #![deny(unsafe_code)]
 #![warn(clippy::all)]
 
+mod appearance;
 mod commands;
 mod plugin_host;
 mod vcs_commands;
@@ -67,6 +68,13 @@ fn main() {
             commands::set_project_engine,
             commands::set_project_workspace,
             commands::recent_projects,
+            appearance::get_appearance,
+            appearance::set_appearance,
+            appearance::list_themes,
+            appearance::theme_stylesheet,
+            appearance::export_theme,
+            appearance::install_theme,
+            appearance::save_theme,
             vcs_commands::vcs_backends,
             vcs_commands::vcs_status,
             vcs_commands::vcs_enable,
@@ -75,6 +83,7 @@ fn main() {
             vcs_commands::vcs_history,
             vcs_commands::vcs_restore,
             commands::read_artefact,
+            commands::locate_in_source,
             commands::report_ready,
             plugin_host::plugin_zotero_status,
             plugin_host::plugin_zotero_search,

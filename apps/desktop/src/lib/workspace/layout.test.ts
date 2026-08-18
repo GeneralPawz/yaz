@@ -126,7 +126,12 @@ describe("layout", () => {
   });
 
   it("survives a round trip through storage", () => {
-    const layout = moveTab(sideBySide(), "editor", leaves(sideBySide())[1]!.id, "center");
+    const layout = moveTab(
+      sideBySide(),
+      "editor",
+      leaves(sideBySide())[1]!.id,
+      "center",
+    );
     const restored = deserialise(serialise(layout));
     expect(openTabs(restored).sort()).toEqual(openTabs(layout).sort());
     expect(leaves(restored)).toHaveLength(leaves(layout).length);
@@ -135,7 +140,15 @@ describe("layout", () => {
   it("falls back to the default layout rather than refusing to open", () => {
     // A layout is a convenience. A project whose stored layout is unreadable
     // must still open.
-    for (const bad of [null, undefined, "", "not json", "{}", '{"kind":"split"}', "[]"]) {
+    for (const bad of [
+      null,
+      undefined,
+      "",
+      "not json",
+      "{}",
+      '{"kind":"split"}',
+      "[]",
+    ]) {
       const restored = deserialise(bad as string | null);
       expect(openTabs(restored)).toEqual(["editor", "pdf"]);
     }

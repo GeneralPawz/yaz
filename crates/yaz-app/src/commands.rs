@@ -59,7 +59,7 @@ impl CommandError {
     }
 }
 
-type Result<T> = std::result::Result<T, CommandError>;
+pub(crate) type Result<T> = std::result::Result<T, CommandError>;
 
 /// A file inside the open project.
 #[derive(Debug, Serialize)]
@@ -84,6 +84,9 @@ pub struct ProjectInfo {
 pub struct CompileResult {
     succeeded: bool,
     pdf_path: Option<String>,
+    /// The SyncTeX database, which is what makes a click in the PDF findable
+    /// in the source.
+    synctex_path: Option<String>,
     diagnostics: Vec<yaz_compile::diagnostics::Diagnostic>,
     engine_id: String,
     elapsed_ms: u128,
@@ -251,6 +254,7 @@ pub fn compile_project(root: String) -> Result<CompileResult> {
     Ok(CompileResult {
         succeeded: output.succeeded,
         pdf_path: output.pdf.map(|p| p.to_string()),
+        synctex_path: output.synctex.map(|p| p.to_string()),
         diagnostics: output.diagnostics,
         engine_id: engine.id().to_owned(),
         elapsed_ms,
@@ -570,4 +574,62 @@ pub fn read_artefact(path: String) -> Result<Vec<u8>> {
     let path = Utf8PathBuf::from(path);
     std::fs::read(&path)
         .map_err(|error| CommandError::new("error-fs-io", format!("{path}: {error}")))
+}
+
+/// Where in the source a point in the PDF came from.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceLocation {
+    /// Project-relative when the file is inside the project, absolute when it
+    /// is not — a `\input` from elsewhere, or a package.
+    path: String,
+    /// Whether `path` is relative to the project root.
+    in_project: bool,
+    /// One-based.
+    line: u32,
+}
+
+/// Inverse search: the source line behind a point in the compiled PDF.
+///
+/// `x` and `y` are PDF points from the top left of the page, which is what a
+/// viewer has after putting a click through its own transform. Returns nothing
+/// rather than an error when the database has no answer — a click on a blank
+/// page is an ordinary thing to do, not a failure.
+#[tauri::command]
+pub fn locate_in_source(
+    root: String,
+    synctex_path: String,
+    page: u32,
+    x: f64,
+    y: f64,
+) -> Result<Option<SourceLocation>> {
+    let path = Utf8PathBuf::from(synctex_path);
+    let Ok(database) = yaz_compile::synctex::SyncTex::load(&path) else {
+        // A missing or unreadable database means the last compile did not
+        // write one. Nothing to say, and nothing the user did wrong.
+        return Ok(None);
+    };
+
+    let Some(found) = database.locate(page, x, y) else {
+        return Ok(None);
+    };
+
+    // The engine records absolute paths. The editor works in project-relative
+    // ones, and a file outside the project cannot be opened in it at all, so
+    // which of the two this is has to travel with the answer.
+    let root = Utf8PathBuf::from(root);
+    let absolute = if found.file.is_absolute() {
+        found.file.clone()
+    } else {
+        root.join(&found.file)
+    };
+    let relative = absolute.strip_prefix(&root).ok();
+
+    Ok(Some(SourceLocation {
+        path: relative
+            .map(|p| p.to_string())
+            .unwrap_or_else(|| absolute.to_string()),
+        in_project: relative.is_some(),
+        line: found.line,
+    }))
 }

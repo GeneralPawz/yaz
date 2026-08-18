@@ -32,6 +32,7 @@ serde.workspace = true
 thiserror.workspace = true
 camino.workspace = true
 tracing.workspace = true
+flate2.workspace = true
 tokio.workspace = true
 
 tectonic = { version = "0.17", optional = true }

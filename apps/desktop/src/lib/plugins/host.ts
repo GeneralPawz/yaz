@@ -209,7 +209,15 @@ export class PluginRuntime {
         },
       },
 
-      i18n: { t, locale },
+      i18n: {
+        t,
+        // A getter, not a value: the public contract is a `string`, but the
+        // interface language can change while a plugin is loaded, and a plugin
+        // holding the locale it started with would keep formatting dates in it.
+        get locale() {
+          return locale();
+        },
+      },
 
       notices: {
         show(key: string, params?: Record<string, string | number>) {
