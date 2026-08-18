@@ -93,8 +93,14 @@ function referencedKeys() {
   };
 
   // Frontend and plugins: t("key") / t('key'), argument possibly wrapped.
+  //
+  // Tests are excluded. A test of message resolution has to ask for a key that
+  // is deliberately absent — that is how "a missing key renders as itself, not
+  // as an empty string" gets checked — and reading those as real call sites
+  // makes the one file that verifies this machinery the one file that fails it.
   for (const dir of ["apps", "plugins", "packages"]) {
     for (const file of walk(join(root, dir), [".ts", ".svelte"])) {
+      if (/\.(test|spec)\.[jt]s$/.test(file)) continue;
       const text = readFileSync(file, "utf8");
       collect(
         file,
@@ -180,7 +186,9 @@ for (const [name, keys] of translations()) {
   }
   if (extra.length > 0) {
     stale = true;
-    console.error(`\n${name} defines ${extra.length} keys that en-US.ftl does not:`);
+    console.error(
+      `\n${name} defines ${extra.length} keys that en-US.ftl does not:`,
+    );
     for (const key of extra) console.error(`  ${key}`);
   }
 }
