@@ -474,3 +474,18 @@ status-page-view = Seite
 status-language-unset = Keine Sprache gesetzt
 
 menu-view-wrap = Lange Zeilen umbrechen
+
+## Befehlsgruppen im Menüband
+
+group-project = Projekt
+group-document = Dokument
+group-history = Verlauf
+group-find = Suchen
+group-preferences = Einstellungen
+group-views = Ansichten
+group-panes = Bereiche
+group-editing = Bearbeiten
+group-connections = Verbindungen
+group-versions = Versionen
+group-learn = Lernen
+group-about = Über

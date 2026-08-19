@@ -14,6 +14,11 @@
 <script lang="ts">
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { t } from "./i18n";
+  import { ICONS } from "./icons";
+  import type { IconName } from "./icons";
+
+  /** Re-exported so a menu's declarations can name an icon without a second import. */
+  export type { IconName };
 
   /** One entry in a menu. */
   export interface MenuItem {
@@ -45,6 +50,16 @@
      */
     icon?: IconName | undefined;
     /**
+     * Message key for the command group this belongs to, in the ribbon.
+     *
+     * Menus have no groups — a menu is a list — so this means nothing here and
+     * everything there. Declared on the item rather than in the ribbon's own
+     * data so that a command is declared once: adding one to a menu puts it in
+     * the right ribbon group without touching a second file, which is what
+     * stops the two drifting apart.
+     */
+    group?: string | undefined;
+    /**
      * Treat `labelKey` as literal text rather than a message key.
      *
      * For entries whose text is data — a folder name in the recent list. There
@@ -61,66 +76,6 @@
     labelKey: string;
     items: MenuItem[];
   }
-
-  /**
-   * The icons a menu entry can carry.
-   *
-   * Written out rather than derived from the drawings below, because a type
-   * exported from a component is lifted out of the instance script and cannot
-   * see a value declared in it. `ICONS` is typed against this instead, so a
-   * name without a drawing is still a compile error — the check runs the other
-   * way round, not not at all.
-   */
-  export type IconName =
-    | "folder"
-    | "clock"
-    | "save"
-    | "play"
-    | "close"
-    | "undo"
-    | "redo"
-    | "search"
-    | "settings"
-    | "text"
-    | "list"
-    | "layout"
-    | "numbers"
-    | "plug"
-    | "wrench"
-    | "book"
-    | "bug"
-    | "info"
-    | "branch";
-
-  /**
-   * The drawings, as SVG path data on a 16-unit grid.
-   *
-   * Inline paths rather than an icon font: a font is a network request, a
-   * licence and a flash of missing glyphs, for a dozen shapes that between them
-   * are smaller than the request would have been.
-   */
-  const ICONS: Record<IconName, string> = {
-    folder: "M2 4.5h4l1.2 1.5H14v6.5H2z",
-    clock: "M8 2.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM8 5v3.2l2.2 1.3",
-    save: "M3 3h7.5L13 5.5V13H3zM5.5 3v3.5h5V3M5.5 13V9h5v4",
-    play: "M5 3.5l7 4.5-7 4.5z",
-    close: "M4 4l8 8M12 4l-8 8",
-    undo: "M6 5.5H10a3 3 0 010 6H6M6 5.5L8.5 3M6 5.5L8.5 8",
-    redo: "M10 5.5H6a3 3 0 000 6h4M10 5.5L7.5 3M10 5.5L7.5 8",
-    search: "M7 2.5a4.5 4.5 0 100 9 4.5 4.5 0 000-9zM10.5 10.5L14 14",
-    settings:
-      "M8 5.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5zM8 1.5l1 1.8 2-.5.4 2 1.8 1-1 1.7 1 1.7-1.8 1-.4 2-2-.5-1 1.8-1-1.8-2 .5-.4-2-1.8-1 1-1.7-1-1.7 1.8-1 .4-2 2 .5z",
-    text: "M3 4h10M3 8h10M3 12h6",
-    list: "M6 4h8M6 8h8M6 12h8M3 4h.01M3 8h.01M3 12h.01",
-    layout: "M2.5 3h11v10h-11zM6.5 3v10M6.5 8h7",
-    numbers: "M3 4h1v4M3 8h2M9 4h4M9 8h4M9 12h4M3 11h2v3H3z",
-    plug: "M6 2v4M10 2v4M4.5 6h7v2.5a3.5 3.5 0 01-7 0zM8 12v2",
-    wrench: "M11 2.5a3 3 0 00-3.9 3.9L2.5 11l2.5 2.5 4.6-4.6A3 3 0 0011 2.5z",
-    book: "M3 3h4.5a1.5 1.5 0 011.5 1.5V13a1.5 1.5 0 00-1.5-1.5H3zM13 3H8.5A1.5 1.5 0 007 4.5V13a1.5 1.5 0 011.5-1.5H13z",
-    bug: "M5 6a3 3 0 016 0v3a3 3 0 01-6 0zM5 7H2.5M11 7h2.5M5 10H3M11 10h2M6 4L4.5 2.5M10 4l1.5-1.5",
-    info: "M8 2.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM8 7v4M8 5h.01",
-    branch: "M5 3.5a1.5 1.5 0 100 3 1.5 1.5 0 000-3zM5 9.5a1.5 1.5 0 100 3 1.5 1.5 0 000-3zM11 3.5a1.5 1.5 0 100 3 1.5 1.5 0 000-3zM5 6.5v3M11 6.5c0 2-2 3-6 3",
-  };
 
   interface Props {
     menus: Menu[];

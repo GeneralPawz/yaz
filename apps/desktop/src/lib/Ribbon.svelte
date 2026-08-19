@@ -25,6 +25,8 @@
 -->
 <script lang="ts">
   import { t } from "./i18n";
+  import { ICONS } from "./icons";
+  import type { IconName } from "./icons";
   import type { MenuItem } from "./MenuBar.svelte";
 
   /** One control in a group. */
@@ -32,20 +34,29 @@
     | {
         kind: "action";
         labelKey: string;
-        glyph?: string | undefined;
+        icon?: IconName | undefined;
         disabled?: boolean | undefined;
         checked?: boolean | undefined;
+        /**
+         * Draw it large, with the label under the icon.
+         *
+         * Word's own rule: the one or two commands a tab exists for get the
+         * height, and the rest sit in rows beside them. A ribbon where every
+         * button is the same size is a wall, and the eye has nowhere to land.
+         */
+        prominent?: boolean | undefined;
         onclick: () => void;
       }
     | {
         kind: "menu";
         labelKey: string;
-        glyph?: string | undefined;
+        icon?: IconName | undefined;
         items: MenuItem[];
       }
     | {
         kind: "text";
         labelKey: string;
+        icon?: IconName | undefined;
         value: string;
         placeholderKey?: string | undefined;
         onchange: (value: string) => void;
@@ -53,6 +64,7 @@
     | {
         kind: "select";
         labelKey: string;
+        icon?: IconName | undefined;
         value: string;
         options: { value: string; label: string }[];
         onchange: (value: string) => void;
@@ -105,6 +117,20 @@
   }
 </script>
 
+<!--
+  One icon slot per control, drawn or empty.
+
+  Always rendered, even with nothing in it, so a row of buttons lines up
+  whether or not every one of them has a mark.
+-->
+{#snippet icon(name: IconName | undefined)}
+  <span class="icon" aria-hidden="true">
+    {#if name}
+      <svg viewBox="0 0 16 16"><path d={ICONS[name]} /></svg>
+    {/if}
+  </span>
+{/snippet}
+
 <svelte:window onclick={() => (open = null)} />
 
 <section class="ribbon {orientation}" class:collapsed={!expanded}>
@@ -133,13 +159,12 @@
                 <button
                   type="button"
                   class="action"
+                  class:large={control.prominent}
                   class:on={control.checked}
                   disabled={control.disabled}
                   onclick={control.onclick}
                 >
-                  {#if control.glyph}
-                    <span class="glyph" aria-hidden="true">{control.glyph}</span>
-                  {/if}
+                  {@render icon(control.icon)}
                   <span class="text">{t(control.labelKey)}</span>
                 </button>
               {:else if control.kind === "menu"}
@@ -154,9 +179,7 @@
                       open = open === control.labelKey ? null : control.labelKey;
                     }}
                   >
-                    {#if control.glyph}
-                      <span class="glyph" aria-hidden="true">{control.glyph}</span>
-                    {/if}
+                    {@render icon(control.icon)}
                     <span class="text">{t(control.labelKey)}</span>
                     <span class="caret" aria-hidden="true">▾</span>
                   </button>
@@ -182,7 +205,10 @@
                           title={item.tooltip}
                           onclick={() => run(item)}
                         >
-                          <span class="tick" aria-hidden="true">{item.checked ? "✓" : ""}</span>
+                          <span class="tick" aria-hidden="true"
+                            >{item.checked ? "✓" : ""}</span
+                          >
+                          {@render icon(item.icon)}
                           {item.literalLabel ? item.labelKey : t(item.labelKey)}
                         </button>
                       {/each}
@@ -191,6 +217,7 @@
                 </div>
               {:else if control.kind === "text"}
                 <label class="field">
+                  {@render icon(control.icon)}
                   <span class="caption">{t(control.labelKey)}</span>
                   <input
                     type="text"
@@ -201,6 +228,7 @@
                 </label>
               {:else}
                 <label class="field">
+                  {@render icon(control.icon)}
                   <span class="caption">{t(control.labelKey)}</span>
                   <select
                     value={control.value}
@@ -319,12 +347,17 @@
     padding-block-end: var(--yaz-space-2);
   }
 
+  /* Small controls stack two or three deep in a column and the columns run
+     along, which is what gives a ribbon its shape: a tall group is one
+     important command, a wide group is many small ones. */
   .controls {
     display: flex;
-    align-items: flex-start;
-    gap: var(--yaz-space-1);
+    flex-flow: column wrap;
+    align-content: flex-start;
+    align-items: stretch;
+    gap: 2px;
+    max-block-size: 4.5rem;
     flex: 1;
-    flex-wrap: wrap;
   }
 
   .group-title {
@@ -333,20 +366,41 @@
     text-align: center;
   }
 
+  /* The ordinary size: icon and label side by side, three to a column. */
   .action {
     display: flex;
-    flex-direction: column;
     align-items: center;
-    gap: 2px;
-    min-inline-size: 3.5rem;
+    gap: var(--yaz-space-2);
     font: inherit;
     font-size: var(--yaz-font-size-sm);
     color: var(--yaz-text-primary);
     background: none;
     border: 1px solid transparent;
     border-radius: var(--yaz-radius-sm);
-    padding: var(--yaz-space-1) var(--yaz-space-2);
+    padding: 2px var(--yaz-space-2);
     cursor: pointer;
+    white-space: nowrap;
+    text-align: start;
+  }
+
+  /* The command a tab exists for: full height, label beneath a larger icon. */
+  .action.large {
+    flex-direction: column;
+    justify-content: center;
+    gap: var(--yaz-space-1);
+    block-size: 4.5rem;
+    min-inline-size: 4rem;
+    padding: var(--yaz-space-2);
+  }
+
+  .action.large .icon {
+    inline-size: 1.5rem;
+    block-size: 1.5rem;
+  }
+
+  .action.large .icon svg {
+    inline-size: 1.375rem;
+    block-size: 1.375rem;
   }
 
   .action:hover:not(:disabled) {
@@ -364,9 +418,30 @@
     color: var(--yaz-accent);
   }
 
-  .glyph {
-    font-size: 1.1rem;
-    line-height: 1.2;
+  .icon {
+    inline-size: 1rem;
+    block-size: 1rem;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--yaz-text-muted);
+  }
+
+  .icon svg {
+    inline-size: 0.875rem;
+    block-size: 0.875rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .action:hover:not(:disabled) .icon,
+  .action.on .icon,
+  .item:hover:not(:disabled) .icon {
+    color: currentColor;
   }
 
   .text {
@@ -426,14 +501,16 @@
 
   .field {
     display: flex;
-    flex-direction: column;
-    gap: 2px;
+    align-items: center;
+    gap: var(--yaz-space-2);
     font-size: var(--yaz-font-size-sm);
     color: var(--yaz-text-secondary);
+    padding: 2px var(--yaz-space-2);
   }
 
   .caption {
     white-space: nowrap;
+    min-inline-size: 3.5rem;
   }
 
   input[type="text"],

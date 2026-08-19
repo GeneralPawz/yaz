@@ -2,7 +2,7 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import type { EditorApi } from "@yaz/api";
   import type { Menu } from "./lib/MenuBar.svelte";
-  import Ribbon, { type RibbonTab } from "./lib/Ribbon.svelte";
+  import Ribbon, { type RibbonControl, type RibbonTab } from "./lib/Ribbon.svelte";
   import TitleBar from "./lib/TitleBar.svelte";
   import StatusBar from "./lib/StatusBar.svelte";
   import { countWords } from "./lib/editor/wordCount";
@@ -716,10 +716,12 @@
       labelKey: "menu-file",
       items: [
         { labelKey: "menu-file-open-folder",
-          icon: "folder" as const, action: chooseProject },
+          icon: "folder" as const,
+          group: "group-project", action: chooseProject },
         {
           labelKey: "menu-file-open-recent",
           icon: "clock" as const,
+          group: "group-project",
           // Titles here are folder names, which are data rather than interface
           // copy, so they are passed through as labels and not message keys.
           items:
@@ -735,12 +737,14 @@
         {
           labelKey: "menu-file-save",
           icon: "save" as const,
+          group: "group-document",
           action: save,
           disabled: !currentFile || !dirty,
         },
         {
           labelKey: "menu-file-compile",
           icon: "play" as const,
+          group: "group-document",
           action: compile,
           disabled: !project || busy,
           separatorBefore: true,
@@ -748,6 +752,7 @@
         {
           labelKey: "menu-file-close-project",
           icon: "close" as const,
+          group: "group-project",
           action: closeProject,
           disabled: !project,
           separatorBefore: true,
@@ -758,12 +763,15 @@
       labelKey: "menu-edit",
       items: [
         { labelKey: "menu-edit-undo",
-          icon: "undo" as const, action: notImplemented, disabled: true },
+          icon: "undo" as const,
+          group: "group-history", action: notImplemented, disabled: true },
         { labelKey: "menu-edit-redo",
-          icon: "redo" as const, action: notImplemented, disabled: true },
+          icon: "redo" as const,
+          group: "group-history", action: notImplemented, disabled: true },
         {
           labelKey: "menu-edit-find",
           icon: "search" as const,
+          group: "group-find",
           action: notImplemented,
           disabled: true,
           separatorBefore: true,
@@ -771,6 +779,7 @@
         {
           labelKey: "menu-edit-settings",
           icon: "settings" as const,
+          group: "group-preferences",
           action: () => openSettings("engine"),
           separatorBefore: true,
         },
@@ -782,6 +791,7 @@
         {
           labelKey: "menu-view-rich-text",
           icon: "text" as const,
+          group: "group-views",
           checked: richText,
           action: () => {
             richText = !richText;
@@ -790,6 +800,7 @@
         {
           labelKey: "menu-view-vim",
           icon: "wrench" as const,
+          group: "group-editing",
           checked: vimMode,
           action: () => {
             vimMode = !vimMode;
@@ -798,6 +809,7 @@
         {
           labelKey: "menu-view-files",
           icon: "list" as const,
+          group: "group-panes",
           checked: filesPinned,
           action: () => {
             filesPinned = !filesPinned;
@@ -806,7 +818,8 @@
         },
         {
           labelKey: "menu-view-wrap",
-          icon: "text" as const,
+          icon: "wrap" as const,
+          group: "group-editing",
           checked: wrap,
           action: () => {
             wrap = !wrap;
@@ -815,6 +828,7 @@
         {
           labelKey: "menu-view-line-numbers",
           icon: "numbers" as const,
+          group: "group-editing",
           separatorBefore: true,
           items: LINE_NUMBERING.map((mode) => ({
             labelKey: `menu-view-line-numbers-${mode}`,
@@ -829,6 +843,7 @@
         {
           labelKey: "menu-view-tabs",
           icon: "layout" as const,
+          group: "group-panes",
           separatorBefore: true,
           // Closed tabs come back from here. A tab that can be closed and not
           // reopened is a tab that gets closed once and then missed.
@@ -859,6 +874,7 @@
         {
           labelKey: "menu-view-reset-layout",
           icon: "layout" as const,
+          group: "group-panes",
           action: () => updateLayout(layoutTree.defaultLayout()),
         },
       ],
@@ -873,6 +889,7 @@
         {
           labelKey: "vcs-commit-with-message",
           icon: "branch" as const,
+          group: "group-versions",
           disabled: !vcs?.enabled || !vcs.dirty || vcsBusy,
           separatorBefore: commands.length > 0,
           action: () => {
@@ -882,6 +899,7 @@
         {
           labelKey: "menu-tools-connections",
           icon: "plug" as const,
+          group: "group-connections",
           separatorBefore: commands.length > 0,
           // A flyout rather than a dialog: connecting is one click, and the
           // detail belongs next to the thing it describes.
@@ -906,12 +924,15 @@
       labelKey: "menu-help",
       items: [
         { labelKey: "menu-help-documentation",
-          icon: "book" as const, action: notImplemented, disabled: true },
+          icon: "book" as const,
+          group: "group-learn", action: notImplemented, disabled: true },
         { labelKey: "menu-help-report-issue",
-          icon: "bug" as const, action: notImplemented, disabled: true },
+          icon: "bug" as const,
+          group: "group-learn", action: notImplemented, disabled: true },
         {
           labelKey: "menu-help-about",
           icon: "info" as const,
+          group: "group-about",
           action: notImplemented,
           disabled: true,
           separatorBefore: true,
@@ -919,6 +940,57 @@
       ],
     },
   ]);
+
+  /**
+   * A menu's entries, gathered into the ribbon's command groups.
+   *
+   * The grouping is declared on each entry rather than here, so a command is
+   * declared once and lands in the right group without a second list to keep
+   * in step. Entries with no group named fall into one of their menu's own,
+   * which is what stops a newly added command disappearing.
+   *
+   * The first command of the first group is drawn large. In a ribbon that is
+   * not decoration: it is how a tab says what it is for, and a wall of
+   * identically sized buttons gives the eye nowhere to land.
+   */
+  function intoGroups(menu: Menu) {
+    const order: string[] = [];
+    const grouped = new Map<string, RibbonControl[]>();
+
+    for (const item of menu.items) {
+      const key = item.group ?? menu.labelKey;
+      if (!grouped.has(key)) {
+        grouped.set(key, []);
+        order.push(key);
+      }
+      grouped.get(key)!.push(
+        item.items?.length
+          ? {
+              kind: "menu" as const,
+              labelKey: item.labelKey,
+              icon: item.icon,
+              items: item.items,
+            }
+          : {
+              kind: "action" as const,
+              labelKey: item.labelKey,
+              icon: item.icon,
+              disabled: item.disabled,
+              checked: item.checked,
+              onclick: () => void item.action?.(),
+            },
+      );
+    }
+
+    return order.map((key, index) => {
+      const controls = grouped.get(key)!;
+      const first = controls[0];
+      if (index === 0 && first?.kind === "action") {
+        controls[0] = { ...first, prominent: true };
+      }
+      return { titleKey: key, controls };
+    });
+  }
 
   /**
    * The ribbon, built from the menus plus the tabs only it can have.
@@ -936,22 +1008,7 @@
     ...menus.map((menu) => ({
       id: menu.labelKey,
       labelKey: menu.labelKey,
-      groups: [
-        {
-          titleKey: menu.labelKey,
-          controls: menu.items.map((item) =>
-            item.items?.length
-              ? { kind: "menu" as const, labelKey: item.labelKey, items: item.items }
-              : {
-                  kind: "action" as const,
-                  labelKey: item.labelKey,
-                  disabled: item.disabled,
-                  checked: item.checked,
-                  onclick: () => void item.action?.(),
-                },
-          ),
-        },
-      ],
+      groups: intoGroups(menu),
     })),
     {
       id: "layout",
@@ -963,6 +1020,7 @@
             {
               kind: "select" as const,
               labelKey: "ribbon-paper",
+              icon: "page" as const,
               value: properties.paper,
               options: PAPER_SIZES.map((size) => ({
                 value: size,
@@ -978,14 +1036,15 @@
             {
               kind: "action" as const,
               labelKey: "menu-view-page",
-              glyph: "▭",
+              icon: "page" as const,
+              prominent: true,
               checked: pageView,
               onclick: () => (pageView = !pageView),
             },
             {
               kind: "action" as const,
               labelKey: "ribbon-vertical",
-              glyph: "▤",
+              icon: "columns" as const,
               checked: ribbonVertical,
               onclick: () => (ribbonVertical = !ribbonVertical),
             },
@@ -1003,18 +1062,21 @@
             {
               kind: "text" as const,
               labelKey: "ribbon-doc-title",
+              icon: "heading" as const,
               value: properties.title,
               onchange: (value: string) => changeProperty("title", value),
             },
             {
               kind: "text" as const,
               labelKey: "ribbon-doc-author",
+              icon: "person" as const,
               value: properties.author,
               onchange: (value: string) => changeProperty("author", value),
             },
             {
               kind: "text" as const,
               labelKey: "ribbon-doc-date",
+              icon: "calendar" as const,
               placeholderKey: "ribbon-doc-date-today",
               value: properties.date,
               onchange: (value: string) => changeProperty("date", value),
@@ -1027,6 +1089,7 @@
             {
               kind: "select" as const,
               labelKey: "settings-document-locale",
+              icon: "globe" as const,
               value: properties.language,
               options: [
                 { value: "", label: t("status-language-unset") },
@@ -1053,21 +1116,22 @@
             {
               kind: "action" as const,
               labelKey: "compile-run",
-              glyph: "▶",
+              icon: "play" as const,
+              prominent: true,
               disabled: !project || busy,
               onclick: () => void compile(),
             },
             {
               kind: "action" as const,
               labelKey: "view-mode-source",
-              glyph: "⟨⟩",
+              icon: "code" as const,
               checked: !richText,
               onclick: () => (richText = !richText),
             },
             {
               kind: "action" as const,
               labelKey: vcs?.enabled ? "vcs-recording" : "vcs-enable",
-              glyph: "⑂",
+              icon: "branch" as const,
               disabled: !project || vcsBusy,
               checked: vcs?.enabled,
               onclick: () => void toggleVcs(),
@@ -1075,7 +1139,7 @@
             {
               kind: "action" as const,
               labelKey: "connections-title",
-              glyph: "◈",
+              icon: "plug" as const,
               onclick: () => void connectZotero(),
             },
           ],

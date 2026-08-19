@@ -473,3 +473,18 @@ status-page-view = Page
 status-language-unset = No language set
 
 menu-view-wrap = Wrap long lines
+
+## Ribbon command groups
+
+group-project = Project
+group-document = Document
+group-history = History
+group-find = Find
+group-preferences = Preferences
+group-views = Views
+group-panes = Panes
+group-editing = Editing
+group-connections = Connections
+group-versions = Versions
+group-learn = Learn
+group-about = About

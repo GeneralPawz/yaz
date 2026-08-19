@@ -94,7 +94,59 @@
 </script>
 
 <footer class="status">
-  <!-- Left: what you are looking at, and how large. -->
+  <!--
+    Left: what the document *is*. Right: how you are looking at it.
+
+    The split is the one a word processor uses, and it is not arbitrary — the
+    left is read, the right is operated. A count and a language are facts you
+    glance at; a zoom slider and a view mode are controls you reach for, and
+    controls belong together at the end of the line where the hand already is.
+  -->
+  <span class="item">{t("status-words", { words })}</span>
+
+  <label class="item language">
+    <span class="visually-hidden">{t("settings-document-locale")}</span>
+    <select
+      value={language}
+      title={t("settings-document-locale")}
+      onchange={(event) => onlanguage(event.currentTarget.value)}
+    >
+      <!-- A document that declares no language shows the choice as unmade, and
+           choosing one writes it into the source rather than remembering it
+           somewhere else. -->
+      <option value="">{t("status-language-unset")}</option>
+      {#each languages as option (option.value)}
+        <option value={option.value}>{option.label}</option>
+      {/each}
+    </select>
+  </label>
+
+  {#if compileMessage}
+    <span class="item compile" class:failed={compileFailed}>
+      {compileMessage}{#if compileErrors > 0}&nbsp;· {t("compile-diagnostics-count", {
+          count: compileErrors,
+        })}{/if}
+    </span>
+  {/if}
+
+  <span class="spacer"></span>
+
+  <!-- Something to glance at, not something to operate: the detail lives in
+       the ribbon's Tools tab. -->
+  <button
+    type="button"
+    class="health"
+    title={healthLabel}
+    aria-label={healthLabel}
+    onclick={onhealth}
+  >
+    <span class="dot {health}" aria-hidden="true"></span>
+  </button>
+
+  {#if pages !== null}
+    <span class="item">{t("status-page", { page: page ?? 1, pages })}</span>
+  {/if}
+
   <button
     type="button"
     class="mode"
@@ -163,51 +215,6 @@
       </button>
     {/if}
   </div>
-
-  {#if compileMessage}
-    <span class="item compile" class:failed={compileFailed}>
-      {compileMessage}{#if compileErrors > 0}&nbsp;· {t("compile-diagnostics-count", {
-          count: compileErrors,
-        })}{/if}
-    </span>
-  {/if}
-
-  <span class="spacer"></span>
-
-  <!-- Right: what the document is. -->
-  {#if pages !== null}
-    <span class="item">{t("status-page", { page: page ?? 1, pages })}</span>
-  {/if}
-  <span class="item">{t("status-words", { words })}</span>
-
-  <!-- Something to glance at, not something to operate: the detail lives in
-       the ribbon's Tools tab. -->
-  <button
-    type="button"
-    class="health"
-    title={healthLabel}
-    aria-label={healthLabel}
-    onclick={onhealth}
-  >
-    <span class="dot {health}" aria-hidden="true"></span>
-  </button>
-
-  <label class="item language">
-    <span class="visually-hidden">{t("settings-document-locale")}</span>
-    <select
-      value={language}
-      title={t("settings-document-locale")}
-      onchange={(event) => onlanguage(event.currentTarget.value)}
-    >
-      <!-- A document that declares no language shows the choice as unmade,
-           and choosing one writes it into the source rather than remembering
-           it somewhere else. -->
-      <option value="">{t("status-language-unset")}</option>
-      {#each languages as option (option.value)}
-        <option value={option.value}>{option.label}</option>
-      {/each}
-    </select>
-  </label>
 </footer>
 
 <style>
