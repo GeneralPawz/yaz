@@ -471,3 +471,5 @@ status-zoom = Zoom
 status-zoom-set = Set the zoom level
 status-page-view = Page
 status-language-unset = No language set
+
+menu-view-wrap = Wrap long lines

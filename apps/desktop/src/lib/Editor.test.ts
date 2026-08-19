@@ -45,6 +45,7 @@ function mount(doc = "hello", docId = "a.tex") {
       pageView: false,
       page: { width: 210, height: 297 },
       zoom: 100,
+      wrap: true,
       shortcuts: [],
       onChange,
       onSave: () => {},

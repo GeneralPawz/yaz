@@ -472,3 +472,5 @@ status-zoom = Zoom
 status-zoom-set = Zoomstufe festlegen
 status-page-view = Seite
 status-language-unset = Keine Sprache gesetzt
+
+menu-view-wrap = Lange Zeilen umbrechen

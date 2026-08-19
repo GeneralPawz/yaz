@@ -64,6 +64,19 @@
     /** How large the text is drawn, as a percentage. */
     zoom: number;
     /**
+     * Whether a line too long for the pane comes back round.
+     *
+     * On by default. A pasted URL or a long sentence otherwise runs off to the
+     * right and takes the rest of the document with it — the horizontal
+     * scrollbar appears, every other line becomes shorter than the pane, and
+     * reading means scrolling sideways and back for one line in fifty.
+     *
+     * Off is a real preference, not an oversight: someone lining up a table by
+     * hand, or reading a generated file where a line's length is the point,
+     * wants to see where a line actually ends.
+     */
+    wrap: boolean;
+    /**
      * The shortcuts, already resolved against the user's preferences.
      *
      * Passed in rather than read here: the registry is the application's, and
@@ -95,6 +108,7 @@
     pageView,
     page,
     zoom,
+    wrap,
     shortcuts,
     onCursor,
     onReady,
@@ -146,6 +160,7 @@
   const vimCompartment = new Compartment();
   const numberCompartment = new Compartment();
   const keyCompartment = new Compartment();
+  const wrapCompartment = new Compartment();
 
   /*
    * Colours come from the theme token contract, never literals — ADR-0010 makes
@@ -282,6 +297,11 @@
               vimCompartment.of(vimMode ? vim() : []),
               numberCompartment.of(lineNumbering(numbering)),
               keyCompartment.of(editorKeymap(shortcuts, { save: onSave })),
+              // Wrapping is what the pane's width means. In the page view the
+              // content box is the page, so the same extension wraps to the
+              // paper rather than to the window — the measure follows the
+              // document's own layout without a second setting to keep in step.
+              wrapCompartment.of(wrap ? EditorView.lineWrapping : []),
               ...baseExtensions(),
             ],
           }),
@@ -334,6 +354,12 @@
   $effect(() => {
     view?.dispatch({
       effects: numberCompartment.reconfigure(lineNumbering(numbering)),
+    });
+  });
+
+  $effect(() => {
+    view?.dispatch({
+      effects: wrapCompartment.reconfigure(wrap ? EditorView.lineWrapping : []),
     });
   });
 

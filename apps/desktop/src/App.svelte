@@ -97,6 +97,8 @@
   let pageView = $state(false);
   /** How large the text is drawn, as a percentage. */
   let zoom = $state(100);
+  /** Whether a line too long for the pane comes back round. */
+  let wrap = $state(true);
   /** Whether the ribbon's body shows, and which way it runs. */
   let ribbonOpen = $state(true);
   let ribbonVertical = $state(false);
@@ -463,6 +465,9 @@
         filesPinned = !filesPinned;
         filesOpen = filesPinned;
         return;
+      case "view.wrap":
+        wrap = !wrap;
+        return;
       case "view.lineNumbers":
         // Round the three states rather than to a fixed one: a shortcut that
         // always lands on the same setting is half a shortcut.
@@ -797,6 +802,14 @@
           action: () => {
             filesPinned = !filesPinned;
             filesOpen = filesPinned;
+          },
+        },
+        {
+          labelKey: "menu-view-wrap",
+          icon: "text" as const,
+          checked: wrap,
+          action: () => {
+            wrap = !wrap;
           },
         },
         {
@@ -1511,6 +1524,7 @@
         {pageView}
         page={paperSize}
         {zoom}
+        {wrap}
         onCursor={(offset) => (cursor = offset)}
         onReady={(api) => {
           editorApi = api;

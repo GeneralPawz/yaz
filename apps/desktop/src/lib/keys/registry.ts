@@ -35,6 +35,7 @@ export type CommandId =
   | "view.toggleFiles"
   | "view.togglePageView"
   | "view.lineNumbers"
+  | "view.wrap"
   // Document
   | "document.save"
   | "document.compile"
@@ -173,6 +174,12 @@ export const SHORTCUTS: readonly Shortcut[] = [
     id: "view.toggleFiles",
     labelKey: "menu-view-files",
     keys: "Mod-Space f",
+    suites: ["yaz"],
+  },
+  {
+    id: "view.wrap",
+    labelKey: "menu-view-wrap",
+    keys: "Mod-Space w",
     suites: ["yaz"],
   },
   {
