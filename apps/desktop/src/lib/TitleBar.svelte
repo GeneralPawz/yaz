@@ -202,8 +202,8 @@
     display: flex;
     align-items: center;
     gap: var(--yaz-space-2);
-    block-size: 2rem;
-    padding-inline-start: var(--yaz-space-2);
+    block-size: 3rem;
+    padding-inline-start: var(--yaz-space-3);
     background: var(--yaz-bg-tertiary);
     border-block-end: 1px solid var(--yaz-border);
     flex: none;
@@ -212,10 +212,10 @@
 
   .logo {
     font-family: var(--yaz-font-prose);
-    font-size: 1rem;
+    font-size: 1.25rem;
     font-weight: 700;
     color: var(--yaz-accent);
-    inline-size: 1.25rem;
+    inline-size: 1.5rem;
     text-align: center;
   }
 
@@ -228,8 +228,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    inline-size: 1.5rem;
-    block-size: 1.5rem;
+    inline-size: 1.875rem;
+    block-size: 1.875rem;
     padding: 0;
     background: none;
     border: none;
@@ -239,8 +239,8 @@
   }
 
   .tool svg {
-    inline-size: 0.8125rem;
-    block-size: 0.8125rem;
+    inline-size: 1rem;
+    block-size: 1rem;
     fill: none;
     stroke: currentColor;
     stroke-width: 1.3;
@@ -294,7 +294,7 @@
     background: var(--yaz-bg-primary);
     border: 1px solid var(--yaz-border);
     border-radius: var(--yaz-radius-sm);
-    padding: 0 var(--yaz-space-2);
+    padding: var(--yaz-space-1) var(--yaz-space-2);
     color: var(--yaz-text-muted);
   }
 
@@ -323,8 +323,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    inline-size: 1.5rem;
-    block-size: 1.5rem;
+    inline-size: 1.875rem;
+    block-size: 1.875rem;
     padding: 0;
     background: var(--yaz-bg-secondary);
     border: 1px solid var(--yaz-border);
@@ -334,8 +334,8 @@
   }
 
   .avatar svg {
-    inline-size: 0.75rem;
-    block-size: 0.75rem;
+    inline-size: 0.9375rem;
+    block-size: 0.9375rem;
     fill: none;
     stroke: currentColor;
     stroke-width: 1.3;
@@ -355,7 +355,7 @@
     align-items: center;
     justify-content: center;
     inline-size: 2.75rem;
-    block-size: 2rem;
+    block-size: 3rem;
     padding: 0;
     background: none;
     border: none;
