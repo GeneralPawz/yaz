@@ -47,6 +47,7 @@
   import type { LineNumbering } from "./editor/lineNumbers";
   import {
     linesPerLandscapePage,
+    charactersPerLine,
     linesPerPage,
     paginated,
     pagination,
@@ -395,6 +396,7 @@
       pageCompartment.of([
         paginated.of(false),
         linesPerPage.of(0),
+        charactersPerLine.of(0),
         linesPerLandscapePage.of(0),
       ]),
       // Both are inert until they are given something: stitched mode refuses
@@ -585,12 +587,25 @@
           )
         : 0;
 
+    // How many characters lie across the measure. Only meaningful when lines
+    // wrap: without wrapping a line is one row however long it is, because it
+    // runs off the side rather than down the page.
+    const characterWidth = instance.defaultCharacterWidth * (100 / zoom);
+    const across =
+      wrap && pageView && characterWidth > 0
+        ? Math.max(
+            1,
+            Math.floor(((page.width - 2 * PAGE_MARGIN_MM) * PIXELS_PER_MM) / characterWidth),
+          )
+        : 0;
+
     instance.dispatch({
       effects: pageCompartment.reconfigure([
         paginated.of(pageView),
         linesPerPage.of(fits(page.height)),
         // A turned sheet is as tall as the paper is wide, so it holds fewer.
         linesPerLandscapePage.of(fits(page.width)),
+        charactersPerLine.of(across),
       ]),
     });
   });

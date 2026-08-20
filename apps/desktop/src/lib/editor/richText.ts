@@ -66,15 +66,16 @@ import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import type { DecorationSet } from "@codemirror/view";
 
 import { t } from "../i18n";
-import { Covered, drawable, replace, touched } from "./pass";
+import { Covered, drawable, emptyLayout, replace, touched } from "./pass";
 import { semanticMarkup, semanticTheme } from "./semanticView";
 import type { Meaning } from "./semanticView";
 import { labelledMarker } from "./semantics";
-import type { Pass } from "./pass";
+import type { Layout, Pass, Tall } from "./pass";
 import { escapeHtml, inlineHtml } from "./inline";
 import { renderMath, renderMathEnvironment } from "./math";
 import { renderTable, tooComplexToDraw } from "./tabular";
 import { fillMetadata, metadata } from "./typography";
+import { linesPerPage } from "./geometry";
 import { entriesFor, generatedIn, hasGenerated } from "./generated";
 import type { BreakKind, Entry, ListingKind } from "./generated";
 import { environmentRenderingOf, environmentsOfKind } from "./vocabulary";
@@ -103,6 +104,9 @@ const INLINE: Record<string, string> = {
 
 /** Bullets by nesting depth, as LaTeX itself sets them. */
 const BULLETS = ["•", "◦", "▪", "·"];
+
+/** What the heading over a generated list costs, in rows. */
+const LISTING_HEADING_ROWS = 2;
 
 // Re-exported so a caller reaches for one module to switch any part of the
 // view on or off, rather than having to know which file each flag lives in.
@@ -225,12 +229,28 @@ class RenderedWidget extends WidgetType {
  * Each line goes to the thing it names, which is what makes this a way of
  * moving around the document rather than a picture of one.
  */
-class ListingWidget extends WidgetType {
+class ListingWidget extends WidgetType implements Tall {
   constructor(
     readonly kind: ListingKind,
     readonly entries: Entry[],
+    /** Which sheet of the listing this is, counting from one. */
+    readonly sheet = 1,
+    /** How many sheets the whole listing runs to. */
+    readonly sheets = 1,
   ) {
     super();
+  }
+
+  /**
+   * As tall as it has entries, plus the heading over them.
+   *
+   * The page view needs this because a listing is the one thing in the
+   * preview that produces pages of content from a single line of source: a
+   * glossary of two hundred terms is `\printglossaries`, and a sheet told it
+   * was one line long would stretch to two hundred rows to hold it.
+   */
+  get rows(): number {
+    return this.entries.length + LISTING_HEADING_ROWS;
   }
 
   /**
@@ -243,6 +263,8 @@ class ListingWidget extends WidgetType {
   override eq(other: ListingWidget): boolean {
     return (
       other.kind === this.kind &&
+      other.sheet === this.sheet &&
+      other.sheets === this.sheets &&
       other.entries.length === this.entries.length &&
       other.entries.every(
         (entry, index) =>
@@ -257,10 +279,19 @@ class ListingWidget extends WidgetType {
     const box = document.createElement("div");
     box.className = "cm-yaz-listing";
 
-    const title = document.createElement("div");
-    title.className = "cm-yaz-listing-title";
-    title.textContent = t(`listing-${this.kind}`);
-    box.append(title);
+    // Only the first sheet carries the heading, the way a contents list in a
+    // book says "Contents" once and then keeps going.
+    if (this.sheet === 1) {
+      const title = document.createElement("div");
+      title.className = "cm-yaz-listing-title";
+      title.textContent = t(`listing-${this.kind}`);
+      box.append(title);
+    } else {
+      const carried = document.createElement("div");
+      carried.className = "cm-yaz-listing-continued";
+      carried.textContent = t("listing-continued");
+      box.append(carried);
+    }
 
     if (this.entries.length === 0) {
       const empty = document.createElement("p");
@@ -463,14 +494,17 @@ class BoundaryWidget extends WidgetType {
  * Order matters: the widest constructs claim their ranges first, and a
  * replacement landing inside one already claimed is dropped.
  */
-function build(state: EditorState): DecorationSet {
-  if (!state.field(richTextEnabled, false)) return Decoration.none;
+function build(state: EditorState): Rendered {
+  if (!state.field(richTextEnabled, false)) {
+    return { decorations: Decoration.none, layout: emptyLayout() };
+  }
 
   const pass: Pass = {
     state,
     text: state.doc.toString(),
     ranges: [],
     covered: new Covered(),
+    layout: emptyLayout(),
   };
 
   boundaries(pass);
@@ -488,7 +522,17 @@ function build(state: EditorState): DecorationSet {
 
   // Sorting is CodeMirror's, which knows how line, mark and replace decorations
   // order against each other at the same position.
-  return Decoration.set(pass.ranges, true);
+  return {
+    decorations: Decoration.set(pass.ranges, true),
+    layout: pass.layout,
+  };
+}
+
+/** What one pass produced: what to draw, and what shape it comes out. */
+export interface Rendered {
+  decorations: DecorationSet;
+  /** See {@link Layout}. The page view reads this; nothing else needs it. */
+  layout: Layout;
 }
 
 /**
@@ -628,19 +672,25 @@ function boundaries(pass: Pass): void {
     return;
   }
 
-  replace(
-    pass,
-    found.start.from,
-    found.start.to,
-    new BoundaryWidget("start", true),
-  );
-  if (found.end) {
+  const doc = pass.state.doc;
+  if (
     replace(
       pass,
-      found.end.from,
-      found.end.to,
-      new BoundaryWidget("end", true),
-    );
+      found.start.from,
+      found.start.to,
+      new BoundaryWidget("start", true),
+    )
+  ) {
+    // Folded or open, it is the same region and gets the same short sheet.
+    const line = doc.lineAt(found.start.from).number;
+    pass.layout.matter.push({ from: line, to: line });
+  }
+  if (
+    found.end &&
+    replace(pass, found.end.from, found.end.to, new BoundaryWidget("end", true))
+  ) {
+    const line = doc.lineAt(found.end.to).number;
+    pass.layout.matter.push({ from: line, to: line });
   }
 }
 
@@ -659,12 +709,7 @@ function generated(pass: Pass): void {
       pass.covered.claim(listing.from, listing.to);
       continue;
     }
-    replace(
-      pass,
-      listing.from,
-      listing.to,
-      new ListingWidget(listing.kind, entriesFor(listing.kind, pass.text)),
-    );
+    listed(pass, listing.from, listing.to, listing.kind);
   }
 
   for (const pageBreak of found.breaks) {
@@ -688,6 +733,58 @@ function generated(pass: Pass): void {
       continue;
     }
     replace(pass, command.from, command.to);
+  }
+}
+
+/**
+ * Draw a generated list, divided into sheets if it runs to more than one.
+ *
+ * The one place in the preview where a single line of source produces pages of
+ * content. `\printglossaries` is one command and a hundred and forty terms,
+ * and a page view that could not divide it would draw one sheet a hundred and
+ * forty rows long — which is what it did.
+ *
+ * A sheet break cannot be put inside a line, so the division is made here
+ * instead: each sheet's worth of entries is its own block widget, and each
+ * block widget is a child of the content box, which is what a sheet is.
+ *
+ * When the page view is off there is no sheet to fill and `perSheet` is zero,
+ * so the whole list is drawn as one — which is what a continuous view wants.
+ */
+function listed(pass: Pass, from: number, to: number, kind: ListingKind): void {
+  const entries = entriesFor(kind, pass.text);
+  const perSheet = pass.state.facet(linesPerPage) - LISTING_HEADING_ROWS;
+
+  if (perSheet <= 0 || entries.length <= perSheet) {
+    replace(pass, from, to, new ListingWidget(kind, entries));
+    return;
+  }
+
+  const sheets = Math.ceil(entries.length / perSheet);
+  if (
+    !replace(
+      pass,
+      from,
+      to,
+      new ListingWidget(kind, entries.slice(0, perSheet), 1, sheets),
+    )
+  ) {
+    return;
+  }
+
+  // The rest stand after it, in order. `side` keeps them in that order: two
+  // block widgets at one position are otherwise drawn in an order CodeMirror
+  // is free to choose.
+  const at = pass.state.doc.lineAt(to).to;
+  for (let sheet = 2; sheet <= sheets; sheet += 1) {
+    const slice = entries.slice((sheet - 1) * perSheet, sheet * perSheet);
+    pass.ranges.push(
+      Decoration.widget({
+        widget: new ListingWidget(kind, slice, sheet, sheets),
+        block: true,
+        side: sheet,
+      }).range(at),
+    );
   }
 }
 
@@ -723,6 +820,11 @@ function band(
       }).range(doc.line(number).from),
     );
   }
+  // Told to the page view, which gives it a short sheet of its own. It is what
+  // the file wraps the document in rather than a page of the document, and a
+  // preamble occupying the first sheet of A4 would open the paper on a page
+  // that is not in it.
+  pass.layout.matter.push({ from: first, to: last });
 }
 
 /**
@@ -1198,7 +1300,7 @@ function columnSpec(
  * block decorations and replacements that cover a line break — see the note at
  * the top of this file.
  */
-const decorations = StateField.define<DecorationSet>({
+const rendered = StateField.define<Rendered>({
   create: (state) => build(state),
   update(value, transaction) {
     // Selection changes matter as much as edits: moving the caret into a
@@ -1219,8 +1321,21 @@ const decorations = StateField.define<DecorationSet>({
     }
     return value;
   },
-  provide: (field) => EditorView.decorations.from(field),
+  provide: (field) =>
+    EditorView.decorations.from(field, (value) => value.decorations),
 });
+
+/**
+ * What the pass drew, for the page view to count.
+ *
+ * Read with a default, because the page view also runs over a plain text file
+ * that has no rich text at all — and a file with no rich text has nothing
+ * folded and nothing standing taller than its own line, which is exactly what
+ * an empty layout says.
+ */
+export function layoutOf(state: EditorState): Layout {
+  return state.field(rendered, false)?.layout ?? emptyLayout();
+}
 
 /** A field's value after a transaction, without building the new state. */
 function after<T>(
@@ -1312,7 +1427,7 @@ export function richText(): Extension {
     showComments,
     showLineBreaks,
     showMachinery,
-    decorations,
+    rendered,
     cursorStaysOutOfTheFold,
     theme,
     semanticTheme,
@@ -1340,6 +1455,17 @@ const theme = EditorView.baseTheme({
     padding: "var(--yaz-space-3) var(--yaz-space-4)",
     margin: "var(--yaz-space-3) 0",
     fontFamily: "var(--yaz-font-sans)",
+  },
+  // A list carried onto the next sheet says so, quietly, where the heading
+  // would have been. Without it a reader meets a page of entries with no
+  // indication of what they are a list of.
+  ".cm-yaz-listing-continued": {
+    display: "block",
+    marginBlockEnd: "var(--yaz-space-3)",
+    fontSize: "0.85em",
+    fontStyle: "italic",
+    color: "var(--yaz-text-muted)",
+    textAlign: "end",
   },
   ".cm-yaz-listing-title": {
     fontSize: "0.8em",

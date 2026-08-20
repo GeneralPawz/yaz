@@ -12,6 +12,72 @@ import { Decoration } from "@codemirror/view";
 import type { WidgetType } from "@codemirror/view";
 import type { EditorState, Range } from "@codemirror/state";
 
+/**
+ * A widget that knows how tall it is, in rows of text.
+ *
+ * Most widgets are one row: a formula, a page-break rule, a folded label. Two
+ * are not — a table is as tall as it has rows, and a generated listing is as
+ * tall as the document is long — and those two are exactly the ones that
+ * decide where a page ends.
+ *
+ * A row rather than a pixel because the page view counts rows. It is an
+ * estimate either way, and an estimate that does not move while you scroll
+ * beats a measurement that does.
+ */
+export interface Tall {
+  /** How many rows of text this stands as tall as. */
+  readonly rows: number;
+}
+
+/** Whether a widget says how tall it is. */
+function tall(widget: WidgetType): widget is WidgetType & Tall {
+  return typeof (widget as Partial<Tall>).rows === "number";
+}
+
+/**
+ * What the pass drew, in rows rather than in characters.
+ *
+ * The page view needs this and cannot work it out for itself. It counts what
+ * fills a sheet, and what fills a sheet is what is *drawn*: a folded preamble
+ * is eighty lines of source and no rows at all, a paragraph is one line of
+ * source and eight rows once it wraps, a glossary is one line of source and
+ * two hundred rows. Paginating over the source instead gives sheets that
+ * stretch to any length and a glossary that will not divide.
+ *
+ * Collected here, during the pass that already knows all of it, rather than by
+ * a second walk that would have to work it out again.
+ */
+export interface Layout {
+  /** Lines that are not drawn at all: folded, hidden, or swallowed. */
+  readonly skipped: Set<number>;
+  /** Characters hidden within a line, which is how much less it wraps. */
+  readonly hiddenChars: Map<number, number>;
+  /** Rows a widget adds to the line it stands on, beyond that line's own. */
+  readonly widgetRows: Map<number, number>;
+  /**
+   * Lines that are the document's machinery rather than its paper.
+   *
+   * The front and back matter: what a `.tex` file wraps its text in. It is not
+   * on a page in the finished document because it is not *in* the finished
+   * document, so the page view gives it a sheet of its own rather than
+   * spending the first sheet of the paper on it.
+   */
+  readonly matter: { from: number; to: number }[];
+}
+
+/** An empty layout, for a pass that has not run. */
+export function emptyLayout(): Layout {
+  return {
+    skipped: new Set(),
+    hiddenChars: new Map(),
+    widgetRows: new Map(),
+    matter: [],
+  };
+}
+
+/** A line break, by code, so the scan below compares numbers. */
+const NEWLINE = 10;
+
 /** Nothing at all, used to hide markup. */
 export const hidden = Decoration.replace({});
 
@@ -76,6 +142,8 @@ export interface Pass {
   text: string;
   ranges: Range<Decoration>[];
   covered: Covered;
+  /** What is being drawn, in rows. See {@link Layout}. */
+  layout: Layout;
 }
 
 /** Whether the selection touches a range, in which case its markup is shown. */
@@ -96,7 +164,93 @@ export function replace(
   pass.ranges.push(
     (widget ? Decoration.replace({ widget }) : hidden).range(from, to),
   );
+  record(pass, from, to, widget);
   return true;
+}
+
+/**
+ * Note what this replacement did to the shape of the page.
+ *
+ * Here rather than in each caller because this is the one place every hidden
+ * range in the view passes through, and a rule enforced at the choke point is
+ * a rule that cannot be forgotten by the next scanner somebody writes.
+ *
+ * A line wholly inside a replacement is gone: not shortened, *not drawn*. A
+ * line partly inside it is shorter by that much, which is how much less it
+ * wraps. And a line whose replacement carries a widget is as tall as the
+ * widget says it is.
+ */
+function record(
+  pass: Pass,
+  from: number,
+  to: number,
+  widget?: WidgetType,
+): void {
+  const doc = pass.state.doc;
+  if (from >= to || to > doc.length) return;
+
+  // Almost every replacement in the view is a piece of inline markup inside
+  // one line — `\textbf{`, a closing brace, a `~`. There are thousands of them
+  // on a long document, and asking the document which line each one is on is a
+  // search of a balanced tree, thousands of times, on the keystroke path. It
+  // measured at 2 ms of the 16 the whole keystroke has.
+  //
+  // None of those thousands change the shape of the page: hiding eight
+  // characters of a four-hundred-character paragraph is a fortieth of a row.
+  // So the cheap question — is there a line break inside this at all — is
+  // asked first, and the tree is only searched for the replacements that could
+  // move a page break.
+  // Bounded by the range itself rather than by `indexOf`, which would scan
+  // on to the next line break however far past the range it is. A piece of
+  // inline markup is a dozen characters; the search should be a dozen
+  // characters.
+  let withinOneLine = true;
+  for (let at = from; at < to; at += 1) {
+    if (pass.text.charCodeAt(at) === NEWLINE) {
+      withinOneLine = false;
+      break;
+    }
+  }
+  if (withinOneLine && !widget) return;
+
+  const first = doc.lineAt(from).number;
+
+  if (withinOneLine) {
+    if (tall(widget!)) {
+      pass.layout.widgetRows.set(
+        first,
+        (pass.layout.widgetRows.get(first) ?? 0) + widget!.rows,
+      );
+    }
+    return;
+  }
+
+  const last = doc.lineAt(to).number;
+
+  for (let number = first; number <= last; number += 1) {
+    const line = doc.line(number);
+    // Whole lines vanish — except the first when a widget stands there, since
+    // the widget is drawn in that line's place rather than instead of it.
+    const whole = from <= line.from && to >= line.to;
+    if (whole && !(widget && number === first)) {
+      pass.layout.skipped.add(number);
+      continue;
+    }
+    const overlap = Math.min(to, line.to) - Math.max(from, line.from);
+    if (overlap > 0) {
+      pass.layout.hiddenChars.set(
+        number,
+        (pass.layout.hiddenChars.get(number) ?? 0) + overlap,
+      );
+    }
+  }
+
+  if (widget && tall(widget)) {
+    pass.layout.widgetRows.set(
+      first,
+      (pass.layout.widgetRows.get(first) ?? 0) + widget.rows,
+    );
+  }
 }
 
 /**

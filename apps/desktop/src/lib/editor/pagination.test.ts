@@ -8,14 +8,18 @@
  */
 
 import { EditorState } from "@codemirror/state";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  charactersPerLine,
   linesPerPage,
   pageStarts,
   paginated,
   turnedRegions,
 } from "./pagination";
+import type { Layout } from "./pass";
+import { layoutOf, richText, richTextEnabled } from "./richText";
+import { EditorView } from "@codemirror/view";
 import {
   PACKAGE_COMMANDS,
   PACKAGE_ENVIRONMENTS,
@@ -23,6 +27,23 @@ import {
 import { setContributions } from "./vocabulary";
 
 const B = String.fromCharCode(92);
+
+beforeAll(() => {
+  // CodeMirror measures its own layout; jsdom implements neither of these.
+  Range.prototype.getBoundingClientRect = () => new DOMRect();
+  Range.prototype.getClientRects = () =>
+    Object.assign([], { item: () => null }) as unknown as DOMRectList;
+});
+
+/** A newline, named so a template literal can hold one. */
+const nothing = "\n";
+
+/** Views to tear down, for the tests that need a real one. */
+const views: EditorView[] = [];
+
+afterEach(() => {
+  while (views.length > 0) views.pop()?.destroy();
+});
 
 /** A state over some lines, with the sheets switched on. */
 function document(lines: string[], perPage = 0): EditorState {
@@ -202,5 +223,208 @@ describe("a turned page", () => {
     expect(
       turnedRegions("BSLbegin{figure}x BSLend{figure}".replace(/BSL/g, B)),
     ).toEqual([]);
+  });
+});
+
+/**
+ * The same questions, but asked of what is actually drawn.
+ *
+ * The tests above hand `pageStarts` a document and nothing else, which is the
+ * arithmetic in isolation. These build the real rich-text pass first and give
+ * it the layout that pass produced, because the bugs being fixed here are all
+ * of one kind: the page view counted lines of *source* when what fills a sheet
+ * is rows of *paper*.
+ */
+describe("counting what is drawn rather than what is written", () => {
+  /** A state with rich text really running over it, and its layout. */
+  function drawn(
+    doc: string,
+    options: { perPage?: number; measure?: number } = {},
+  ): { state: EditorState; layout: Layout } {
+    const state = EditorState.create({
+      doc,
+      extensions: [
+        richText(),
+        richTextEnabled.init(() => true),
+        paginated.of(true),
+        linesPerPage.of(options.perPage ?? 0),
+        charactersPerLine.of(options.measure ?? 0),
+      ],
+    });
+    return { state, layout: layoutOf(state) };
+  }
+
+  /** Which line each sheet starts on, given a real layout. */
+  function sheetsOf(
+    doc: string,
+    options: { perPage: number; measure?: number },
+  ): number[] {
+    const { state, layout } = drawn(doc, options);
+    return pageStarts(
+      state,
+      options.perPage,
+      options.perPage,
+      layout,
+      options.measure ?? 0,
+    ).map((offset) => state.doc.lineAt(offset).number);
+  }
+
+  it("gives a wrapped paragraph the rows it wraps to", () => {
+    // Six paragraphs, each six measures long. Wrapped, that is thirty-six rows
+    // and needs four sheets of ten; counted as lines it is eleven and fits on
+    // two — so the two sheets stretch to nearly twice their height to hold it.
+    // That stretch is the bug: the page stops being the size of the paper.
+    const paragraph = "x".repeat(60);
+    const body = Array.from({ length: 6 }, () => paragraph).join("\n" + "\n");
+    const doc = `${B}begin{document}${nothing}${body}${nothing}${B}end{document}`;
+
+    const wrapped = sheetsOf(doc, { perPage: 10, measure: 10 });
+    const unwrapped = sheetsOf(doc, { perPage: 10, measure: 0 });
+
+    // The comparison is the test. Counting rows must give *more* sheets than
+    // counting lines, because that is exactly the text that was overflowing.
+    expect(wrapped.length).toBeGreaterThan(unwrapped.length);
+    expect(wrapped.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("spends no rows on a preamble nobody can see", () => {
+    // Eighty lines of packages, folded behind one mark. Counted as source they
+    // fill two sheets before the document has begun, and every page after that
+    // is off by two.
+    const preamble = Array.from(
+      { length: 80 },
+      (_, index) => `${B}usepackage{p${index}}`,
+    ).join("\n");
+    const doc = `${B}documentclass{article}\n${preamble}\n${B}begin{document}\nOne short line.\n${B}end{document}`;
+    const { state, layout } = drawn(doc, { perPage: 20 });
+    const rows = [...Array(state.doc.lines).keys()]
+      .map((index) => index + 1)
+      .filter((number) => !layout.skipped.has(number));
+    // The eighty folded lines are not drawn, so they are not counted.
+    expect(rows.length).toBeLessThan(20);
+  });
+
+  it("keeps the contents off the title page", () => {
+    // BimWissT's shape: a title page, then the table of contents. LaTeX clears
+    // the page at \end{titlepage}, so the contents cannot share the sheet —
+    // and the preview drew them on top of each other.
+    const doc = [
+      `${B}begin{document}`,
+      `${B}begin{titlepage}`,
+      "A Thesis",
+      `${B}end{titlepage}`,
+      `${B}tableofcontents`,
+      "First chapter.",
+      `${B}end{document}`,
+    ].join("\n");
+    const { state, layout } = drawn(doc, { perPage: 40 });
+    const starts = pageStarts(state, 40, 40, layout).map(
+      (offset) => state.doc.lineAt(offset).number,
+    );
+    const titlePage = state.doc.lines >= 2 ? 2 : 1;
+    const contents = 5;
+    expect(starts).toContain(contents);
+    expect(starts.indexOf(contents)).toBeGreaterThan(starts.indexOf(titlePage));
+  });
+
+  it("starts a sheet after a generated list, not underneath it", () => {
+    const doc = [
+      `${B}begin{document}`,
+      `${B}tableofcontents`,
+      "The first paragraph of the document.",
+      `${B}end{document}`,
+    ].join("\n");
+    const { state, layout } = drawn(doc, { perPage: 40 });
+    const starts = pageStarts(state, 40, 40, layout).map(
+      (offset) => state.doc.lineAt(offset).number,
+    );
+    expect(starts).toContain(2);
+    expect(starts).toContain(3);
+  });
+
+  it("divides a glossary too long for one sheet", () => {
+    // The complaint exactly: a hundred and forty terms drawn as one sheet a
+    // hundred and forty rows tall. A listing is the only thing in the preview
+    // that makes pages of content out of one line of source, so it is the only
+    // thing that has to divide itself.
+    const terms = Array.from(
+      { length: 60 },
+      (_, index) =>
+        `${B}newglossaryentry{g${index}}{name={Term ${index}},description={d}}`,
+    ).join("\n");
+    const doc = [
+      `${B}documentclass{article}`,
+      terms,
+      `${B}begin{document}`,
+      `${B}printglossaries`,
+      `${B}end{document}`,
+    ].join("\n");
+
+    const view = new EditorView({
+      state: EditorState.create({
+        doc,
+        extensions: [
+          richText(),
+          richTextEnabled.init(() => true),
+          paginated.of(true),
+          linesPerPage.of(20),
+        ],
+      }),
+      // `document` is a helper in this file; the global is meant here.
+      parent: globalThis.document.body,
+    });
+    views.push(view);
+
+    const drawnSheets = view.contentDOM.querySelectorAll(".cm-yaz-listing");
+    // Sixty terms at eighteen to the sheet is four sheets, not one.
+    expect(drawnSheets.length).toBeGreaterThan(1);
+    // And every one of them fits: none is taller than the paper.
+    for (const sheet of drawnSheets) {
+      expect(
+        sheet.querySelectorAll(".cm-yaz-listing-entry").length,
+      ).toBeLessThanOrEqual(18);
+    }
+  });
+
+  it("keeps a short listing whole", () => {
+    // The division is for lists that do not fit. One that does is one sheet,
+    // with its heading, and not a heading followed by a continuation.
+    const doc = [
+      `${B}documentclass{article}`,
+      `${B}newglossaryentry{a}{name={Alpha},description={d}}`,
+      `${B}begin{document}`,
+      `${B}printglossaries`,
+      `${B}end{document}`,
+    ].join("\n");
+    const view = new EditorView({
+      state: EditorState.create({
+        doc,
+        extensions: [
+          richText(),
+          richTextEnabled.init(() => true),
+          paginated.of(true),
+          linesPerPage.of(20),
+        ],
+      }),
+      // `document` is a helper in this file; the global is meant here.
+      parent: globalThis.document.body,
+    });
+    views.push(view);
+    expect(view.contentDOM.querySelectorAll(".cm-yaz-listing").length).toBe(1);
+    expect(
+      view.contentDOM.querySelectorAll(".cm-yaz-listing-continued").length,
+    ).toBe(0);
+  });
+
+  it("gives the front matter a sheet of its own", () => {
+    const doc = `${B}documentclass{article}\n${B}begin{document}\nText.\n${B}end{document}`;
+    const { state, layout } = drawn(doc, { perPage: 40 });
+    expect(layout.matter.length).toBeGreaterThan(0);
+    const starts = pageStarts(state, 40, 40, layout).map(
+      (offset) => state.doc.lineAt(offset).number,
+    );
+    // The text does not share the sheet the machinery is on.
+    const afterMatter = layout.matter[0]!.to + 1;
+    expect(starts).toContain(afterMatter);
   });
 });

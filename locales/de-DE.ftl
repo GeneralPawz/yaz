@@ -547,6 +547,7 @@ listing-tables = Tabellen
 listing-glossary = Glossar
 listing-bibliography = Literatur
 listing-index = Index
+listing-continued = Fortsetzung
 listing-empty-contents = Keine Überschriften in dieser Datei. Die Dateien des Dokuments verbinden, um das ganze Inhaltsverzeichnis zu sehen.
 listing-empty-figures = Keine beschrifteten Abbildungen in dieser Datei.
 listing-empty-tables = Keine beschrifteten Tabellen in dieser Datei.

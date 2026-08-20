@@ -546,6 +546,7 @@ listing-tables = Tables
 listing-glossary = Glossary
 listing-bibliography = Bibliography
 listing-index = Index
+listing-continued = continued
 listing-empty-contents = No headings in this file. Join the document's files to list the whole contents.
 listing-empty-figures = No captioned figures in this file.
 listing-empty-tables = No captioned tables in this file.
