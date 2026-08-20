@@ -655,10 +655,35 @@
      produces the document — so in the view that shows the paper it is drawn
      as a strip across it rather than as text set in the measure. One row when
      it is closed, a band of rows when it is opened. */
+  /* Everything on the page sits on the paper.
+
+     Every direct child, not every line: the marks that open and close the text
+     are block widgets, and CodeMirror puts a block widget beside the lines
+     rather than inside one. Selecting lines alone left those marks off the
+     sheet and against the left edge of the pane, which is what they were doing
+     until this rule replaced it. */
+  .editor.paged :global(.cm-content > *) {
+    box-sizing: border-box;
+    inline-size: calc(var(--yaz-page-width) * var(--yaz-zoom, 1));
+    margin-inline: auto;
+    padding-inline: var(--yaz-page-margin);
+    background: var(--yaz-bg-primary);
+  }
+
+  /* Turned: as wide as the paper is tall, which is the point of turning it —
+     a table that did not fit across the measure fits across this one. */
+  .editor.paged :global(.cm-content > .cm-yaz-sheet-turned),
+  .editor.paged :global(.cm-content > .cm-yaz-page-fill-turned) {
+    inline-size: calc(var(--yaz-page-height) * var(--yaz-zoom, 1));
+  }
+
+  /* The band across the front and back matter.
+
+     No negative margin: the sheet's own padding box already spans the paper,
+     so a background on it reaches the edges without being pulled outwards —
+     and pulling it outwards is what stopped the marks being centred. */
   .editor.paged :global(.cm-yaz-boundary),
   .editor.paged :global(.cm-yaz-matter) {
-    margin-inline: calc(var(--yaz-page-margin) * -1);
-    padding-inline: var(--yaz-page-margin);
     background: var(--yaz-bg-tertiary);
   }
 

@@ -276,21 +276,17 @@ const decorations = StateField.define<DecorationSet>({
 const theme = EditorView.baseTheme({
   // A sheet of paper: the page's own background, its margins, and a shadow at
   // the edges where one sheet ends and the next begins.
-  // Each sheet sizes itself, because a turned one is a different shape from
-  // the sheet above it. The content box is wide enough for either and the
-  // sheets are centred in it.
-  ".cm-yaz-sheet": {
-    background: "var(--yaz-bg-primary)",
-    paddingInline: "var(--yaz-page-margin, 25mm)",
-    boxSizing: "border-box",
-    inlineSize: "calc(var(--yaz-page-width) * var(--yaz-zoom, 1))",
-    marginInline: "auto",
-  },
-  // Turned: as wide as the paper is tall, which is the whole point of turning
-  // it — a table that did not fit across the measure fits across this one.
-  ".cm-yaz-sheet-turned": {
-    inlineSize: "calc(var(--yaz-page-height) * var(--yaz-zoom, 1))",
-  },
+  /*
+   * The paper itself — its width, its margins, its centring — is *not* set
+   * here. It is set in `Editor.svelte` on every direct child of the content
+   * box, because a line is not the only thing on a page: the marks that open
+   * and close the text are block widgets, and CodeMirror puts a block widget
+   * beside the lines rather than inside one. Styling only the lines left those
+   * marks off the paper and hard against the left edge.
+   *
+   * What is left here is what only a line can know: which sheet it opens and
+   * which it closes.
+   */
   ".cm-yaz-sheet-first": {
     paddingBlockStart: "var(--yaz-page-margin, 25mm)",
     marginBlockStart: "var(--yaz-space-6)",
@@ -304,15 +300,7 @@ const theme = EditorView.baseTheme({
     borderEndEndRadius: "2px",
     boxShadow: "0 2px 8px var(--yaz-pdf-page-shadow)",
   },
-  ".cm-yaz-page-fill": {
-    background: "var(--yaz-bg-primary)",
-    boxSizing: "border-box",
-    inlineSize: "calc(var(--yaz-page-width) * var(--yaz-zoom, 1))",
-    marginInline: "auto",
-  },
-  ".cm-yaz-page-fill-turned": {
-    inlineSize: "calc(var(--yaz-page-height) * var(--yaz-zoom, 1))",
-  },
+  /* Sized with everything else on the page; see the note above. */
 });
 
 /** Everything the page view adds. */

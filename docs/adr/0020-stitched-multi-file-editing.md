@@ -36,13 +36,29 @@ stops being true the moment a character is typed.
 
 ## Decision
 
-**A mode. Off by default, and off is exactly what ADR-0004 describes.**
+**A mode, and the document chooses it.**
 
-- **Single-file mode** — the default — is unchanged. One buffer, one file, byte
-  for byte, and every guarantee ADR-0004 makes still holds.
-- **Stitched mode** is opt-in from View. The buffer holds the root document with
-  every `\include` and `\input` expanded in place, and edits inside an expanded
-  region are written back to the file they came from.
+- **Single-file mode** is unchanged. One buffer, one file, byte for byte, and
+  every guarantee ADR-0004 makes still holds.
+- **Stitched mode** holds the root document with every `\include` and `\input`
+  expanded in place, and edits inside an expanded region are written back to
+  the file they came from.
+
+A document whose root pulls in other files opens stitched; one that does not
+opens as itself. Either can be switched from View at any time.
+
+> **Amended.** This was first decided as *off by default for everyone*, on the
+> reasoning that a single-file document should not pay for machinery it does
+> not need. Using it against a real thesis showed the reasoning was answering
+> the wrong question. The cost was never the issue — the root of a multi-file
+> document is a preamble and a list of `\include` lines, so the single-file view
+> of it is not a view of the document at all. It is a view of the list of its
+> parts, with an empty contents page and an empty glossary, and it looks like a
+> broken editor rather than like a document that has not been joined.
+>
+> Making the *document* decide costs a single-file document nothing, because
+> the condition is never true for one. What is preserved is the thing worth
+> preserving: where the buffer can be one file, it is one file.
 
 ADR-0004's rule is therefore narrowed rather than abandoned: *one buffer,
 always* stands; *the buffer is one file* holds in single-file mode and is

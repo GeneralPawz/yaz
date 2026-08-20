@@ -33,6 +33,7 @@
   import {
     applyToFiles,
     filesIn,
+    hasIncludes,
     mapChanges,
     mapSegments,
     resolveInclude,
@@ -1767,6 +1768,16 @@
       void loadRecent();
       void refreshVcs();
       await openFile(info.entry);
+
+      // A document that is several files opens as several files joined.
+      //
+      // Not a preference guessed at: a root that is `\include` lines and a
+      // preamble has no prose, no tables and no glossary in it, so the
+      // single-file view of it is not a view of the document — it is a view of
+      // the list of its parts. Where a document *is* one file this changes
+      // nothing, which is why the condition is the document's and not a
+      // setting. Amends ADR-0020, which had this off for everyone.
+      if (hasIncludes(docText)) await join();
     } catch (error) {
       failure = String(error);
     }

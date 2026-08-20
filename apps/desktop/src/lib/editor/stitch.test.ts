@@ -15,6 +15,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   applyToFiles,
+  hasIncludes,
   filesIn,
   isWritable,
   locate,
@@ -460,5 +461,23 @@ describe("the round trip", () => {
       at = segment.to;
     }
     expect(at).toBe(again.text.length);
+  });
+});
+
+describe("hasIncludes", () => {
+  it("is true for a root that pulls in other files", () => {
+    // The question the shell asks on opening: showing this one file would show
+    // a list of parts rather than a document.
+    expect(hasIncludes(thesis["main.tex"]!)).toBe(true);
+  });
+
+  it("is false for a document that is one file", () => {
+    expect(hasIncludes("\\section{Eins}\nEin Satz.")).toBe(false);
+  });
+
+  it("is false when the only include is commented out", () => {
+    // Which is how a chapter gets switched off, and switching one off does not
+    // turn the document back into several.
+    expect(hasIncludes("% \\include{sections/eins}")).toBe(false);
   });
 });

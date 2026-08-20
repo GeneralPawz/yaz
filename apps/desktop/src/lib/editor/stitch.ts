@@ -460,6 +460,17 @@ export function applyToFiles(
   return out;
 }
 
+/**
+ * Whether a file pulls in others.
+ *
+ * The question the shell asks on opening a project, because the answer decides
+ * whether showing that one file shows the document at all. A root full of
+ * `\include` lines and nothing else is not a view of anything.
+ */
+export function hasIncludes(text: string): boolean {
+  return includesIn(text).length > 0;
+}
+
 /** Every file the stitching drew from, in the order they appear. */
 export function filesIn(segments: readonly Segment[]): string[] {
   const seen: string[] = [];
