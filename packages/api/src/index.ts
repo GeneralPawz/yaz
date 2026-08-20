@@ -708,7 +708,15 @@ export type LatexEnvironmentRendering =
   /** Turns the paper it sits on. */
   | { kind: "turned" }
   /** Sets its contents apart as quoted. */
-  | { kind: "quote" };
+  | { kind: "quote" }
+  /**
+   * Set exactly as written, markup and all. \since 0.3.0
+   *
+   * The one environment where *not* rendering is the rendering: inside
+   * `lstlisting` a backslash is a backslash, and a preview that drew
+   * `	extbf` as bold there would show something the compiler will not print.
+   */
+  | { kind: "verbatim" };
 
 /**
  * A tool an agent can call. \since 0.3.0

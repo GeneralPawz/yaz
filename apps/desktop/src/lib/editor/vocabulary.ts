@@ -55,6 +55,24 @@ export type Rendering =
   | { kind: "listing"; listing: ListingKind; braces?: number }
   /** End the page: `\clearpage`. */
   | { kind: "pagebreak" }
+  /**
+   * Put space there: `space`, `\quad`, `igskip`.
+   *
+   * `axis` says which way it goes and `ems` how much, for the ones that fix
+   * their own size. A `space{2cm}` takes its size from its argument, so it
+   * carries none here and is measured when it is drawn.
+   */
+  | { kind: "space"; axis: "block" | "inline"; ems?: number; braces?: number }
+  /**
+   * Stand for a character the keyboard does not have: `\ldots`, `\S`.
+   *
+   * The text is the character itself. These are not markup around a word, they
+   * *are* the word — so hiding them would delete content rather than reveal it.
+   */
+  | { kind: "symbol"; text: string }
+  /** Draw the date the document is compiled: `	oday`. */
+  | { kind: "date" }
+
   /** A label attached to whatever it follows. */
   | { kind: "label" }
   /** A caption, which names its float. */
@@ -79,7 +97,15 @@ export type EnvironmentRendering =
   /** Turns the paper it sits on. */
   | { kind: "turned" }
   /** Sets its contents apart as quoted. */
-  | { kind: "quote" };
+  | { kind: "quote" }
+  /**
+   * Set exactly as written, markup and all.
+   *
+   * The one environment where *not* rendering is the rendering: inside
+   * `verbatim` a backslash is a backslash, and a preview that drew `	extbf`
+   * as bold there would be showing something the compiler will not print.
+   */
+  | { kind: "verbatim" };
 
 /** One entry, and who provided it. */
 export interface Entry<T> {
@@ -105,6 +131,10 @@ const CORE_COMMANDS: Record<string, Rendering> = {
   cite: { kind: "citation" },
 
   // Font selection.
+  textnormal: { kind: "inline", className: "" },
+  textup: { kind: "inline", className: "" },
+  textmd: { kind: "inline", className: "" },
+  textsl: { kind: "inline", className: "cm-yaz-emphasis" },
   textbf: { kind: "inline", className: "cm-yaz-strong" },
   textit: { kind: "inline", className: "cm-yaz-emphasis" },
   emph: { kind: "inline", className: "cm-yaz-emphasis" },
@@ -129,17 +159,119 @@ const CORE_COMMANDS: Record<string, Rendering> = {
   newpage: { kind: "pagebreak" },
   pagebreak: { kind: "pagebreak" },
 
+  // Words the keyboard has no key for. Content, not markup.
+  ldots: { kind: "symbol", text: "…" },
+  dots: { kind: "symbol", text: "…" },
+  textellipsis: { kind: "symbol", text: "…" },
+  textendash: { kind: "symbol", text: "–" },
+  textemdash: { kind: "symbol", text: "—" },
+  textbackslash: { kind: "symbol", text: "\\" },
+  textasciitilde: { kind: "symbol", text: "~" },
+  textasciicircum: { kind: "symbol", text: "^" },
+  textbar: { kind: "symbol", text: "|" },
+  textless: { kind: "symbol", text: "<" },
+  textgreater: { kind: "symbol", text: ">" },
+  textbullet: { kind: "symbol", text: "•" },
+  textperiodcentered: { kind: "symbol", text: "·" },
+  textregistered: { kind: "symbol", text: "®" },
+  texttrademark: { kind: "symbol", text: "™" },
+  copyright: { kind: "symbol", text: "©" },
+  pounds: { kind: "symbol", text: "£" },
+  dag: { kind: "symbol", text: "†" },
+  ddag: { kind: "symbol", text: "‡" },
+  S: { kind: "symbol", text: "§" },
+  P: { kind: "symbol", text: "¶" },
+  LaTeX: { kind: "symbol", text: "LaTeX" },
+  LaTeXe: { kind: "symbol", text: "LaTeX2ε" },
+  TeX: { kind: "symbol", text: "TeX" },
+
+  // The date the document is compiled.
+  today: { kind: "date" },
+
+  // Space, which is content in the sense that it takes room on the paper.
+  // `space` and `fill` are *not* here: `semanticView.ts` has drawn
+  // vertical space since the title page needed it, and two owners for one
+  // command is one more than a command can have. Horizontal space is new.
+  hspace: { kind: "space", axis: "inline", braces: 1 },
+  // `\smallskip`, `\medskip` and `igskip` are not here either, for the same
+  // reason `space` is not: `typography.ts` has drawn vertical space since the
+  // title page needed it. Everything below is horizontal, which was missing.
+  quad: { kind: "space", axis: "inline", ems: 1 },
+  qquad: { kind: "space", axis: "inline", ems: 2 },
+  enspace: { kind: "space", axis: "inline", ems: 0.5 },
+  thinspace: { kind: "space", axis: "inline", ems: 0.17 },
+  hfill: { kind: "space", axis: "inline", ems: 2 },
+  dotfill: { kind: "space", axis: "inline", ems: 2 },
+  hrulefill: { kind: "space", axis: "inline", ems: 2 },
+
+  // Boxes. A box is its contents with something drawn around them, which is
+  // the inline treatment with a different class — there is no third thing a
+  // box does that would need a kind of its own.
+  fbox: { kind: "inline", className: "cm-yaz-framed" },
+  framebox: { kind: "inline", className: "cm-yaz-framed" },
+  mbox: { kind: "inline", className: "cm-yaz-nowrap" },
+  makebox: { kind: "inline", className: "cm-yaz-nowrap" },
+
+  // Raised and lowered.
+  textsuperscript: { kind: "inline", className: "cm-yaz-superscript" },
+  textsubscript: { kind: "inline", className: "cm-yaz-subscript" },
+
+  // A note. Set small and apart, where it was written rather than at the foot
+  // of the page: this view has no page foot to put it in, and moving the words
+  // somewhere the source does not have them would be the preview inventing a
+  // layout rather than showing one.
+  footnote: { kind: "inline", className: "cm-yaz-footnote" },
+  footnotetext: { kind: "inline", className: "cm-yaz-footnote" },
+  thanks: { kind: "inline", className: "cm-yaz-footnote" },
+
   // Instructions that produce no words.
   noindent: { kind: "silent" },
+  indent: { kind: "silent" },
   par: { kind: "silent" },
   vfill: { kind: "silent" },
-  centering: { kind: "silent" },
-  raggedright: { kind: "silent" },
-  raggedleft: { kind: "silent" },
+  hfil: { kind: "silent" },
+  // `\centering` and its two relatives are *not* here. They are alignment
+  // declarations: they apply to the rest of their group, and `typography.ts`
+  // both hides the command and aligns what follows it. Calling them silent
+  // here would hide the command and lose the alignment — which is what a
+  // centred title page looked like until this was noticed.
   hline: { kind: "silent" },
+  hrule: { kind: "silent" },
   makeindex: { kind: "silent" },
+  maketitle: { kind: "silent" },
+  makeatletter: { kind: "silent" },
+  makeatother: { kind: "silent" },
+  protect: { kind: "silent" },
+  relax: { kind: "silent" },
+  sloppy: { kind: "silent" },
+  fussy: { kind: "silent" },
+  unskip: { kind: "silent" },
+  allowbreak: { kind: "silent" },
+  linebreak: { kind: "silent" },
+  nolinebreak: { kind: "silent" },
+  nopagebreak: { kind: "silent" },
+  samepage: { kind: "silent" },
+  appendix: { kind: "silent" },
+  frontmatter: { kind: "silent" },
+  mainmatter: { kind: "silent" },
+  backmatter: { kind: "silent" },
+  footnotemark: { kind: "silent" },
+  noalign: { kind: "silent" },
 
   // Settings, with the arguments they swallow.
+  newcommand: { kind: "setting", braces: 2 },
+  providecommand: { kind: "setting", braces: 2 },
+  newenvironment: { kind: "setting", braces: 3 },
+  renewenvironment: { kind: "setting", braces: 3 },
+  newtheorem: { kind: "setting", braces: 2 },
+  newcounter: { kind: "setting", braces: 1 },
+  stepcounter: { kind: "setting", braces: 1 },
+  refstepcounter: { kind: "setting", braces: 1 },
+  newlength: { kind: "setting", braces: 1 },
+  addtolength: { kind: "setting", braces: 2 },
+  settowidth: { kind: "setting", braces: 2 },
+  bibliographystyle: { kind: "setting", braces: 1 },
+  nocite: { kind: "setting", braces: 1 },
   renewcommand: { kind: "setting", braces: 2 },
   setlength: { kind: "setting", braces: 2 },
   setcounter: { kind: "setting", braces: 2 },
@@ -172,6 +304,18 @@ const CORE_ENVIRONMENTS: Record<string, EnvironmentRendering> = {
   "figure*": { kind: "float", counts: "figure" },
   table: { kind: "float", counts: "table" },
   "table*": { kind: "float", counts: "table" },
+
+  // Set as written, character for character.
+  verbatim: { kind: "verbatim" },
+  "verbatim*": { kind: "verbatim" },
+
+  // Arrangement the standard classes define.
+  minipage: { kind: "structural" },
+  list: { kind: "list" },
+  trivlist: { kind: "list" },
+  thebibliography: { kind: "list" },
+  theindex: { kind: "structural" },
+  sloppypar: { kind: "structural" },
 
   // The kernel's mathematics. `align` and friends are amsmath's.
   equation: { kind: "math" },

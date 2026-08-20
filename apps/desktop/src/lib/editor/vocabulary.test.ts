@@ -137,10 +137,17 @@ describe("asking the vocabulary what it holds", () => {
   });
 
   it("groups environments the same way", () => {
+    // `list` and `trivlist` are the kernel's own general-purpose lists, which
+    // everything else is built on, and `thebibliography` is one of them — a
+    // list of entries with hanging indents, which is why it is here and not
+    // in the plugin with biblatex.
     expect(environmentsOfKind("list").sort()).toEqual([
       "description",
       "enumerate",
       "itemize",
+      "list",
+      "thebibliography",
+      "trivlist",
     ]);
   });
 

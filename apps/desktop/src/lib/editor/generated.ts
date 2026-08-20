@@ -24,6 +24,7 @@
  */
 
 import { environments, headings, matchBrace, plainText } from "./structure";
+import { formatDate } from "./documentDate";
 import { sectionNumbers } from "./semantics";
 import { Kind, tokensIn } from "./tokens";
 import { renderingOf } from "./vocabulary";
@@ -127,6 +128,32 @@ export interface Generated {
   listings: Listing[];
   breaks: PageBreak[];
   machinery: { from: number; to: number }[];
+  /**
+   * Commands that stand for a character or a date — content, not markup.
+   *
+   * Kept apart from the machinery because the machinery is *hidden* and these
+   * are *replaced*: hiding `\ldots` would delete an ellipsis the author wrote,
+   * which is the difference between not showing markup and losing text.
+   */
+  literals: Literal[];
+  /** Space the author asked for, which takes room on the paper. */
+  spaces: Space[];
+}
+
+/** A command that draws as a fixed piece of text. */
+export interface Literal {
+  text: string;
+  from: number;
+  to: number;
+}
+
+/** A command that draws as a gap. */
+export interface Space {
+  axis: "block" | "inline";
+  /** How wide or tall, in ems. Measured from the argument where there is one. */
+  ems: number;
+  from: number;
+  to: number;
 }
 
 /**
@@ -135,8 +162,14 @@ export interface Generated {
  * Separately they would be three passes over a hundred-page manuscript on
  * every keystroke, for constructs that are a few dozen characters in total.
  */
-export function generatedIn(text: string): Generated {
-  const found: Generated = { listings: [], breaks: [], machinery: [] };
+export function generatedIn(text: string, language = "english"): Generated {
+  const found: Generated = {
+    listings: [],
+    breaks: [],
+    machinery: [],
+    literals: [],
+    spaces: [],
+  };
 
   eachCommand(text, (name, at, after) => {
     const rendering = renderingOf(name);
@@ -166,6 +199,31 @@ export function generatedIn(text: string): Generated {
       case "silent":
         found.machinery.push({ from: at, to: after });
         break;
+      case "symbol":
+        found.literals.push({ text: rendering.text, from: at, to: after });
+        break;
+      case "date":
+        // What `\today` will print, which is today. In the document's own
+        // language: `\today` under `ngerman` is "20. August 2026", and showing
+        // it in the interface's language would be showing something the
+        // compiler will not produce.
+        found.literals.push({
+          text: formatDate(isoToday(), language),
+          from: at,
+          to: after,
+        });
+        break;
+      case "space": {
+        const to = pastArguments(text, after, rendering.braces ?? 0);
+        found.spaces.push({
+          axis: rendering.axis,
+          ems:
+            rendering.ems ?? emsOf(text.slice(after, to)) ?? DEFAULT_SPACE_EMS,
+          from: at,
+          to,
+        });
+        break;
+      }
       default:
         break;
     }
@@ -379,6 +437,52 @@ export function glossaryEntries(text: string): Entry[] {
   );
 }
 
+/** Today, as `YYYY-MM-DD`, which is what {@link formatDate} takes. */
+function isoToday(): string {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
+/** What `\vspace{...}` is worth, when it does not say. */
+const DEFAULT_SPACE_EMS = 1;
+
+/** How many ems tall a page is worth, so `\vspace{\fill}` does not run away. */
+const MOST_SPACE_EMS = 20;
+
+/**
+ * A TeX length, in ems.
+ *
+ * Approximate on purpose. The preview is not typesetting: what matters is that
+ * `\vspace{2cm}` leaves visibly more room than `\vspace{2mm}`, not that either
+ * measures what the compiler will produce. Anything unrecognised — `\fill`, a
+ * length register, arithmetic — gets the default rather than nothing, because
+ * a gap of the wrong size reads better than a gap that vanished.
+ */
+function emsOf(argument: string): number | null {
+  const match = /(-?[\d.]+)\s*(cm|mm|in|pt|em|ex|bp|pc)/.exec(argument);
+  if (!match) return null;
+  const value = Number(match[1]);
+  if (!Number.isFinite(value)) return null;
+
+  // One em is about 12pt at a document's usual size, and everything else is
+  // defined against a point.
+  const POINTS_PER_EM = 12;
+  const points: Record<string, number> = {
+    pt: 1,
+    bp: 1.00375,
+    pc: 12,
+    mm: 2.845,
+    cm: 28.45,
+    in: 72.27,
+    em: POINTS_PER_EM,
+    ex: POINTS_PER_EM / 2,
+  };
+  const ems = (value * (points[match[2]!] ?? 1)) / POINTS_PER_EM;
+  return Math.max(0, Math.min(MOST_SPACE_EMS, ems));
+}
+
 /** What a listing of each kind is built from. */
 export function entriesFor(kind: ListingKind, text: string): Entry[] {
   switch (kind) {
@@ -399,25 +503,22 @@ export function entriesFor(kind: ListingKind, text: string): Entry[] {
 }
 
 /**
- * Whether a text has any of this in it at all.
+ * Whether this walk has anything to find.
  *
- * A cheap first look, so a document with no generated lists — which is most of
- * them — does not pay for four scans of itself on every keystroke.
+ * It used to be a list of substrings — `\tableofcontents`, `\clearpage` and a
+ * dozen more — on the reasoning that most documents have none of them and
+ * should not pay for a scan. That reasoning stopped being true when the walk
+ * grew to cover the everyday commands: `\ldots`, `\today`, `\vspace`,
+ * `\newcommand`, `\footnote`. Nearly every document has some of those, and a
+ * document that had one the list had not been updated for simply did not get
+ * it drawn — silently, and only in that document.
+ *
+ * So the question is now the one that is actually being asked, and it is
+ * cheap to ask because the answer costs one look rather than fourteen. The
+ * walk itself reads the memoised token index rather than the text
+ * ([`tokens.ts`](./tokens.ts)), so a document with no commands iterates
+ * nothing.
  */
 export function hasGenerated(text: string): boolean {
-  return (
-    text.includes("\\tableofcontents") ||
-    text.includes("\\listof") ||
-    text.includes("\\print") ||
-    text.includes("\\bibliography") ||
-    text.includes("\\clearpage") ||
-    text.includes("\\cleardoublepage") ||
-    text.includes("\\newpage") ||
-    text.includes("\\pagebreak") ||
-    text.includes("\\addcontentsline") ||
-    text.includes("\\makeglossaries") ||
-    text.includes("\\makeindex") ||
-    text.includes("\\glsaddall") ||
-    text.includes("\\glsresetall")
-  );
+  return text.includes("\\");
 }

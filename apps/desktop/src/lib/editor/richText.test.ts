@@ -30,6 +30,9 @@ import { setContributions } from "./vocabulary";
 
 const B = String.fromCharCode(92);
 
+/** A line break, named so a template literal can hold one. */
+const nothing = "\n";
+
 beforeAll(() => {
   // CodeMirror measures its own layout; jsdom implements neither of these.
   Range.prototype.getBoundingClientRect = () => new DOMRect();
@@ -1074,5 +1077,90 @@ describe("the rest of a title page", () => {
 
   it("leaves the buffer exactly as it was", () => {
     expect(reading().state.doc.toString()).toBe(doc);
+  });
+});
+
+/**
+ * The rest of standard LaTeX.
+ *
+ * Not everything, but the things a document is actually full of once the
+ * headings and the emphasis are handled: the characters the keyboard has no
+ * key for, the space an author asks for, the boxes, the notes.
+ */
+describe("the everyday commands", () => {
+  it("sets a command that stands for a character as that character", () => {
+    // Replaced, not hidden. `\ldots` *is* an ellipsis the author wrote — taking
+    // it away would be losing text rather than hiding markup.
+    expect(visible(mount(`Text: One${B}ldots two`))).toContain("One… two");
+    expect(visible(mount(`Text: See ${B}S 3 and ${B}P 4`))).toContain(
+      "See § 3 and ¶ 4",
+    );
+    expect(visible(mount(`Text: ${B}copyright 2026`))).toContain("© 2026");
+  });
+
+  it("keeps a backslash a backslash where the author asked for one", () => {
+    expect(visible(mount(`Text: a ${B}textbackslash b`))).toContain(`a ${B} b`);
+  });
+
+  it("draws the date the compiler will print, in the document's language", () => {
+    // German, because that is what the document is in. Showing it in the
+    // interface's language would be showing what the compiler will not print.
+    const german = visible(
+      mount(
+        [
+          `${B}documentclass{article}`,
+          `${B}usepackage[ngerman]{babel}`,
+          `${B}begin{document}`,
+          `Weimar, ${B}today`,
+          `${B}end{document}`,
+        ].join("\n"),
+      ),
+    );
+    expect(german).toMatch(/Weimar, \d+\.\s\p{L}+\s\d{4}/u);
+  });
+
+  it("hides a definition and everything it defines", () => {
+    // `\newcommand{\x}{y}` is machinery: two braces of it, and none of it is
+    // the document.
+    const text = visible(
+      mount(
+        `Text.${nothing}${B}newcommand{${B}thesubtitle}{A subtitle}${nothing}Body.`,
+      ),
+    );
+    expect(text).not.toContain("newcommand");
+    expect(text).toContain("Body.");
+  });
+
+  it("draws a box around what is boxed", () => {
+    const view = mount(`Text: ${B}fbox{Inside}`);
+    expect(visible(view)).toContain("Inside");
+    expect(view.contentDOM.querySelector(".cm-yaz-framed")).not.toBeNull();
+  });
+
+  it("raises and lowers what is raised and lowered", () => {
+    const view = mount(
+      `Text: H${B}textsubscript{2}O and 3${B}textsuperscript{rd}`,
+    );
+    expect(view.contentDOM.querySelector(".cm-yaz-subscript")).not.toBeNull();
+    expect(view.contentDOM.querySelector(".cm-yaz-superscript")).not.toBeNull();
+    expect(visible(view)).toContain("H2O");
+  });
+
+  it("leaves room where the author asked for room", () => {
+    // Horizontal space only. Vertical space has been drawn since the title
+    // page needed it and lives in `typography.ts` — `igskip` and `space`
+    // are its, and having two owners for one command is one too many.
+    const view = mount(`Text.${nothing}One${B}quad two`);
+    const gap = view.contentDOM.querySelector(".cm-yaz-space-inline");
+    expect(gap).not.toBeNull();
+    expect((gap as HTMLElement).style.inlineSize).not.toBe("");
+    expect(visible(view)).toContain("One");
+    expect(visible(view)).toContain("two");
+  });
+
+  it("sets a note small rather than losing it", () => {
+    const view = mount(`Text: Claim${B}footnote{The evidence.}`);
+    expect(visible(view)).toContain("The evidence.");
+    expect(view.contentDOM.querySelector(".cm-yaz-footnote")).not.toBeNull();
   });
 });

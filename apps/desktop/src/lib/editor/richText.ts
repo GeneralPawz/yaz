@@ -84,8 +84,14 @@ import { renderTable, tooComplexToDraw } from "./tabular";
 import { fillMetadata, metadata } from "./typography";
 import { linesPerPage } from "./geometry";
 import { entriesFor, generatedIn, hasGenerated } from "./generated";
+import { readProperties } from "./properties";
 import type { BreakKind, Entry, ListingKind } from "./generated";
-import { environmentRenderingOf, environmentsOfKind } from "./vocabulary";
+import {
+  commandsOfKind,
+  environmentRenderingOf,
+  environmentsOfKind,
+  renderingOf,
+} from "./vocabulary";
 import { setShowLineBreaks, showLineBreaks, showMachinery } from "./viewModes";
 import {
   braceCommands,
@@ -100,14 +106,26 @@ import {
 import type { Environment } from "./structure";
 
 /** Inline commands that render as styled text, mapped to their CSS class. */
-const INLINE: Record<string, string> = {
-  textbf: "cm-yaz-strong",
-  textit: "cm-yaz-emphasis",
-  emph: "cm-yaz-emphasis",
-  texttt: "cm-yaz-mono",
-  underline: "cm-yaz-underline",
-  textsc: "cm-yaz-smallcaps",
-};
+/**
+ * What each inline command draws as, from the vocabulary rather than a copy.
+ *
+ * This was a list here, and a list here is a list that goes out of date: a
+ * command added to the vocabulary would be *recognised* and then drawn as
+ * nothing, because the map that says how to draw it had not been told. It also
+ * meant a plugin could contribute an inline command and never see it drawn,
+ * which would have made `registerLatexVocabulary` a half-promise.
+ *
+ * Rebuilt on demand rather than cached, because the vocabulary changes when
+ * plugins load and reload.
+ */
+function inlineClasses(): Map<string, string> {
+  const found = new Map<string, string>();
+  for (const name of commandsOfKind("inline")) {
+    const rendering = renderingOf(name);
+    if (rendering?.kind === "inline") found.set(name, rendering.className);
+  }
+  return found;
+}
 
 /** Bullets by nesting depth, as LaTeX itself sets them. */
 const BULLETS = ["•", "◦", "▪", "·"];
@@ -375,6 +393,73 @@ class ListingWidget extends WidgetType implements Tall {
 }
 
 /**
+ * A command that draws as a piece of text: `\ldots`, `\S`, `\today`.
+ *
+ * A widget rather than nothing, because these are content. The reader is meant
+ * to see an ellipsis where the author wrote `\ldots`, and the caret still
+ * reveals the source when it arrives, like every other replacement.
+ */
+class LiteralWidget extends WidgetType {
+  constructor(readonly text: string) {
+    super();
+  }
+
+  override eq(other: LiteralWidget): boolean {
+    return other.text === this.text;
+  }
+
+  override toDOM(): HTMLElement {
+    const node = document.createElement("span");
+    node.className = "cm-yaz-literal";
+    node.textContent = this.text;
+    return node;
+  }
+
+  /** It is text: let it be selected and copied like text. */
+  override ignoreEvent(): boolean {
+    return false;
+  }
+}
+
+/**
+ * Space the author asked for: `\vspace{2cm}`, `\quad`, `\bigskip`.
+ *
+ * Drawn at roughly its size rather than at exactly it. The preview is not
+ * typesetting; what matters is that two centimetres reads as more room than
+ * two millimetres, and that the page view counts the rows it takes.
+ */
+class SpaceWidget extends WidgetType implements Tall {
+  constructor(
+    readonly axis: "block" | "inline",
+    readonly ems: number,
+  ) {
+    super();
+  }
+
+  /** Vertical space is rows on the paper; horizontal space is not. */
+  get rows(): number {
+    return this.axis === "block" ? Math.round(this.ems) : 0;
+  }
+
+  override eq(other: SpaceWidget): boolean {
+    return other.axis === this.axis && other.ems === this.ems;
+  }
+
+  override toDOM(): HTMLElement {
+    const node = document.createElement("span");
+    node.className =
+      this.axis === "block" ? "cm-yaz-space-block" : "cm-yaz-space-inline";
+    if (this.axis === "block") {
+      node.style.blockSize = `${this.ems}em`;
+    } else {
+      node.style.inlineSize = `${this.ems}em`;
+    }
+    node.setAttribute("aria-hidden", "true");
+    return node;
+  }
+}
+
+/**
  * Where a page ends, as a rule across the measure.
  *
  * Not where LaTeX will end the page — that is typesetting, and guessing at it
@@ -541,12 +626,17 @@ function build(state: EditorState): Rendered {
   boundaries(pass);
   comments(pass);
   structure(pass);
-  generated(pass);
   tables(pass);
   mathematics(pass);
   // Before the lists, which need to know when one sets its own markers, and
   // before the headings, which show the label they carry.
   const meaning = semanticMarkup(pass);
+  // Last of the wide ones, and deliberately. This claims *single commands*,
+  // and single commands live inside the wide things: `\hline` inside a table,
+  // `\centering` inside a figure. Claiming the small one first left the table
+  // and the float unable to claim themselves, so each fell back to showing its
+  // source — a table that stopped being a table because of a rule inside it.
+  generated(pass);
   lists(pass, meaning);
   quotes(pass);
   inlineMarkup(pass, meaning);
@@ -733,7 +823,7 @@ function boundaries(pass: Pass): void {
  */
 function generated(pass: Pass): void {
   if (!hasGenerated(pass.text)) return;
-  const found = generatedIn(pass.text);
+  const found = generatedIn(pass.text, readProperties(pass.text).language);
 
   for (const listing of found.listings) {
     if (touched(pass.state, listing.from, listing.to)) {
@@ -756,14 +846,38 @@ function generated(pass: Pass): void {
     );
   }
 
-  for (const command of found.machinery) {
-    // Hidden rather than drawn, and revealed by the caret like everything else
-    // — so it is one arrow key away rather than a mode switch away.
-    if (touched(pass.state, command.from, command.to)) {
-      pass.covered.claim(command.from, command.to);
+  for (const literal of found.literals) {
+    // Replaced rather than hidden. `\ldots` *is* an ellipsis the author wrote
+    // and `\today` is a date the reader will see printed — taking them away
+    // would be losing text, not hiding markup.
+    if (touched(pass.state, literal.from, literal.to)) {
+      pass.covered.claim(literal.from, literal.to);
       continue;
     }
-    replace(pass, command.from, command.to);
+    replace(pass, literal.from, literal.to, new LiteralWidget(literal.text));
+  }
+
+  for (const space of found.spaces) {
+    if (touched(pass.state, space.from, space.to)) {
+      pass.covered.claim(space.from, space.to);
+      continue;
+    }
+    replace(pass, space.from, space.to, new SpaceWidget(space.axis, space.ems));
+  }
+
+  // View → Document machinery. Off means hidden, which is the default, and on
+  // means shown as written — the switch exists so an author can see what their
+  // preamble is doing without leaving the preview.
+  if (pass.state.field(showMachinery, false) !== true) {
+    for (const command of found.machinery) {
+      // Hidden rather than drawn, and revealed by the caret like everything
+      // else — so it is one arrow key away rather than a mode switch away.
+      if (touched(pass.state, command.from, command.to)) {
+        pass.covered.claim(command.from, command.to);
+        continue;
+      }
+      replace(pass, command.from, command.to);
+    }
   }
 }
 
@@ -1224,9 +1338,12 @@ function inlineMarkup(pass: Pass, meaning: Meaning): void {
     }
   }
 
-  for (const command of braceCommands(pass.text, Object.keys(INLINE))) {
-    const className = INLINE[command.command];
-    if (!className) continue;
+  const classes = inlineClasses();
+  for (const command of braceCommands(pass.text, [...classes.keys()])) {
+    const className = classes.get(command.command);
+    // `undefined` rather than falsy: `	extnormal` draws as *no* class, and
+    // that is still drawing it — the markup around it has to go.
+    if (className === undefined) continue;
     // Zero-length arguments would produce an empty mark, which CodeMirror
     // rejects, and `\emph{}` in a draft is not unusual.
     if (command.argTo > command.argFrom) {
@@ -1491,6 +1608,39 @@ const theme = EditorView.baseTheme({
   // A list carried onto the next sheet says so, quietly, where the heading
   // would have been. Without it a reader meets a page of entries with no
   // indication of what they are a list of.
+  // A command that stands for a character, set as the character. Nothing
+  // distinguishes it from the text around it, because it *is* the text.
+  // Boxes, shifts and notes: the inline treatment with a different look.
+  ".cm-yaz-framed": {
+    border: "1px solid var(--yaz-border)",
+    padding: "0 0.25em",
+    borderRadius: "2px",
+  },
+  ".cm-yaz-nowrap": {
+    whiteSpace: "nowrap",
+  },
+  ".cm-yaz-superscript": {
+    verticalAlign: "super",
+    fontSize: "0.75em",
+  },
+  ".cm-yaz-subscript": {
+    verticalAlign: "sub",
+    fontSize: "0.75em",
+  },
+  ".cm-yaz-footnote": {
+    fontSize: "0.85em",
+    color: "var(--yaz-text-muted)",
+  },
+  ".cm-yaz-literal": {
+    whiteSpace: "pre-wrap",
+  },
+  ".cm-yaz-space-inline": {
+    display: "inline-block",
+  },
+  ".cm-yaz-space-block": {
+    display: "block",
+    inlineSize: "100%",
+  },
   ".cm-yaz-listing-continued": {
     display: "block",
     marginBlockEnd: "var(--yaz-space-3)",

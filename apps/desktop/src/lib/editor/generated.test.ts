@@ -285,10 +285,18 @@ describe("entriesFor", () => {
 });
 
 describe("hasGenerated", () => {
-  it("is the cheap first look that keeps this off most documents", () => {
-    expect(hasGenerated("Just prose, and a \\emph{little} markup.")).toBe(
-      false,
-    );
+  it("is asked of any text with a command in it", () => {
+    // It used to be a list of substrings, on the reasoning that most
+    // documents have no generated lists and should not pay for a scan. That
+    // stopped being true when this walk grew to cover the everyday commands
+    // — ellipses, dates, definitions, notes — which nearly every document
+    // has.
+    //
+    // The old shape had a worse failure than a wasted scan: a command the
+    // list had not been updated for was never drawn, silently, and only in
+    // documents that had nothing else from the list.
+    expect(hasGenerated("Just prose, and a \\emph{little} markup.")).toBe(true);
+    expect(hasGenerated("Prose with no commands at all.")).toBe(false);
     expect(hasGenerated(body)).toBe(true);
   });
 });
