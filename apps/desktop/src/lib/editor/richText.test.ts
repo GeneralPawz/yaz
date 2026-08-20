@@ -590,3 +590,51 @@ describe("the parts LaTeX generates", () => {
     expect(visible(view)).toContain("\\" + "addcontentsline");
   });
 });
+
+describe("the front and back matter, opened", () => {
+  const doc = [
+    "\\" + "documentclass{article}",
+    "\\" + "usepackage{amsmath}",
+    "\\" + "begin{document}",
+    "Der Text selbst.",
+    "\\" + "end{document}",
+  ].join("\n");
+
+  /** Every line the band covers, as the DOM has them. */
+  function banded(view: EditorView): string[] {
+    return [...view.contentDOM.querySelectorAll(".cm-yaz-matter")].map(
+      (line) => line.textContent ?? "",
+    );
+  }
+
+  it("is one row while it is closed", () => {
+    // Closed, there is nothing to band: the mark is the whole of it.
+    expect(banded(mount(doc))).toEqual([]);
+  });
+
+  it("bands every line of it once opened", () => {
+    const view = mount(doc);
+    view.dispatch({ effects: setWrapperCollapsed.of(false) });
+    const rows = banded(view);
+    expect(rows.some((row) => row.includes("documentclass"))).toBe(true);
+    expect(rows.some((row) => row.includes("usepackage"))).toBe(true);
+    expect(rows.some((row) => row.includes("begin{document}"))).toBe(true);
+  });
+
+  it("bands the closing line too", () => {
+    const view = mount(doc);
+    view.dispatch({ effects: setWrapperCollapsed.of(false) });
+    expect(banded(view).some((row) => row.includes("end{document}"))).toBe(
+      true,
+    );
+  });
+
+  it("leaves the text alone", () => {
+    // The band is the machinery around the document, not the document.
+    const view = mount(doc);
+    view.dispatch({ effects: setWrapperCollapsed.of(false) });
+    expect(banded(view).some((row) => row.includes("Der Text selbst"))).toBe(
+      false,
+    );
+  });
+});

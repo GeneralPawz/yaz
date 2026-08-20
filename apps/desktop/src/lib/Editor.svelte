@@ -460,6 +460,9 @@
     block-size: 100%;
     inline-size: 100%;
     overflow: hidden;
+    /* What a page leaves around its text, and what the band undoes to reach
+       the paper's edge. */
+    --yaz-page-margin: 25mm;
   }
 
   /* Zoom applies whether or not the page is showing: someone reading a long
@@ -492,8 +495,10 @@
     min-block-size: calc(var(--yaz-page-height) * var(--yaz-zoom, 1));
     box-sizing: border-box;
     /* A typical one-inch margin, so the measure on screen is close to the
-       measure on paper. */
-    padding: 25mm 25mm;
+       measure on paper. A custom property rather than a literal, because the
+       front-matter band has to undo exactly this much to reach the page edge
+       and two numbers that must agree should be one number. */
+    padding: var(--yaz-page-margin) var(--yaz-page-margin);
     margin-block: var(--yaz-space-4);
     background: var(--yaz-bg-primary);
     box-shadow: 0 2px 12px var(--yaz-pdf-page-shadow);
@@ -502,5 +507,24 @@
   .editor.paged :global(.cm-gutters) {
     background: transparent;
     border: none;
+  }
+
+  /* The front and back matter, as a band the width of the paper.
+
+     On paper this material is not part of the document at all — it is what
+     produces the document — so in the view that shows the paper it is drawn
+     as a strip across it rather than as text set in the measure. One row when
+     it is closed, a band of rows when it is opened. */
+  .editor.paged :global(.cm-yaz-boundary),
+  .editor.paged :global(.cm-yaz-matter) {
+    margin-inline: calc(var(--yaz-page-margin) * -1);
+    padding-inline: var(--yaz-page-margin);
+    background: var(--yaz-bg-tertiary);
+  }
+
+  .editor.paged :global(.cm-yaz-boundary) {
+    /* Full strength here: on the page it is a band and not an ornament
+       floating in the margin, so half-hiding it would read as a mistake. */
+    opacity: 1;
   }
 </style>

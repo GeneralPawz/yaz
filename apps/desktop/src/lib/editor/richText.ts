@@ -668,6 +668,10 @@ function boundaries(pass: Pass): void {
         side: -1,
       }).range(found.start.from),
     );
+    // The opened matter is banded, so the mark reads as the head of a region
+    // rather than as a rule with configuration loose underneath it. One row
+    // closed, a band of rows open — the same thing either way.
+    band(pass, found.start.from, found.start.to, "front");
     if (found.end) {
       pass.ranges.push(
         Decoration.widget({
@@ -676,6 +680,7 @@ function boundaries(pass: Pass): void {
           side: 1,
         }).range(pass.state.doc.length),
       );
+      band(pass, found.end.from, found.end.to, "back");
     }
     return;
   }
@@ -740,6 +745,40 @@ function generated(pass: Pass): void {
       continue;
     }
     replace(pass, command.from, command.to);
+  }
+}
+
+/**
+ * Mark every line of the opened front or back matter.
+ *
+ * A line decoration per line rather than one range: CodeMirror styles lines,
+ * and a preamble is a handful of them. The band is what makes the region read
+ * as one thing when it is open — in the page view it runs the full width of
+ * the paper, which is where the difference between the document and the
+ * machinery around it is worth drawing.
+ */
+function band(
+  pass: Pass,
+  from: number,
+  to: number,
+  place: "front" | "back",
+): void {
+  const doc = pass.state.doc;
+  const last = doc.lineAt(Math.min(to, doc.length)).number;
+  // The closing range starts at the line break *before* it, so that collapsing
+  // takes the blank line with it. That offset still belongs to the line above,
+  // which is the author's last paragraph — start below it.
+  const opening = doc.lineAt(from);
+  const first =
+    from >= opening.to
+      ? Math.min(opening.number + 1, doc.lines)
+      : opening.number;
+  for (let number = first; number <= last; number += 1) {
+    pass.ranges.push(
+      Decoration.line({
+        class: `cm-yaz-matter cm-yaz-matter-${place}`,
+      }).range(doc.line(number).from),
+    );
   }
 }
 
@@ -1460,6 +1499,11 @@ const theme = EditorView.baseTheme({
   ".cm-yaz-boundary:hover, .cm-yaz-boundary:focus-visible": {
     opacity: "1",
     color: "var(--yaz-text-secondary)",
+  },
+  // The band itself. Quiet by default and unmistakable in the page view,
+  // where it runs the full width of the paper.
+  ".cm-yaz-matter": {
+    background: "var(--yaz-bg-secondary)",
   },
   ".cm-yaz-boundary-glyph": {
     fontSize: "1.15em",
