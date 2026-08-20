@@ -889,3 +889,72 @@ describe("a title page", () => {
     expect(shown).toContain("vspace");
   });
 });
+
+describe("a figure", () => {
+  const doc = [
+    "BSLdocumentclass{report}",
+    "BSLbegin{document}",
+    "BSLchapter{Grundlagen}",
+    "Ein Satz zum Anhalten des Cursors.",
+    "BSLbegin{figure}[H]",
+    "  BSLcentering",
+    "  BSLincludegraphics[width=0.9BSLlinewidth]{images/ablauf}",
+    "  BSLcaption{Flussdiagramm des Gesamtablaufs}",
+    "  BSLlabel{fig:ablauf}",
+    "BSLend{figure}",
+    "BSLend{document}",
+  ]
+    .map((line) => line.split("BSL").join(B))
+    .join("\n");
+
+  function reading(): EditorView {
+    const view = mount(doc);
+    caret(view, doc.indexOf("Ein Satz") + 4);
+    return view;
+  }
+
+  it("draws it as one block, not as its commands", () => {
+    const view = reading();
+    expect(view.contentDOM.querySelector(".cm-yaz-figure")).not.toBeNull();
+    expect(visible(view)).not.toContain("includegraphics");
+  });
+
+  it("names the file it could not read", () => {
+    // No resolver in a test, and none on a document whose image is missing —
+    // both should show the path, which is what the author needs to see.
+    expect(visible(reading())).toContain("images/ablauf");
+  });
+
+  it("numbers the caption the way LaTeX will", () => {
+    // The same number every reference to it shows, because both come from the
+    // same count.
+    expect(visible(reading())).toContain("Figure 1.1");
+    expect(visible(reading())).toContain("Flussdiagramm des Gesamtablaufs");
+  });
+
+  it("gives the source back when the caret arrives", () => {
+    const view = mount(doc);
+    caret(view, doc.indexOf("includegraphics"));
+    expect(visible(view)).toContain("includegraphics");
+  });
+
+  it("leaves the buffer exactly as it was", () => {
+    expect(reading().state.doc.toString()).toBe(doc);
+  });
+
+  it("leaves a figure with no image alone", () => {
+    // Nothing to draw, so drawing a frame around the words would be worse than
+    // showing them.
+    const wordy = [
+      "BSLbegin{figure}",
+      "BSLcaption{Nur eine Unterschrift}",
+      "BSLend{figure}",
+      "Ein Satz.",
+    ]
+      .map((line) => line.split("BSL").join(B))
+      .join("\n");
+    const view = mount(wordy);
+    caret(view, wordy.indexOf("Ein Satz") + 4);
+    expect(view.contentDOM.querySelector(".cm-yaz-figure")).toBeNull();
+  });
+});

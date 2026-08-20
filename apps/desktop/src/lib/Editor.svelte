@@ -38,6 +38,7 @@
     setRichText,
     setShowComments,
   } from "./editor/richText";
+  import { imageSource } from "./editor/semanticView";
   import { changesIn, setSegments, stitched } from "./editor/stitched";
   import type { Change, Segment } from "./editor/stitch";
   import { includeLinks } from "./editor/includeLinks";
@@ -154,6 +155,14 @@
      * and the editor does not know which file that is.
      */
     onOpenInclude?: ((argument: string) => void) | undefined;
+    /**
+     * Turn a figure's path into something an `<img>` can show.
+     *
+     * Passed in because reading a file is the shell's business and not the
+     * editor's — the capability check lives in the Rust process (ADR-0006), and
+     * an editor that reached for the filesystem would be going round it.
+     */
+    resolveImage?: ((path: string) => Promise<string | null>) | undefined;
     /** Caret moved, as an offset into the source. */
     onCursor?: ((offset: number) => void) | undefined;
     /**
@@ -184,6 +193,7 @@
     justified = true,
     shortcuts,
     segments = null,
+    resolveImage,
     onRefused,
     onOpenInclude,
     onCursor,
@@ -334,6 +344,9 @@
         ...completionKeymap.filter((binding) => binding.key !== "Mod-Space"),
         ...searchKeymap,
       ]),
+      // A figure's image, when the shell can supply one. Constant for the life
+      // of the view: the resolver is a function, not a value that changes.
+      imageSource.of((path) => resolveImage?.(path) ?? Promise.resolve(null)),
       pagination(),
       pageCompartment.of([
         paginated.of(false),

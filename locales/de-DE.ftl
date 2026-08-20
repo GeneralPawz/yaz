@@ -564,3 +564,5 @@ reference-undefined = In diesem Dokument ist nichts mit { $key } bezeichnet.
 citation-unknown = { $key } steht nicht in der eingelesenen Literaturliste.
 glossary-unknown = { $key } ist im Glossar nicht definiert.
 heading-label = Bezeichnet mit { $label }
+figure-caption-figure = Abbildung { $number }
+figure-caption-table = Tabelle { $number }

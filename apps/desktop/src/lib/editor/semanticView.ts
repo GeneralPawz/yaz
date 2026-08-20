@@ -25,6 +25,7 @@ import { drawable, replace } from "./pass";
 import type { Pass } from "./pass";
 import {
   SEMANTIC_COMMANDS,
+  includedGraphics,
   labelledMarker,
   listOptions,
   metadataUses,
@@ -69,6 +70,21 @@ export const bibliography = Facet.define<
   ReadonlyMap<string, BibEntry>
 >({
   combine: (values) => values[0] ?? new Map(),
+});
+
+/**
+ * How to turn a figure's path into something an `<img>` can show.
+ *
+ * A facet, because the answer needs the filesystem and this module must not:
+ * the shell reads the bytes through the capability-checked command and hands
+ * back a URL. Absent, a figure is drawn as a frame naming its file, which is
+ * what a figure whose image cannot be read should look like anyway.
+ */
+export const imageSource = Facet.define<
+  (path: string) => Promise<string | null>,
+  ((path: string) => Promise<string | null>) | null
+>({
+  combine: (values) => values[0] ?? null,
 });
 
 /** What to do when a citation is clicked, since its entry is in another file. */
@@ -317,6 +333,72 @@ class SpaceWidget extends WidgetType {
   }
 }
 
+/**
+ * A figure, drawn as a figure.
+ *
+ * The image where it can be read, a frame naming the file where it cannot, and
+ * the caption beneath — numbered the way LaTeX numbers it, so the number here
+ * and the number every `\ref` to it shows are the same number.
+ *
+ * The image loads after the widget is on screen. A decoration is built
+ * synchronously on the keystroke path and reading a file is not synchronous, so
+ * the frame appears first and the picture arrives into it.
+ */
+class FigureWidget extends WidgetType {
+  constructor(
+    readonly path: string,
+    readonly caption: string,
+    readonly number: string,
+    readonly kind: "figure" | "table",
+    readonly resolve: ((path: string) => Promise<string | null>) | null,
+  ) {
+    super();
+  }
+
+  override eq(other: FigureWidget): boolean {
+    return (
+      other.path === this.path &&
+      other.caption === this.caption &&
+      other.number === this.number
+    );
+  }
+
+  override toDOM(): HTMLElement {
+    const box = document.createElement("div");
+    box.className = "cm-yaz-figure";
+
+    const frame = document.createElement("div");
+    frame.className = "cm-yaz-figure-frame";
+    frame.textContent = this.path;
+    box.append(frame);
+
+    if (this.resolve && this.path) {
+      void this.resolve(this.path).then((url) => {
+        if (!url) return;
+        const image = document.createElement("img");
+        image.className = "cm-yaz-figure-image";
+        image.src = url;
+        image.alt = this.caption;
+        frame.replaceWith(image);
+      });
+    }
+
+    if (this.caption) {
+      const caption = document.createElement("div");
+      caption.className = "cm-yaz-figure-caption";
+      const label = t(`figure-caption-${this.kind}`, { number: this.number });
+      caption.textContent = `${label}: ${this.caption}`;
+      box.append(caption);
+    }
+
+    return box;
+  }
+
+  override ignoreEvent(): boolean {
+    return false;
+  }
+}
+
 /** What the semantic pass worked out, for the passes that run after it. */
 export interface Meaning {
   /** The label each heading carries, by the heading's start offset. */
@@ -386,6 +468,10 @@ export function semanticMarkup(pass: Pass): Meaning {
   const books = pass.state.facet(bibliography);
   const follow = pass.state.facet(followCitation);
   const marks = quotationMarks(pass.text);
+
+  // Figures, drawn as figures. Before the labels and captions inside them are
+  // looked at on their own account, because the whole environment is claimed.
+  drawFigures(pass, floats, found.captions, targeted);
 
   // A label is folded into whatever it labels — the heading shows it on hover
   // — so nothing of it is left on screen.
@@ -570,6 +656,66 @@ export function semanticMarkup(pass: Pass): Meaning {
   return meaning;
 }
 
+/**
+ * Draw each figure as one block.
+ *
+ * Only figures: a table environment already has its contents drawn by the
+ * table pass, and replacing the whole thing would throw that away in exchange
+ * for a frame.
+ */
+function drawFigures(
+  pass: Pass,
+  floats: readonly {
+    name: string;
+    from: number;
+    to: number;
+    bodyFrom: number;
+    bodyTo: number;
+  }[],
+  captions: readonly Occurrence[],
+  targeted: ReadonlyMap<string, Target>,
+): void {
+  const resolve = pass.state.facet(imageSource);
+
+  for (const float of floats) {
+    if (!float.name.startsWith("figure") && float.name !== "wrapfigure") {
+      continue;
+    }
+    const graphics = includedGraphics(
+      pass.text.slice(float.bodyFrom, float.bodyTo),
+    );
+    if (graphics.length !== 1) continue;
+
+    const caption = captions.find(
+      (candidate) =>
+        candidate.from >= float.bodyFrom && candidate.to <= float.bodyTo,
+    );
+    // The number the figure will carry, found through whichever label names it
+    // — so the figure and every reference to it agree.
+    const number =
+      [...targeted.values()].find(
+        (target) =>
+          target.kind === "figure" &&
+          target.at >= float.bodyFrom &&
+          target.at <= float.bodyTo,
+      )?.number ?? "";
+
+    if (!drawable(pass, float.from, float.to)) continue;
+    replace(
+      pass,
+      float.from,
+      float.to,
+      new FigureWidget(
+        graphics[0]!.path,
+        caption ? pass.text.slice(caption.argFrom, caption.argTo) : "",
+        number,
+        "figure",
+        resolve,
+      ),
+    );
+  }
+}
+
 /** Re-exported so `richText` can draw a marker without importing semantics. */
 export { labelledMarker };
 
@@ -618,6 +764,36 @@ export const semanticTheme = EditorView.baseTheme({
     textDecoration: "underline",
     textDecorationStyle: "wavy",
     textUnderlineOffset: "0.2em",
+  },
+  ".cm-yaz-figure": {
+    display: "block",
+    textAlign: "center",
+    margin: "var(--yaz-space-4) auto",
+  },
+  ".cm-yaz-figure-image": {
+    maxInlineSize: "100%",
+    blockSize: "auto",
+    borderRadius: "var(--yaz-radius-sm)",
+  },
+  // What is drawn until the image arrives, and what stays if it never does.
+  ".cm-yaz-figure-frame": {
+    display: "grid",
+    placeItems: "center",
+    minBlockSize: "6em",
+    padding: "var(--yaz-space-4)",
+    border: "1px dashed var(--yaz-border)",
+    borderRadius: "var(--yaz-radius-md)",
+    color: "var(--yaz-text-muted)",
+    fontFamily: "var(--yaz-font-mono)",
+    fontSize: "0.85em",
+    wordBreak: "break-all",
+  },
+  ".cm-yaz-figure-caption": {
+    marginBlockStart: "var(--yaz-space-2)",
+    fontFamily: "var(--yaz-font-sans)",
+    fontSize: "0.9em",
+    color: "var(--yaz-text-secondary)",
+    textAlign: "center",
   },
   ".cm-yaz-quote-mark": { color: "var(--yaz-text-secondary)" },
   // A declaration's size is inline style rather than a class: there are ten of

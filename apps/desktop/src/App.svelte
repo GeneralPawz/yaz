@@ -1903,6 +1903,59 @@
     return null;
   }
 
+  /**
+   * Figure images, as object URLs, by the path the document names.
+   *
+   * Cached because a decoration is rebuilt on every keystroke and each rebuild
+   * asks for its image again — reading the file each time would put a
+   * filesystem round trip on the keystroke path, which ADR-0015 does not allow.
+   * Bounded by the number of figures in the document, which is a number the
+   * author controls and is never large.
+   */
+  const figureUrls = new Map<string, Promise<string | null>>();
+
+  /**
+   * The extensions a figure's path may be missing.
+   *
+   * LaTeX lets `\includegraphics{logo}` find `logo.png`, so the same list is
+   * tried here — and PDF and EPS figures are left out, because a browser cannot
+   * show them and a broken image is worse than a frame with a name in it.
+   */
+  const FIGURE_EXTENSIONS = ["", ".png", ".jpg", ".jpeg", ".gif", ".webp"];
+
+  /** Turn a figure's path into a URL, or null when nothing can be read. */
+  function resolveImage(path: string): Promise<string | null> {
+    const known = figureUrls.get(path);
+    if (known) return known;
+
+    const loading = (async () => {
+      if (!project) return null;
+      // Relative to the file that names it, which joined is whichever file the
+      // caret is in — the same rule an `\include` follows.
+      const from = joined
+        ? (locateJoined(cursor)?.file ?? project.entry)
+        : (currentFile ?? project.entry);
+      const directory = from.includes("/")
+        ? from.slice(0, from.lastIndexOf("/"))
+        : "";
+
+      for (const extension of FIGURE_EXTENSIONS) {
+        const candidate = `${directory ? `${directory}/` : ""}${path}${extension}`;
+        try {
+          const bytes = await ipc.readProjectBytes(project.root, candidate);
+          return URL.createObjectURL(new Blob([bytes as BlobPart]));
+        } catch {
+          // The next extension, or none of them — a figure whose file is not
+          // there is drawn as its name, which is what the author needs to see.
+        }
+      }
+      return null;
+    })();
+
+    figureUrls.set(path, loading);
+    return loading;
+  }
+
   /** Whether a path names a PDF, which the viewer shows rather than the editor. */
   function isPdf(path: string): boolean {
     return path.toLowerCase().endsWith(".pdf");
@@ -2049,6 +2102,7 @@
         {comments}
         {paperLight}
         {justified}
+        {resolveImage}
         onCursor={(offset) => (cursor = offset)}
         onReady={(api) => {
           editorApi = api;

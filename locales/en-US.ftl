@@ -563,3 +563,5 @@ reference-undefined = Nothing in this document is labelled { $key }.
 citation-unknown = { $key } is not in the bibliography that has been read.
 glossary-unknown = { $key } is not defined in the glossary.
 heading-label = Labelled { $label }
+figure-caption-figure = Figure { $number }
+figure-caption-table = Table { $number }
