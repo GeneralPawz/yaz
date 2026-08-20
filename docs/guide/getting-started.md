@@ -19,7 +19,7 @@ pnpm dev
 `pnpm app:build` produces a release binary and an installer.
 
 ::: danger Do not use `cargo build --release`
-It produces a binary whose window shows the webview's *"cannot reach this page"*
+It produces a binary whose window shows the webview's _"cannot reach this page"_
 error, and nothing in that message suggests a build problem.
 
 `tauri-build` distinguishes development from production using environment the
@@ -49,7 +49,7 @@ error messages never mention ARM64 — are in
    undo history or cursor.
 4. **Compile.** The PDF appears beside your source.
 
-A compile can produce both errors *and* a usable PDF — that is normal LaTeX
+A compile can produce both errors _and_ a usable PDF — that is normal LaTeX
 behaviour, so success is reported from whether a document actually appeared, not
 from the compiler's exit status.
 

@@ -10,7 +10,7 @@ I do this), **plugin authors** (what exactly does this API do and what does it
 guarantee), and **contributors** (how is this built and why).
 
 The requirement is that the project be self-documenting as far as possible, so
-that publishing to GitHub Pages is cheap. The word that matters is *possible* —
+that publishing to GitHub Pages is cheap. The word that matters is _possible_ —
 hand-written prose cannot be generated, and generated API dumps are not a user
 manual. The distinction worth drawing is between documentation that **restates
 facts already in the code**, which must be generated because hand-maintained
@@ -30,18 +30,18 @@ explanatory is written by hand.**
 
 ### Generated — never hand-written
 
-| Content | Source |
-| --- | --- |
-| Command reference | The command registry, dumped to JSON at build |
-| Settings reference | The settings schema, including defaults and types |
-| Keyboard shortcut reference | The default keymap, per platform |
-| Capability reference | The capability enum in `yaz-plugin` |
-| Plugin API reference | TypeDoc over `@yaz/api` |
-| Rust internals reference | `cargo doc` over the workspace, published under `/rust/` |
-| Theme token reference | The CSS custom property contract |
-| Supported platform matrix | The CI build matrix |
-| Changelog | release-please ([0012](0012-versioning-and-changelog.md)) |
-| Performance trends | Benchmark results ([0015](0015-performance-budgets.md)) |
+| Content                     | Source                                                    |
+| --------------------------- | --------------------------------------------------------- |
+| Command reference           | The command registry, dumped to JSON at build             |
+| Settings reference          | The settings schema, including defaults and types         |
+| Keyboard shortcut reference | The default keymap, per platform                          |
+| Capability reference        | The capability enum in `yaz-plugin`                       |
+| Plugin API reference        | TypeDoc over `@yaz/api`                                   |
+| Rust internals reference    | `cargo doc` over the workspace, published under `/rust/`  |
+| Theme token reference       | The CSS custom property contract                          |
+| Supported platform matrix   | The CI build matrix                                       |
+| Changelog                   | release-please ([0012](0012-versioning-and-changelog.md)) |
+| Performance trends          | Benchmark results ([0015](0015-performance-budgets.md))   |
 
 The mechanism: the application exposes a `--dump-docs` mode emitting its
 registries as JSON, and the docs build consumes it. The registries already exist

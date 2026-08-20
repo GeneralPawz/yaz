@@ -24,12 +24,21 @@ function adrSidebar() {
     .map((file) => {
       const text = readFileSync(join(docsRoot, "adr", file), "utf8");
       const heading = /^#\s*(.+)$/m.exec(text)?.[1] ?? file;
-      const status = /^-\s*\*\*Status:\*\*\s*(.+)$/m.exec(text)?.[1]?.replace(/\*/g, "").trim();
+      const status = /^-\s*\*\*Status:\*\*\s*(.+)$/m
+        .exec(text)?.[1]
+        ?.replace(/\*/g, "")
+        .trim();
 
       // "0004 — Editor core: …" reduced to a sidebar-sized label.
-      const [, number, title] = /^(\d{4})\s*[—-]\s*(.+)$/.exec(heading) ?? [, "", heading];
+      const [, number, title] = /^(\d{4})\s*[—-]\s*(.+)$/.exec(heading) ?? [
+        ,
+        "",
+        heading,
+      ];
       const suffix =
-        status && status !== "Accepted" ? ` (${status.split(" ")[0].toLowerCase()})` : "";
+        status && status !== "Accepted"
+          ? ` (${status.split(" ")[0].toLowerCase()})`
+          : "";
 
       return {
         text: `${number} · ${title}${suffix}`,
@@ -111,7 +120,9 @@ export default defineConfig({
       ],
     },
 
-    socialLinks: [{ icon: "github", link: "https://github.com/GeneralPawz/yaz" }],
+    socialLinks: [
+      { icon: "github", link: "https://github.com/GeneralPawz/yaz" },
+    ],
 
     footer: {
       message:

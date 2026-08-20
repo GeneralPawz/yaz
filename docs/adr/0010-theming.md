@@ -101,7 +101,7 @@ that makes that acceptable. It also produced two bundled themes, `yaz-light` and
 having them as separate entries meant "choose a theme" and "choose light or
 dark" were the same control wearing two hats.
 
-**A theme now provides light *and* dark, always.** One `theme.css` with a block
+**A theme now provides light _and_ dark, always.** One `theme.css` with a block
 per mode, selected by `data-yaz-mode` on the root; `manifest.json` declares
 `"modes": ["light", "dark"]` and a manifest claiming fewer is refused at install
 rather than half-applied. Choosing a theme and choosing a mode are independent,

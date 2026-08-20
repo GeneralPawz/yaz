@@ -13,7 +13,7 @@ the first external author tries to use it.
 
 Obsidian's three-tier structure is the model worth copying, and the reason it
 works is not the tiers themselves — it is that first-party bundled features are
-built on the *same public API* that community authors get.
+built on the _same public API_ that community authors get.
 
 ## Decision
 
@@ -24,23 +24,23 @@ Three tiers, with a hard rule attached to the middle one.
 Non-negotiable. No plugin may replace it, and it is the substrate everything else
 is written against.
 
-| Area | Responsibility |
-| --- | --- |
-| Editor host | The CodeMirror instance, its extension registry, the buffer/document lifecycle |
-| Document & file I/O | Reading, writing, atomic saves, encoding detection, external-change reconciliation |
-| Project model | What a project is, its root, its file tree, its build entry points |
+| Area                  | Responsibility                                                                                               |
+| --------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Editor host           | The CodeMirror instance, its extension registry, the buffer/document lifecycle                               |
+| Document & file I/O   | Reading, writing, atomic saves, encoding detection, external-change reconciliation                           |
+| Project model         | What a project is, its root, its file tree, its build entry points                                           |
 | Compile orchestration | Engine abstraction, invocation, log parsing, artefact management ([0007](0007-latex-compilation-engines.md)) |
-| PDF host | The viewer surface and page lifecycle |
-| Plugin runtime | Loading, lifecycle, capability broker, permission grants ([0006](0006-plugin-runtime-and-capabilities.md)) |
-| Settings store | Schema, persistence, migration, the settings UI host |
-| Theme engine | CSS custom property contract, theme loading and hot reload ([0010](0010-theming.md)) |
-| i18n runtime | Catalogue loading, message resolution, locale fallback ([0011](0011-localisation.md)) |
-| Command registry | Named commands, the palette, and the keymap layer including the Vim host |
-| Workspace | Pane layout, tabs, split views, view registration |
-| Updater | Application and plugin updates ([0013](0013-update-distribution.md)) |
+| PDF host              | The viewer surface and page lifecycle                                                                        |
+| Plugin runtime        | Loading, lifecycle, capability broker, permission grants ([0006](0006-plugin-runtime-and-capabilities.md))   |
+| Settings store        | Schema, persistence, migration, the settings UI host                                                         |
+| Theme engine          | CSS custom property contract, theme loading and hot reload ([0010](0010-theming.md))                         |
+| i18n runtime          | Catalogue loading, message resolution, locale fallback ([0011](0011-localisation.md))                        |
+| Command registry      | Named commands, the palette, and the keymap layer including the Vim host                                     |
+| Workspace             | Pane layout, tabs, split views, view registration                                                            |
+| Updater               | Application and plugin updates ([0013](0013-update-distribution.md))                                         |
 
-The test for core membership: *would the application be incoherent without it, or
-does more than one plugin need to depend on it?*
+The test for core membership: _would the application be incoherent without it, or
+does more than one plugin need to depend on it?_
 
 ### Tier 2 — Core plugins
 
@@ -48,26 +48,26 @@ Bundled with the application, enabled by default or opt-in, maintained by us,
 individually toggleable — **and written strictly against the public plugin API,
 with no privileged access whatsoever.**
 
-| Core plugin | Notes |
-| --- | --- |
-| `vim` | Vim keybindings, on the core keymap API |
-| `zotero` | Library search, citation insertion, `.bib` sync ([0008](0008-zotero-integration.md)) |
-| `obsidian` | Vault browsing, Markdown → LaTeX ([0009](0009-obsidian-integration.md)) |
-| `bibliography` | `.bib` management, deduplication, key hygiene |
-| `outline` | Document structure navigator |
-| `templates` | Import and manage journal/conference templates |
-| `git` | Version history, diff, commit |
-| `synctex` | Forward and inverse search between source and PDF |
-| `spellcheck` | Dictionaries and LanguageTool integration |
-| `tables` | Table editing affordances in visual mode |
-| `figures` | Asset import, placement, and management |
-| `export` | DOCX/HTML/Markdown export |
-| `snippets` | Symbol palette, snippet expansion |
-| `stats` | Word count, readability, progress tracking |
+| Core plugin    | Notes                                                                                |
+| -------------- | ------------------------------------------------------------------------------------ |
+| `vim`          | Vim keybindings, on the core keymap API                                              |
+| `zotero`       | Library search, citation insertion, `.bib` sync ([0008](0008-zotero-integration.md)) |
+| `obsidian`     | Vault browsing, Markdown → LaTeX ([0009](0009-obsidian-integration.md))              |
+| `bibliography` | `.bib` management, deduplication, key hygiene                                        |
+| `outline`      | Document structure navigator                                                         |
+| `templates`    | Import and manage journal/conference templates                                       |
+| `git`          | Version history, diff, commit                                                        |
+| `synctex`      | Forward and inverse search between source and PDF                                    |
+| `spellcheck`   | Dictionaries and LanguageTool integration                                            |
+| `tables`       | Table editing affordances in visual mode                                             |
+| `figures`      | Asset import, placement, and management                                              |
+| `export`       | DOCX/HTML/Markdown export                                                            |
+| `snippets`     | Symbol palette, snippet expansion                                                    |
+| `stats`        | Word count, readability, progress tracking                                           |
 
 **The rule: a core plugin that needs an API which does not exist yet gets the API
 added to core as public API — never a private back door.** This is the entire
-point of the tier. Shipping the Zotero bridge and Vim as core *plugins* means the
+point of the tier. Shipping the Zotero bridge and Vim as core _plugins_ means the
 plugin API is exercised by demanding, real features from month one, and its
 inadequacies surface to us before they surface to an external author.
 
@@ -86,7 +86,7 @@ separate `yaz-releases` index repository. Identical API to tier 2.
 - Core plugins must be lazily loaded and must not be assumed present by other
   code, since any of them may be off.
 - We are constrained in a way that costs real time: when a core plugin needs
-  something, we must design a *general* API rather than the narrow thing that
+  something, we must design a _general_ API rather than the narrow thing that
   would have unblocked us. This is the price of the tier and we pay it
   deliberately.
 - Moving a feature between tiers later is a breaking change for anyone depending

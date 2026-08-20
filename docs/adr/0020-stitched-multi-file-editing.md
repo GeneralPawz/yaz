@@ -7,9 +7,9 @@
 
 ## Context
 
-[ADR-0004](0004-editor-core-codemirror-single-buffer.md) says: *one CodeMirror
+[ADR-0004](0004-editor-core-codemirror-single-buffer.md) says: _one CodeMirror
 instance holding the `.tex` source text, always; the buffer content is the file
-content, byte for byte.* Everything good about the editor follows from it — Vim
+content, byte for byte._ Everything good about the editor follows from it — Vim
 works in both views because there is one keymap over one document, undo is one
 stack, and round-trip loss is impossible rather than merely unlikely.
 
@@ -25,8 +25,8 @@ Every one of those questions has an answer the editor could give and did not.
 
 The obvious cheap answer is a read-only preview: render an `\include` as the
 file's text, clearly marked, and open the real file to edit it. That is honest
-and it is not what anyone wants — it gives the *reading* experience of one
-document while leaving the *writing* experience as seven files, and writing is
+and it is not what anyone wants — it gives the _reading_ experience of one
+document while leaving the _writing_ experience as seven files, and writing is
 what an editor is for.
 
 What makes the real thing hard is that ADR-0004's guarantee is exactly what
@@ -47,7 +47,7 @@ stops being true the moment a character is typed.
 A document whose root pulls in other files opens stitched; one that does not
 opens as itself. Either can be switched from View at any time.
 
-> **Amended.** This was first decided as *off by default for everyone*, on the
+> **Amended.** This was first decided as _off by default for everyone_, on the
 > reasoning that a single-file document should not pay for machinery it does
 > not need. Using it against a real thesis showed the reasoning was answering
 > the wrong question. The cost was never the issue — the root of a multi-file
@@ -56,12 +56,12 @@ opens as itself. Either can be switched from View at any time.
 > parts, with an empty contents page and an empty glossary, and it looks like a
 > broken editor rather than like a document that has not been joined.
 >
-> Making the *document* decide costs a single-file document nothing, because
+> Making the _document_ decide costs a single-file document nothing, because
 > the condition is never true for one. What is preserved is the thing worth
 > preserving: where the buffer can be one file, it is one file.
 
-ADR-0004's rule is therefore narrowed rather than abandoned: *one buffer,
-always* stands; *the buffer is one file* holds in single-file mode and is
+ADR-0004's rule is therefore narrowed rather than abandoned: _one buffer,
+always_ stands; _the buffer is one file_ holds in single-file mode and is
 replaced in stitched mode by **the buffer is a stitching of files, and every
 offset in it belongs to exactly one of them.**
 
@@ -150,7 +150,7 @@ same refusal as a seam-spanning edit, for the same reason.
 Everything on the keystroke path — decorations, the word count, the outline —
 already scales linearly with the buffer and is measured against a hundred-page
 manuscript ([0015](0015-performance-budgets.md)). Stitched mode makes the
-hundred-page case the *normal* case rather than the pathological one, which is
+hundred-page case the _normal_ case rather than the pathological one, which is
 an argument for keeping those budgets honest rather than against the feature.
 
 **Two modes is two code paths**, and the second one is only exercised when
@@ -162,14 +162,14 @@ only by driving the editor.
 correct and would put the whole document on the keystroke path, which
 [0015](0015-performance-budgets.md) does not allow. Instead a change lengthens
 the segment it lands in and shifts everything after it — two shifts, because a
-segment's offset *within its file* moves only by the changes before it in that
+segment's offset _within its file_ moves only by the changes before it in that
 same file. The property test for it is that moving the map and re-stitching
 agree, checked edit by edit against a real thesis rather than a fixture.
 
 **The map lives in the editor, not in the shell.** An edit has to be judged
 before it applies, and a map held outside CodeMirror arrives a frame late —
 which is after the character is already in the wrong file. So the map is a
-`StateField`, a transaction filter reads it as it was *before* a change to
+`StateField`, a transaction filter reads it as it was _before_ a change to
 decide whether to allow it, and the shell keeps its own copy only to know which
 file to write to.
 

@@ -30,7 +30,9 @@
       "@codemirror/language": ["./node_modules/@codemirror/language"],
       "@codemirror/state": ["./node_modules/@codemirror/state"],
       "@codemirror/view": ["./node_modules/@codemirror/view"],
-      "@codemirror/legacy-modes/*": ["./node_modules/@codemirror/legacy-modes/*"],
+      "@codemirror/legacy-modes/*": [
+        "./node_modules/@codemirror/legacy-modes/*"
+      ],
       "modern-screenshot": ["./node_modules/modern-screenshot"]
     }
   },

@@ -27,12 +27,12 @@ Three distinct concerns pull differently:
 
 **Split licensing:**
 
-| Component | Licence | Reasoning |
-| --- | --- | --- |
-| `crates/`, `apps/`, `plugins/` | **AGPL-3.0-or-later** | Improvements to the application return to the project, including from anyone hosting it as a service |
-| `packages/api` (`@yaz/api`) | **MIT** | Plugin authors link against it and must be free to license their work as they choose, with no ambiguity |
-| `packages/plugin-template` | **MIT** | A starter template must not dictate the licence of what is built from it |
-| `docs/` | **CC BY-SA 4.0** | Prose, not code |
+| Component                      | Licence               | Reasoning                                                                                               |
+| ------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------- |
+| `crates/`, `apps/`, `plugins/` | **AGPL-3.0-or-later** | Improvements to the application return to the project, including from anyone hosting it as a service    |
+| `packages/api` (`@yaz/api`)    | **MIT**               | Plugin authors link against it and must be free to license their work as they choose, with no ambiguity |
+| `packages/plugin-template`     | **MIT**               | A starter template must not dictate the licence of what is built from it                                |
+| `docs/`                        | **CC BY-SA 4.0**      | Prose, not code                                                                                         |
 
 The AGPL network clause is doing real work here despite this being a desktop
 application: it is what prevents a hosted Overleaf-style competitor built on this
@@ -89,7 +89,7 @@ above retaining the ability to relicense or dual-licence later.
 - Anyone offering yaz as a network service must publish their modifications.
 - We ourselves cannot later relicense or dual-license commercially without
   contacting every contributor. **This forecloses a future commercial-licence
-  business model.** If that option matters, the decision must change *now*.
+  business model.** If that option matters, the decision must change _now_.
 - Some corporate environments restrict AGPL software, including on developer
   machines. This will cost some institutional users, and academic institutions
   vary in how strictly they apply such policies.

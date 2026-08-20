@@ -8,7 +8,7 @@
 ## Context
 
 [ADR-0005](0005-extensibility-tiers.md) put plugins in three tiers and made the
-first-party ones *structurally identical* to community ones, so that the plugin
+first-party ones _structurally identical_ to community ones, so that the plugin
 API is exercised by demanding real features before anyone outside meets it.
 Structurally identical has so far meant identical inside one repository, which
 tests the API and nothing else. It does not test that a plugin can be written,
@@ -35,7 +35,7 @@ in the application's tree as a submodule.**
 - They appear under `plugins/` in `texyaz/yaz` as git submodules, so the
   application's tree still shows what it bundles and a clone with
   `--recurse-submodules` still builds everything.
-- The submodule pin is the version the application *ships*. It is not the
+- The submodule pin is the version the application _ships_. It is not the
   version a user ends up with, because a plugin updates itself between
   application releases.
 
@@ -70,7 +70,7 @@ application being broken.
 ### What is bundled, and what that means
 
 The three plugins above ship enabled in a new installation. They are what the
-application is *for* — citing from Zotero, reading an Obsidian vault, opening
+application is _for_ — citing from Zotero, reading an Obsidian vault, opening
 the file formats a project is made of — and an editor that arrives unable to do
 any of it until the user finds a plugin list is an editor that arrives broken.
 

@@ -44,7 +44,7 @@ the parts not yet written — they are a plan as much as a history.
 
 ## Why the decisions are published
 
-A plugin author asking *why is the API shaped like this* should be able to read
+A plugin author asking _why is the API shaped like this_ should be able to read
 the answer rather than guess. So the reasoning is part of the documentation, not
 an internal artefact — including the decisions that turned out to be wrong and
 were superseded, and the measurements that contradicted our own estimates.

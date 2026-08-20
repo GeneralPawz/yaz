@@ -7,7 +7,7 @@
 
 [0002](0002-application-shell-tauri.md) puts the user interface in a webview. We
 need a component framework for the application shell — panes, sidebars, command
-palette, settings, dialogs. It is *not* responsible for the editor surface
+palette, settings, dialogs. It is _not_ responsible for the editor surface
 (CodeMirror owns its own DOM) or the PDF surface (pdf.js owns its canvas), both
 of which are framework-agnostic.
 

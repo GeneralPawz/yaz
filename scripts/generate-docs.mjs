@@ -66,14 +66,17 @@ function generateCapabilities(messages) {
   );
 
   // `Capability::Variant { .. } => "id",` inside fn id()
-  const ids = [...source.matchAll(/Capability::(\w+)\s*(?:\{[^}]*\})?\s*=>\s*"([^"]+)"/g)].map(
-    ([, variant, id]) => ({ variant, id }),
-  );
+  const ids = [
+    ...source.matchAll(/Capability::(\w+)\s*(?:\{[^}]*\})?\s*=>\s*"([^"]+)"/g),
+  ].map(([, variant, id]) => ({ variant, id }));
 
   // The `is_sensitive` body names the variants that warrant extra emphasis.
-  const sensitiveBlock = /fn is_sensitive[\s\S]*?matches!\(([\s\S]*?)\)\s*\}/.exec(source);
+  const sensitiveBlock =
+    /fn is_sensitive[\s\S]*?matches!\(([\s\S]*?)\)\s*\}/.exec(source);
   const sensitive = new Set(
-    sensitiveBlock ? [...sensitiveBlock[1].matchAll(/Capability::(\w+)/g)].map((m) => m[1]) : [],
+    sensitiveBlock
+      ? [...sensitiveBlock[1].matchAll(/Capability::(\w+)/g)].map((m) => m[1])
+      : [],
   );
 
   const rows = ids.map(({ variant, id }) => {
@@ -83,7 +86,10 @@ function generateCapabilities(messages) {
     // the actual host list in the install dialog. In a reference page there is
     // no plugin to fill them, so render what the placeholder stands for rather
     // than leaking the interpolation syntax.
-    const description = raw.replace(/\{\s*\$(\w+)\s*\}/g, (_, name) => `the ${name} it declares`);
+    const description = raw.replace(
+      /\{\s*\$(\w+)\s*\}/g,
+      (_, name) => `the ${name} it declares`,
+    );
     return `| \`${id}\` | ${description} | ${sensitive.has(variant) ? "yes" : "no"} |`;
   });
 
@@ -114,10 +120,13 @@ See [ADR-0006](/adr/0006-plugin-runtime-and-capabilities).
 
 /** The shipping platform matrix, read from the CI build matrix that proves it. */
 function generatePlatforms() {
-  const workflow = readFileSync(join(root, ".github", "workflows", "ci.yml"), "utf8");
-  const targets = [...workflow.matchAll(/- name:\s*(\S+)\s*\n\s*runner:\s*(\S+)/g)].map(
-    ([, name, runner]) => ({ name, runner }),
+  const workflow = readFileSync(
+    join(root, ".github", "workflows", "ci.yml"),
+    "utf8",
   );
+  const targets = [
+    ...workflow.matchAll(/- name:\s*(\S+)\s*\n\s*runner:\s*(\S+)/g),
+  ].map(([, name, runner]) => ({ name, runner }));
 
   const rows = targets.map(({ name, runner }) => {
     const [os, arch] = name.split("-");
@@ -154,7 +163,9 @@ function generateAdrIndex() {
     .map((file) => {
       const text = readFileSync(join(dir, file), "utf8");
       const title = /^#\s*(.+)$/m.exec(text)?.[1] ?? file;
-      const status = /^-\s*\*\*Status:\*\*\s*(.+)$/m.exec(text)?.[1]?.replace(/\*/g, "") ?? "?";
+      const status =
+        /^-\s*\*\*Status:\*\*\s*(.+)$/m.exec(text)?.[1]?.replace(/\*/g, "") ??
+        "?";
       return { slug: file.replace(/\.md$/, ""), title, status: status.trim() };
     });
 

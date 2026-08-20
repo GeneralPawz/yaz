@@ -1,0 +1,23 @@
+# The plugins are independent repositories (ADR-0021), present here as
+# submodules. Formatting them from the parent would rewrite somebody else's
+# repository as a side effect of running `pnpm format` here — and it would make
+# this repository's CI depend on the style of a repository it does not own.
+#
+# `plugins/README.md` is ours and is not ignored.
+plugins/*/
+
+# release-please writes these and owns their formatting. Prettier rewrites its
+# `*` bullets to `-` and drops its blank lines, so the two tools would undo each
+# other on every release.
+CHANGELOG.md
+**/CHANGELOG.md
+
+# Written by `scripts/generate-docs.mjs` from the ADRs and the manifest schema.
+# Its output is its own business, and formatting it here would mean every run of
+# the generator left the tree dirty.
+docs/reference/generated/
+
+# pnpm writes this one. It uses single quotes and prettier insists on double,
+# so the two would rewrite it past each other on every install — and a
+# reformatted lockfile is a diff nobody can read for a change nobody made.
+pnpm-lock.yaml

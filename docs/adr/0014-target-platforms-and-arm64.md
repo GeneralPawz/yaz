@@ -28,13 +28,13 @@ emulated fallback, ever.**
 
 ### Shipping matrix
 
-| Platform | Architecture | Status | Webview |
-| --- | --- | --- | --- |
-| Windows 10/11 | x86_64 | Tier 1 | WebView2 |
-| Windows 11 | aarch64 | **Tier 1** | WebView2 (native ARM64) |
-| Linux | x86_64 | Tier 1 | WebKitGTK |
-| Linux | aarch64 | **Tier 1** | WebKitGTK |
-| macOS | aarch64 / x86_64 | Planned | WKWebView |
+| Platform      | Architecture     | Status     | Webview                 |
+| ------------- | ---------------- | ---------- | ----------------------- |
+| Windows 10/11 | x86_64           | Tier 1     | WebView2                |
+| Windows 11    | aarch64          | **Tier 1** | WebView2 (native ARM64) |
+| Linux         | x86_64           | Tier 1     | WebKitGTK               |
+| Linux         | aarch64          | **Tier 1** | WebKitGTK               |
+| macOS         | aarch64 / x86_64 | Planned    | WKWebView               |
 
 Tier 1 means: built in CI, tested in CI, released together, and a break on any of
 them blocks the release. ARM64 is not a best-effort extra.

@@ -7,7 +7,7 @@ of what it asks for lives in [`docs/adr/`](docs/adr/).
 
 **Read the relevant ADR.** Most surprising things in this codebase are
 deliberate and recorded. If a change contradicts an accepted ADR, that is not
-automatically wrong — but it needs a *new ADR* superseding the old one, in the
+automatically wrong — but it needs a _new ADR_ superseding the old one, in the
 same pull request, rather than a quiet change.
 
 The ones worth knowing early:
@@ -29,16 +29,16 @@ contributor working only on Rust does not need a Node toolchain, and vice versa.
 These are not style preferences; each has an ADR behind it and each fails the
 build.
 
-| Rule | Why |
-| --- | --- |
-| **Conventional Commits** | Drives versioning and the changelog — [0012](docs/adr/0012-versioning-and-changelog.md) |
-| **No hardcoded user-facing strings** | Localisation is not retrofittable — [0011](docs/adr/0011-localisation.md) |
-| **No literal colours in components** | Themes work through tokens — [0010](docs/adr/0010-theming.md) |
-| **No `margin-left` etc.; use logical properties** | RTL layouts — [0011](docs/adr/0011-localisation.md) |
-| **`#![deny(missing_docs)]` on public Rust items** | The reference is generated — [0016](docs/adr/0016-documentation-strategy.md) |
-| **Plugins may not import internal frontend modules** | Keeps the plugin API honest — [0005](docs/adr/0005-extensibility-tiers.md) |
-| **Performance budgets** | A regression fails the PR — [0015](docs/adr/0015-performance-budgets.md) |
-| **Native ARM64 for every dependency** | No emulated fallbacks — [0014](docs/adr/0014-target-platforms-and-arm64.md) |
+| Rule                                                 | Why                                                                                     |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| **Conventional Commits**                             | Drives versioning and the changelog — [0012](docs/adr/0012-versioning-and-changelog.md) |
+| **No hardcoded user-facing strings**                 | Localisation is not retrofittable — [0011](docs/adr/0011-localisation.md)               |
+| **No literal colours in components**                 | Themes work through tokens — [0010](docs/adr/0010-theming.md)                           |
+| **No `margin-left` etc.; use logical properties**    | RTL layouts — [0011](docs/adr/0011-localisation.md)                                     |
+| **`#![deny(missing_docs)]` on public Rust items**    | The reference is generated — [0016](docs/adr/0016-documentation-strategy.md)            |
+| **Plugins may not import internal frontend modules** | Keeps the plugin API honest — [0005](docs/adr/0005-extensibility-tiers.md)              |
+| **Performance budgets**                              | A regression fails the PR — [0015](docs/adr/0015-performance-budgets.md)                |
+| **Native ARM64 for every dependency**                | No emulated fallbacks — [0014](docs/adr/0014-target-platforms-and-arm64.md)             |
 
 ## Commit messages
 

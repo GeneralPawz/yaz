@@ -22,16 +22,16 @@ request, on both architectures. Exceeding a budget fails the build.**
 
 ### Budgets (initial; revised only by amending this ADR)
 
-| Metric | Budget | Conditions |
-| --- | --- | --- |
-| Cold start to interactive | < 1000 ms | Release build, no project open |
-| Open a 50-file, 500-page project | < 2000 ms | Warm cache, to editable state |
-| Idle RSS | < 420 MB | Whole process tree, no project open |
-| RSS with 10 documents open | < 600 MB | Same project |
-| Keystroke to paint | < 16 ms (p99) | 5000-line document, visual mode on |
-| Mode toggle (source ↔ visual) | < 100 ms | 5000-line document |
-| Full-text project search | < 200 ms | 50-file project |
-| Installer size | < 40 MB | Per platform/architecture |
+| Metric                           | Budget        | Conditions                          |
+| -------------------------------- | ------------- | ----------------------------------- |
+| Cold start to interactive        | < 1000 ms     | Release build, no project open      |
+| Open a 50-file, 500-page project | < 2000 ms     | Warm cache, to editable state       |
+| Idle RSS                         | < 420 MB      | Whole process tree, no project open |
+| RSS with 10 documents open       | < 600 MB      | Same project                        |
+| Keystroke to paint               | < 16 ms (p99) | 5000-line document, visual mode on  |
+| Mode toggle (source ↔ visual)    | < 100 ms      | 5000-line document                  |
+| Full-text project search         | < 200 ms      | 50-file project                     |
+| Installer size                   | < 40 MB       | Per platform/architecture           |
 
 **Keystroke latency is the budget that matters most.** Everything else is
 noticed once per session; typing latency is noticed continuously, and it is the
@@ -45,14 +45,14 @@ The original idle budget was 150 MB, derived from the estimate in
 "roughly 60–120 MB RSS". **Measurement of a real window showed 384 MB** —
 production build, `aarch64-pc-windows-msvc`, idle with no project open:
 
-| Process | RSS |
-| --- | --- |
-| `yaz.exe` (the Rust core) | 28 MB |
-| 6 × `msedgewebview2.exe` | 356 MB |
-| **Total** | **384 MB** |
+| Process                   | RSS        |
+| ------------------------- | ---------- |
+| `yaz.exe` (the Rust core) | 28 MB      |
+| 6 × `msedgewebview2.exe`  | 356 MB     |
+| **Total**                 | **384 MB** |
 
 The first attempt at this measurement read 368 MB and was invalid: it was taken
-against a binary built with bare `cargo build --release`, which produces a *dev*
+against a binary built with bare `cargo build --release`, which produces a _dev_
 Tauri binary that never embeds the frontend, so the webview was rendering an
 error page rather than the application. Measure only what `pnpm app:build`
 produces, and confirm the binary is a production one before trusting a number
@@ -79,13 +79,13 @@ ceiling to be defended, not an allowance to spend.
 Rather than leave this as speculation, the obvious levers were tried. WebView2
 browser arguments, averaged over repeated runs on the same machine:
 
-| Configuration | Idle RSS |
-| --- | --- |
-| baseline | 363 MB |
-| `--js-flags="--max-old-space-size=128"` | 358 MB |
-| `--renderer-process-limit=1` | 362 MB |
-| `--disable-gpu` | 356 MB |
-| all three combined | 353 MB |
+| Configuration                           | Idle RSS |
+| --------------------------------------- | -------- |
+| baseline                                | 363 MB   |
+| `--js-flags="--max-old-space-size=128"` | 358 MB   |
+| `--renderer-process-limit=1`            | 362 MB   |
+| `--disable-gpu`                         | 356 MB   |
+| all three combined                      | 353 MB   |
 
 About 3%, and `--disable-gpu` trades rendering performance for it. Not worth
 taking.
@@ -103,7 +103,7 @@ Measured, that was wrong in a small but real way.
 Deferring CodeMirror and pdf.js until first use took idle RSS from **383.5 MB to
 365.1 MB — 18 MB, about 5%.** Which is consistent rather than surprising: the
 error-page binary showed the frontend costing ~16 MB in total, and lazy loading
-defers essentially all of it. The application now sits *at* the Chromium floor
+defers essentially all of it. The application now sits _at_ the Chromium floor
 rather than slightly above it.
 
 So the shape of the earlier claim held — no frontend work reclaims the ~350 MB
@@ -124,13 +124,13 @@ VS Code, not a native editor.
 
 ### Measured, 2026-08-14 — production build, Windows ARM64
 
-| Metric | Budget | Measured |
-| --- | --- | --- |
-| Time to interactive | < 1000 ms | **384 ms** median (was 464 ms before lazy loading) |
-| Idle RSS | < 420 MB | **365 MB** (was 384 MB before lazy loading) |
-| Initial JS bundle | — | **51 KB** (was 859 KB before lazy loading) |
-| Installer | < 40 MB | **2.8 MB** — or **13.8 MB** with the embedded engine |
-| Installed payload | — | **6.3 MB** — or **50.5 MB** with the embedded engine |
+| Metric              | Budget    | Measured                                             |
+| ------------------- | --------- | ---------------------------------------------------- |
+| Time to interactive | < 1000 ms | **384 ms** median (was 464 ms before lazy loading)   |
+| Idle RSS            | < 420 MB  | **365 MB** (was 384 MB before lazy loading)          |
+| Initial JS bundle   | —         | **51 KB** (was 859 KB before lazy loading)           |
+| Installer           | < 40 MB   | **2.8 MB** — or **13.8 MB** with the embedded engine |
+| Installed payload   | —         | **6.3 MB** — or **50.5 MB** with the embedded engine |
 
 The embedded LaTeX engine is by far the largest single thing yaz ships: it adds
 44 MB to the binary and 11 MB to the download
@@ -225,4 +225,4 @@ at. The forcing function is the point.
 **Adopt another editor's published numbers as targets.** Rejected as
 uncomparable — different architecture, different feature set, different measuring
 method. Our own fixtures and our own method, tracked over time, are what tell us
-whether *we* are getting worse.
+whether _we_ are getting worse.

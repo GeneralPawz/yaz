@@ -29,7 +29,7 @@ seriously:
   opt-in, or a document achieving code execution through a path we control.
 - **Data exfiltration** by a plugin without the `net` capability.
 
-## What is *not* a vulnerability
+## What is _not_ a vulnerability
 
 Stated plainly, because being vague here would be worse than being unwelcome:
 
@@ -45,7 +45,7 @@ community plugins and exists for opening untrusted projects.
 
 Also out of scope: issues requiring an already-compromised machine, and social
 engineering of users into installing a malicious plugin — though we do want to
-hear about anything that makes such a plugin's capabilities *misleading* in the
+hear about anything that makes such a plugin's capabilities _misleading_ in the
 install dialog, since that undermines the one defence the user has.
 
 ## Supported versions
