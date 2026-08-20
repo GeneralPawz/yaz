@@ -166,6 +166,64 @@ worked example. Its table is grouped one `const` per package, so the question
 anyone actually has — _why does yaz know this command?_ — is answered by
 reading one place.
 
+## Offering a tool to an agent
+
+yaz can be an MCP server, so an agent can drive it: open a project, read the
+outline, compile, say what broke. A plugin can add to what that agent can
+reach.
+
+Say so in the manifest first:
+
+```json
+"provides": {
+  "tools": [
+    { "name": "search-library", "descriptionKey": "zotero-tool-search" }
+  ]
+}
+```
+
+Then register it:
+
+```ts
+this.registerTool({
+  name: "search-library",
+  descriptionKey: "zotero-tool-search",
+  schema: {
+    type: "object",
+    properties: { query: { type: "string" } },
+    required: ["query"],
+  },
+  run: async ({ query }) => this.search(String(query)),
+});
+```
+
+**A tool the manifest does not declare is refused** — by the runtime, at the
+call site, so you find out while you are writing it; and by Rust, on the way to
+the server, because Rust is the one holding the manifest and the webview is not
+the security boundary ([ADR-0006](../adr/0006-plugin-runtime-and-capabilities.md)).
+
+The reason for the ceremony is that a tool is a **declaration, not a
+capability**. It can do nothing your plugin could not already do — it runs your
+code, inside your grants — so there is nothing for the broker to allow. What it
+_is_, is the answer to a question a registry has to be able to ask of a
+manifest without running anything: **what does this plugin add to yaz?** If the
+declaration could be skipped, the answer would be "install it and see"
+([ADR-0022](../adr/0022-mcp-and-tool-declaration.md)).
+
+Two smaller rules. The name is unqualified — yaz namespaces it by plugin, so
+two plugins may both provide `search` without knowing about each other. And
+throwing is how a tool reports failure: the message reaches the agent as an
+error, rather than as a result that happens to say "error".
+
+Calling _out_ to an MCP server is the other direction, and that one **is** a
+capability, because it reaches outside the process:
+
+```json
+"capabilities": [{ "kind": "mcp-client", "servers": ["reference-checker"] }]
+```
+
+Named servers, not "MCP" — for the same reason `net` names hosts.
+
 ## Publishing, and how updates reach people
 
 Put it in a repository, and say so in the manifest:
