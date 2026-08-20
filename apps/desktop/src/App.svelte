@@ -459,7 +459,7 @@
         return;
       }
       if (found.path !== currentFile) await openFile(found.path);
-      revealLine(found.line);
+      revealLine(found.line, found.path);
     } catch (error) {
       failure = String(error);
     }
@@ -472,8 +472,18 @@
    * views (ADR-0004), so counting line breaks in the text the shell already
    * holds gives the same answer the editor would.
    */
-  function revealLine(line: number) {
-    let start = 0;
+  function revealLine(line: number, file?: string) {
+    // Joined, a line number from elsewhere counts lines in *its own file* and
+    // the buffer holds all of them, so the file's own start has to be added
+    // back. Without this a click near the end of a chapter landed near the
+    // start of the document.
+    const base =
+      joined && file
+        ? ((liveSegments ?? []).find((segment) => segment.file === file)?.from ??
+          0)
+        : 0;
+
+    let start = base;
     for (let current = 1; current < line; current += 1) {
       const next = docText.indexOf("\n", start);
       if (next === -1) break;

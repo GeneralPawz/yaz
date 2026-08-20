@@ -231,11 +231,21 @@
       },
       getMode: () => (instance.state.field(richTextEnabled, false) ? "visual" : "source"),
       revealRange: (from, to) => {
+        // Clamped, because the offsets come from somewhere that read the
+        // buffer earlier: an outline built before a file was switched, a
+        // SyncTeX record for a file that is not the one on screen, a segment
+        // map from a joined document that has since been taken apart. Out of
+        // range, CodeMirror throws out of `dispatch` and the view is left
+        // wedged — which is what "the editor goes wrong when I switch files"
+        // was.
+        const end = instance.state.doc.length;
+        const anchor = Math.max(0, Math.min(from, end));
+        const head = Math.max(0, Math.min(to, end));
         instance.dispatch({
-          selection: { anchor: from, head: to },
+          selection: { anchor, head },
           // `center` rather than the default, so a heading jumped to from
           // the outline does not land against the top edge.
-          effects: EditorView.scrollIntoView(from, { y: "center" }),
+          effects: EditorView.scrollIntoView(anchor, { y: "center" }),
         });
         instance.focus();
       },

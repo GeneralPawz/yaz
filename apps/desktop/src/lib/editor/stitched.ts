@@ -15,9 +15,6 @@
 
 import { EditorState, StateEffect, StateField } from "@codemirror/state";
 import type { ChangeSet, Extension, Transaction } from "@codemirror/state";
-import { Decoration, EditorView, WidgetType } from "@codemirror/view";
-import type { DecorationSet } from "@codemirror/view";
-
 import { isWritable, mapSegments } from "./stitch";
 import type { Change, Segment } from "./stitch";
 
@@ -92,84 +89,19 @@ export function refuseAcrossSeams(onRefused: () => void): Extension {
   });
 }
 
-/** The name a seam marker shows: the file, without the folders above it. */
-function leafName(path: string): string {
-  const cut = path.lastIndexOf("/");
-  return cut === -1 ? path : path.slice(cut + 1);
-}
-
-/** The label at the top of an included file's text. */
-class SeamWidget extends WidgetType {
-  constructor(readonly file: string) {
-    super();
-  }
-
-  override eq(other: SeamWidget): boolean {
-    return other.file === this.file;
-  }
-
-  override toDOM(): HTMLElement {
-    const tag = document.createElement("span");
-    tag.className = "cm-yaz-seam";
-    tag.textContent = leafName(this.file);
-    tag.title = this.file;
-    // Not part of the text: a screen reader reading the document should read
-    // the document, and the file a paragraph happens to live in is furniture.
-    tag.setAttribute("aria-hidden", "true");
-    return tag;
-  }
-
-  override ignoreEvent(): boolean {
-    return false;
-  }
-}
-
-/**
- * Where each file's text starts, marked once.
+/*
+ * There are no seam markers.
  *
- * Once per file rather than once per segment: a chapter that itself includes a
- * figure comes back to the chapter afterwards, and labelling the return would
- * mark the same file twice on one screen for no new information.
+ * There were: a small pill naming the file, where each one's text began. It
+ * read as `Vorbemerkungen.tex` immediately in front of that chapter's heading,
+ * which is precisely what this mode exists to remove — the claim of a joined
+ * document is that it reads as one document, and a filename before a chapter
+ * title tells the reader otherwise once per chapter.
+ *
+ * Which file a stretch belongs to is still known and still answerable: it is
+ * what every edit is mapped through, and what the file list navigates by. It
+ * simply is not written across the page.
  */
-function seamMarkers(map: readonly Segment[]): DecorationSet {
-  const seen = new Set<string>();
-  const marks = [];
-
-  for (const segment of map) {
-    if (seen.has(segment.file)) continue;
-    seen.add(segment.file);
-    // The root is where the document starts, not a seam in it.
-    if (segment.depth === 0) continue;
-    marks.push(
-      Decoration.widget({
-        widget: new SeamWidget(segment.file),
-        side: -1,
-      }).range(segment.from),
-    );
-  }
-
-  return Decoration.set(marks, true);
-}
-
-/** The seam markers, recomputed whenever the map moves. */
-const markers = EditorView.decorations.compute([segments], (state) =>
-  seamMarkers(state.field(segments)),
-);
-
-const theme = EditorView.baseTheme({
-  ".cm-yaz-seam": {
-    display: "inline-block",
-    fontSize: "0.72em",
-    fontFamily: "var(--yaz-font-sans)",
-    color: "var(--yaz-text-muted)",
-    background: "var(--yaz-bg-tertiary)",
-    borderRadius: "var(--yaz-radius-sm)",
-    padding: "0 0.4em",
-    marginInlineEnd: "0.5em",
-    verticalAlign: "middle",
-    userSelect: "none",
-  },
-});
 
 /**
  * Everything stitched mode adds to the editor.
@@ -178,5 +110,5 @@ const theme = EditorView.baseTheme({
  * reconfigured when the mode is switched rather than being added and removed.
  */
 export function stitched(onRefused: () => void): Extension {
-  return [segments, refuseAcrossSeams(onRefused), markers, theme];
+  return [segments, refuseAcrossSeams(onRefused)];
 }
