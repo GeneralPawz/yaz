@@ -505,3 +505,13 @@ compile-choose-engine = Compile with…
 compile-open-log = Open the log
 
 ribbon-compact = Compact ribbon
+
+## The file list
+
+files-show-hidden = Hidden folders
+files-show-other = Other file types
+files-show-build = Build files
+files-dim-build = Dim build files
+files-expand = Open { $name }
+files-collapse = Close { $name }
+group-files = Files

@@ -506,3 +506,13 @@ compile-choose-engine = Übersetzen mit…
 compile-open-log = Protokoll öffnen
 
 ribbon-compact = Schmales Menüband
+
+## Die Dateiliste
+
+files-show-hidden = Versteckte Ordner
+files-show-other = Andere Dateitypen
+files-show-build = Build-Dateien
+files-dim-build = Build-Dateien dämpfen
+files-expand = { $name } öffnen
+files-collapse = { $name } schließen
+group-files = Dateien

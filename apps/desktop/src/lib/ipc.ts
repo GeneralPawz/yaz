@@ -11,10 +11,16 @@ import { invoke } from "@tauri-apps/api/core";
 
 /** A file inside the open project. */
 export interface ProjectFile {
-  /** Path relative to the project root, using forward slashes. */
   relativePath: string;
-  /** True for the file the compiler is pointed at. */
   isEntry: boolean;
+  /**
+   * What sort of file it is, as the scan classified it.
+   *
+   * Sent rather than worked out here so that the extension lists live in one
+   * place — the walk already has the name in hand, and a second list in the
+   * frontend would be a second list to keep right.
+   */
+  kind: "tex" | "bib" | "style" | "pdf" | "image" | "build" | "other";
 }
 
 /** The open project, as the backend sees it. */

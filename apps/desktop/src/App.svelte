@@ -40,6 +40,14 @@
   import type { CommandId, KeyPreferences, SuiteId } from "./lib/keys/registry";
   import type { LineNumbering } from "./lib/editor/lineNumbers";
   import { orderTabs } from "./lib/ribbonOrder";
+  import FileTree from "./lib/files/FileTree.svelte";
+  import {
+    ALL_VISIBLE,
+    buildTree,
+    initiallyOpen,
+    visibleRows,
+  } from "./lib/files/tree";
+  import type { Filters } from "./lib/files/tree";
   import Prompt from "./lib/Prompt.svelte";
   import ThemeBuilder from "./lib/ThemeBuilder.svelte";
   import * as theming from "./lib/theme";
@@ -101,6 +109,39 @@
    */
   let filesPinned = $state(true);
   let filesOpen = $state(true);
+
+  /**
+   * What the file list shows, and which folders are open.
+   *
+   * The filters are a view of the project rather than a property of it, so
+   * they live here and not in the scan — which returns everything, once.
+   */
+  let fileFilters = $state<Filters>({ ...ALL_VISIBLE });
+  /** Build artefacts are dimmed by default rather than hidden. */
+  let dimBuild = $state(true);
+  let openFolders = $state<Set<string>>(new Set());
+
+  const fileTree = $derived(buildTree(project?.files ?? [], fileFilters));
+  const fileRows = $derived(visibleRows(fileTree, openFolders));
+
+  /**
+   * Open the folders on the way to the entry document, when a project opens.
+   *
+   * Opening everything buries the file that matters in a project with two
+   * hundred images; opening nothing means three clicks before anyone can
+   * start.
+   */
+  $effect(() => {
+    const files = project?.files;
+    if (files) openFolders = initiallyOpen(files);
+  });
+
+  /** Open a folder, or close it. */
+  function toggleFolder(path: string) {
+    const next = new Set(openFolders);
+    if (!next.delete(path)) next.add(path);
+    openFolders = next;
+  }
   /** Whether the editor sets the text on a page rather than filling the pane. */
   let pageView = $state(false);
   /** How large the text is drawn, as a percentage. */
@@ -816,6 +857,43 @@
           checked: vimMode,
           action: () => {
             vimMode = !vimMode;
+          },
+        },
+        {
+          labelKey: "files-show-hidden",
+          icon: "folder" as const,
+          group: "group-files",
+          checked: fileFilters.showHidden,
+          action: () => {
+            fileFilters = { ...fileFilters, showHidden: !fileFilters.showHidden };
+          },
+        },
+        {
+          labelKey: "files-show-other",
+          icon: "list" as const,
+          group: "group-files",
+          checked: fileFilters.showOther,
+          action: () => {
+            fileFilters = { ...fileFilters, showOther: !fileFilters.showOther };
+          },
+        },
+        {
+          labelKey: "files-show-build",
+          icon: "settings" as const,
+          group: "group-files",
+          checked: fileFilters.showBuild,
+          action: () => {
+            fileFilters = { ...fileFilters, showBuild: !fileFilters.showBuild };
+          },
+        },
+        {
+          labelKey: "files-dim-build",
+          icon: "wrench" as const,
+          group: "group-files",
+          checked: dimBuild,
+          disabled: !fileFilters.showBuild,
+          action: () => {
+            dimBuild = !dimBuild;
           },
         },
         {
@@ -1739,23 +1817,17 @@
       </div>
       {#if !project}
         <p class="empty">{t("workspace-no-project")}</p>
-      {:else if project.files.length === 0}
+      {:else if fileRows.length === 0}
         <p class="empty">{t("workspace-no-files")}</p>
       {:else}
-        <ul>
-          {#each project.files as file (file.relativePath)}
-            <li>
-              <button
-                class="file"
-                class:active={file.relativePath === currentFile}
-                onclick={() => openFile(file.relativePath)}
-              >
-                {file.relativePath}{#if file.isEntry}<span class="badge">{t("workspace-entry")}</span
-                  >{/if}
-              </button>
-            </li>
-          {/each}
-        </ul>
+        <FileTree
+          rows={fileRows}
+          open={openFolders}
+          current={currentFile}
+          {dimBuild}
+          ontoggle={toggleFolder}
+          onopen={openFile}
+        />
       {/if}
     </nav>
 
@@ -1894,16 +1966,7 @@
     grid-template-columns: 1.75rem 1fr;
   }
 
-  .files.collapsed ul,
-  .files.collapsed .empty {
-    display: none;
-  }
 
-  .files-bar {
-    display: flex;
-    justify-content: flex-end;
-    padding: var(--yaz-space-1);
-  }
 
   .pin {
     display: flex;
@@ -1941,34 +2004,8 @@
     border-inline-end: 1px solid var(--yaz-border);
   }
 
-  .files ul {
-    list-style: none;
-    margin: 0;
-    padding: var(--yaz-space-2);
-  }
 
-  .file {
-    inline-size: 100%;
-    text-align: start;
-    background: none;
-    border: none;
-    border-radius: var(--yaz-radius-sm);
-    padding: var(--yaz-space-1) var(--yaz-space-2);
-    color: var(--yaz-text-secondary);
-    font-family: var(--yaz-font-mono);
-    font-size: 0.9em;
-  }
 
-  .file.active {
-    background: var(--yaz-bg-active);
-    color: var(--yaz-text-primary);
-  }
-
-  .badge {
-    margin-inline-start: var(--yaz-space-2);
-    color: var(--yaz-accent);
-    font-size: 0.85em;
-  }
 
   .empty {
     color: var(--yaz-text-muted);

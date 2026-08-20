@@ -67,6 +67,102 @@ pub(crate) type Result<T> = std::result::Result<T, CommandError>;
 pub struct ProjectFile {
     relative_path: String,
     is_entry: bool,
+    /// What sort of file it is, for its icon and whether it is dimmed.
+    kind: FileKind,
+}
+
+/// What a file is, as far as a file list needs to care.
+///
+/// Coarse on purpose. The list draws one icon per kind and dims one of them,
+/// so a distinction that changes neither is a distinction that costs a variant
+/// and buys nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FileKind {
+    /// A LaTeX source.
+    Tex,
+    /// A bibliography.
+    Bib,
+    /// A class or package.
+    Style,
+    /// A compiled document.
+    Pdf,
+    Image,
+    /// Something a compile produced and a compile can produce again.
+    ///
+    /// One kind for the lot. There are thirty extensions here and nobody has
+    /// ever wanted to tell an `.fdb_latexmk` from an `.fls` in a file list —
+    /// what they want is for both to stop competing with the two files they
+    /// are actually working on.
+    Build,
+    Other,
+}
+
+/// Extensions a LaTeX run leaves behind.
+///
+/// The list is long because the toolchain is: glossaries, biblatex, beamer and
+/// `latexmk` each write their own. A missing entry is not a failure, only a
+/// file that stays as prominent as the source beside it.
+const BUILD_EXTENSIONS: &[&str] = &[
+    "acn",
+    "acr",
+    "alg",
+    "aux",
+    "auxlock",
+    "bbl",
+    "bcf",
+    "blg",
+    "dvi",
+    "fdb_latexmk",
+    "figlist",
+    "fls",
+    "glg",
+    "glo",
+    "gls",
+    "glsdefs",
+    "idx",
+    "ilg",
+    "ind",
+    "ist",
+    "lof",
+    "log",
+    "lot",
+    "nav",
+    "out",
+    "run",
+    "snm",
+    "synctex",
+    "toc",
+    "vrb",
+    "xdv",
+];
+
+/// Extensions that are pictures.
+const IMAGE_EXTENSIONS: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "svg", "eps", "tif", "tiff", "webp", "bmp",
+];
+
+impl FileKind {
+    /// Classify by name.
+    ///
+    /// By the final extension, with one exception: `main.synctex.gz` is a
+    /// build artefact whose extension is `gz`, and a compressed archive that
+    /// happens to be one is not something to show as a generic file.
+    fn of(name: &str) -> Self {
+        let lower = name.to_ascii_lowercase();
+        let stripped = lower.strip_suffix(".gz").unwrap_or(&lower);
+        let extension = stripped.rsplit_once('.').map(|(_, ext)| ext).unwrap_or("");
+
+        match extension {
+            "tex" => FileKind::Tex,
+            "bib" => FileKind::Bib,
+            "cls" | "sty" | "clo" | "def" => FileKind::Style,
+            "pdf" => FileKind::Pdf,
+            _ if IMAGE_EXTENSIONS.contains(&extension) => FileKind::Image,
+            _ if BUILD_EXTENSIONS.contains(&extension) => FileKind::Build,
+            _ => FileKind::Other,
+        }
+    }
 }
 
 /// The open project as the frontend sees it.
@@ -142,23 +238,30 @@ pub(crate) fn canonical_root(path: &Utf8Path) -> Result<Utf8PathBuf> {
 pub fn open_project(root: String) -> Result<ProjectInfo> {
     let root = canonical_root(Utf8Path::new(&root))?;
 
+    // Everything, not only the sources.
+    //
+    // A real project has images the author wants to see, a `.bib` they open,
+    // and a compiled PDF they double-click. Showing four extensions and
+    // hiding the rest meant the file list disagreed with the folder, and the
+    // author had to keep a file manager open beside it.
+    //
+    // What is *shown* is then the interface's decision — dotfolders, build
+    // artefacts and unfamiliar formats each have a switch — and a decision
+    // like that belongs where it can be changed without a recompile.
     let mut files: Vec<String> = walkdir::WalkDir::new(root.as_std_path())
         .max_depth(8)
         .into_iter()
         .filter_entry(|entry| {
-            // Build output and VCS metadata are noise in a file list, and
-            // descending into them on a large project is slow for no benefit.
+            // `.git` and `node_modules` are excluded here rather than in the
+            // interface because they are not a preference: they hold tens of
+            // thousands of files, walking them is slow, and nobody has ever
+            // wanted to browse either from a LaTeX editor. Every other dotted
+            // folder is a real choice and is left to the switch.
             let name = entry.file_name().to_string_lossy();
-            !(name.starts_with('.') || name == "build" || name == "node_modules")
+            !(name == ".git" || name == "node_modules")
         })
         .filter_map(std::result::Result::ok)
         .filter(|entry| entry.file_type().is_file())
-        .filter(|entry| {
-            matches!(
-                entry.path().extension().and_then(|e| e.to_str()),
-                Some("tex" | "bib" | "cls" | "sty")
-            )
-        })
         .filter_map(|entry| {
             let path = Utf8PathBuf::from_path_buf(entry.into_path()).ok()?;
             let relative = path.strip_prefix(&root).ok()?;
@@ -189,6 +292,7 @@ pub fn open_project(root: String) -> Result<ProjectInfo> {
             .into_iter()
             .map(|relative_path| ProjectFile {
                 is_entry: relative_path == entry,
+                kind: FileKind::of(&relative_path),
                 relative_path,
             })
             .collect(),
@@ -632,4 +736,70 @@ pub fn locate_in_source(
         in_project: relative.is_some(),
         line: found.line,
     }))
+}
+
+#[cfg(test)]
+mod file_kind_tests {
+    use super::FileKind;
+
+    #[test]
+    fn knows_the_files_an_author_works_on() {
+        assert_eq!(FileKind::of("main.tex"), FileKind::Tex);
+        assert_eq!(FileKind::of("BIMwissT.bib"), FileKind::Bib);
+        assert_eq!(FileKind::of("output/main.pdf"), FileKind::Pdf);
+        assert_eq!(FileKind::of("images/logo.png"), FileKind::Image);
+        assert_eq!(FileKind::of("thesis.cls"), FileKind::Style);
+    }
+
+    #[test]
+    fn calls_a_compiled_pdf_a_pdf() {
+        // It is an artefact, and it is also the thing the author double-clicks
+        // to read what they wrote. Dimming it with the `.aux` files would hide
+        // the one output anybody wants.
+        assert_eq!(FileKind::of("output/main.pdf"), FileKind::Pdf);
+    }
+
+    #[test]
+    fn gathers_what_a_compile_leaves_behind() {
+        for name in [
+            "main.aux",
+            "main.log",
+            "main.toc",
+            "main.lof",
+            "main.bbl",
+            "main.bcf",
+            "main.glo",
+            "main.gls",
+            "main.ist",
+            "main.acn",
+            "main.fdb_latexmk",
+            "main.fls",
+            "main.out",
+        ] {
+            assert_eq!(FileKind::of(name), FileKind::Build, "{name}");
+        }
+    }
+
+    #[test]
+    fn sees_through_the_compression_on_a_synctex() {
+        // `main.synctex.gz` has the extension `gz`, and an archive that happens
+        // to be a build artefact should not read as a generic file.
+        assert_eq!(FileKind::of("output/main.synctex.gz"), FileKind::Build);
+    }
+
+    #[test]
+    fn does_not_guess_at_what_it_does_not_know() {
+        // A generic icon is honest; classifying by hope is not.
+        assert_eq!(FileKind::of("README.md"), FileKind::Other);
+        assert_eq!(FileKind::of("indent.yaml"), FileKind::Other);
+        assert_eq!(FileKind::of("Makefile"), FileKind::Other);
+        assert_eq!(FileKind::of("no-extension"), FileKind::Other);
+    }
+
+    #[test]
+    fn ignores_the_case_of_an_extension() {
+        // Windows hands these back however they were typed.
+        assert_eq!(FileKind::of("Figure.PNG"), FileKind::Image);
+        assert_eq!(FileKind::of("MAIN.TEX"), FileKind::Tex);
+    }
 }
