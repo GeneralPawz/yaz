@@ -48,7 +48,7 @@ The load-bearing ones:
 crates/     Rust workspace. yaz-app is THIN — wiring only, no domain logic.
 apps/       desktop/ = Svelte frontend
 packages/   api/ = @yaz/api, the public plugin contract (MIT, semver-strict)
-plugins/    Submodules: texyaz/yaz-plugin-{zotero,obsidian,formats} (ADR-0021)
+plugins/    Submodules: texyaz/yaz-{zotero,obsidian,formats,learn} (ADR-0021)
 docs/       VitePress site + ADRs
 locales/    Message catalogues (root-level: both Rust and TS consume them)
 themes/     yaz-light, yaz-dark

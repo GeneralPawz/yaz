@@ -15,6 +15,8 @@
 
 mod appearance;
 mod commands;
+mod mcp;
+mod mcp_commands;
 mod plugin_host;
 mod vcs_commands;
 
@@ -58,6 +60,10 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .manage(clock)
         .manage(plugin_host::PluginHost::new())
+        // Off until asked: the server is not started here, only made
+        // available to the command that starts it (ADR-0022).
+        .manage(mcp::McpState::default())
+        .manage(mcp::OpenProject::default())
         .invoke_handler(tauri::generate_handler![
             commands::open_project,
             commands::read_file,
@@ -81,6 +87,13 @@ fn main() {
             appearance::set_format_preferences,
             appearance::get_development_plugin,
             appearance::set_development_plugin,
+            mcp_commands::mcp_start,
+            mcp_commands::mcp_stop,
+            mcp_commands::mcp_status,
+            mcp_commands::mcp_set_project,
+            mcp_commands::mcp_set_plugin_tools,
+            mcp_commands::mcp_drop_plugin_tools,
+            mcp_commands::mcp_tool_result,
             vcs_commands::vcs_backends,
             vcs_commands::vcs_status,
             vcs_commands::vcs_enable,

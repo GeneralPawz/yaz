@@ -1,12 +1,12 @@
 [submodule "plugins/zotero"]
 	path = plugins/zotero
-	url = git@github.com:texyaz/yaz-plugin-zotero.git
+	url = git@github.com:texyaz/yaz-zotero.git
 [submodule "plugins/obsidian"]
 	path = plugins/obsidian
-	url = git@github.com:texyaz/yaz-plugin-obsidian.git
+	url = git@github.com:texyaz/yaz-obsidian.git
 [submodule "plugins/formats"]
 	path = plugins/formats
-	url = git@github.com:texyaz/yaz-plugin-formats.git
+	url = git@github.com:texyaz/yaz-formats.git
 [submodule "plugins/learn"]
 	path = plugins/learn
 	url = git@github.com:texyaz/yaz-learn.git

@@ -8,6 +8,7 @@ members = [
     "crates/yaz-zotero",
     "crates/yaz-obsidian",
     "crates/yaz-vcs",
+    "crates/yaz-mcp",
     "crates/yaz-app",
 ]
 
@@ -31,6 +32,7 @@ yaz-plugin = { path = "crates/yaz-plugin" }
 yaz-zotero = { path = "crates/yaz-zotero" }
 yaz-obsidian = { path = "crates/yaz-obsidian" }
 yaz-vcs = { path = "crates/yaz-vcs" }
+yaz-mcp = { path = "crates/yaz-mcp" }
 
 # Error handling
 thiserror = "2"

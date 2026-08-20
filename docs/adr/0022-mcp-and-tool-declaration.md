@@ -79,6 +79,19 @@ out of date within one release and then actively misleads — which is worse tha
 not having it, because people trust it. Declared-and-verified is the same shape
 capabilities already have, and it is the only shape that stays true.
 
+### How an agent reaches it
+
+The server listens on `127.0.0.1` on a port the operating system chooses, and
+every request must carry a token generated when it starts. Not stdio, which is
+how most MCP servers work: yaz is a window somebody already has open with a
+project already loaded, and the whole point is to drive *that* — a client that
+spawned its own copy would get an editor with nothing in it.
+
+Loopback is not a boundary by itself. Any local process can reach the port,
+including a web page's JavaScript, which is the case worth designing against —
+so the token does the work and the loopback bind only keeps an editor that can
+write to your disk off the network.
+
 ## Consequences
 
 **A plugin author writes the tool twice** — once in the manifest, once in the

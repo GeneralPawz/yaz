@@ -16,6 +16,7 @@ app-tagline = Aus Ideen und Quellen werden Aufsätze.
 ## Dateisystemfehler — Schlüssel aus yaz-core::Error::message_key()
 
 error-fs-not-found = { $path } wurde nicht gefunden.
+error-mcp-listen = Der Agenten-Server konnte nicht starten: { $detail }
 error-plugin-manifest = In diesem Ordner liegt eine manifest.json, die nicht als Plugin gelesen werden konnte.
 error-fs-outside-root = { $path } liegt außerhalb von { $root }, worauf dieser Vorgang beschränkt ist.
 error-fs-undecodable = { $path } ließ sich nicht als Text lesen. Möglicherweise ist es eine Binärdatei oder verwendet eine nicht unterstützte Kodierung.

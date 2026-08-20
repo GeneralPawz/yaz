@@ -15,6 +15,7 @@ app-tagline = Turn your ideas and sources into papers.
 ## Filesystem errors — keys come from yaz-core::Error::message_key()
 
 error-fs-not-found = Could not find { $path }.
+error-mcp-listen = The agent server could not start: { $detail }
 error-plugin-manifest = That folder has a manifest.json that could not be read as a plugin.
 error-fs-outside-root = { $path } is outside { $root }, which this operation is limited to.
 error-fs-undecodable = Could not read { $path } as text. It may be a binary file or use an unsupported encoding.

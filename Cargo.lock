@@ -7382,6 +7382,7 @@ dependencies = [
  "yaz-compile",
  "yaz-core",
  "yaz-latex",
+ "yaz-mcp",
  "yaz-obsidian",
  "yaz-plugin",
  "yaz-vcs",
@@ -7437,6 +7438,17 @@ dependencies = [
  "thiserror 2.0.20",
  "tracing",
  "yaz-core",
+]
+
+[[package]]
+name = "yaz-mcp"
+version = "0.2.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

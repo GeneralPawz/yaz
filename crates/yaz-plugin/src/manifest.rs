@@ -252,7 +252,7 @@ mod tests {
         let mut plugin = manifest("0.2.0", "0.2.0");
         plugin.updates = Some(Updates {
             source: UpdateSource::Github,
-            repository: "texyaz/yaz-plugin-example".to_owned(),
+            repository: "texyaz/yaz-example".to_owned(),
             channel: UpdateChannel::Manual,
         });
         assert!(!plugin.updates_itself());
@@ -263,7 +263,7 @@ mod tests {
         let mut plugin = manifest("0.2.0", "0.2.0");
         plugin.updates = Some(Updates {
             source: UpdateSource::Github,
-            repository: "texyaz/yaz-plugin-example".to_owned(),
+            repository: "texyaz/yaz-example".to_owned(),
             channel: UpdateChannel::Release,
         });
         assert!(plugin.updates_itself());
@@ -281,14 +281,14 @@ mod tests {
             "capabilities": [{ "kind": "zotero" }],
             "updates": {
                 "source": "github",
-                "repository": "texyaz/yaz-plugin-zotero",
+                "repository": "texyaz/yaz-zotero",
                 "channel": "release"
             }
         }"#;
         let manifest: Manifest = serde_json::from_str(source).expect("it parses");
         let updates = manifest.updates.expect("an updates block");
         assert_eq!(updates.source, UpdateSource::Github);
-        assert_eq!(updates.repository, "texyaz/yaz-plugin-zotero");
+        assert_eq!(updates.repository, "texyaz/yaz-zotero");
         assert_eq!(updates.channel, UpdateChannel::Release);
     }
 

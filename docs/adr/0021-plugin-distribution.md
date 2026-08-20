@@ -29,8 +29,8 @@ have to wait for a yaz release to get the fix.
 **Each non-core plugin is its own repository, released on its own, and present
 in the application's tree as a submodule.**
 
-- `texyaz/yaz-plugin-zotero`, `texyaz/yaz-plugin-obsidian`,
-  `texyaz/yaz-plugin-formats` — public, each with its own version, its own
+- `texyaz/yaz-zotero`, `texyaz/yaz-obsidian`,
+  `texyaz/yaz-formats` — public, each with its own version, its own
   releases and its own README.
 - They appear under `plugins/` in `texyaz/yaz` as git submodules, so the
   application's tree still shows what it bundles and a clone with
@@ -51,7 +51,7 @@ take them, rather than the application holding a list of plugins it knows:
   "minAppVersion": "0.2.0",
   "updates": {
     "source": "github",
-    "repository": "texyaz/yaz-plugin-zotero",
+    "repository": "texyaz/yaz-zotero",
     "channel": "release"
   }
 }

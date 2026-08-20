@@ -63,7 +63,7 @@ export interface Format {
  * missing.
  *
  * Everything else — Markdown, TOML, YAML, BibTeX — is contributed by
- * `yaz-plugin-formats` through `registerFormat`, which is what proves the
+ * `yaz-formats` through `registerFormat`, which is what proves the
  * contribution API works before anyone outside meets it (ADR-0005, ADR-0021).
  */
 export const FORMATS: Format[] = [

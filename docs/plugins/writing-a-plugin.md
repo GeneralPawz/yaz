@@ -105,7 +105,7 @@ put it in the bundle for every user who never opens the format.
 A contributed format cannot take an extension the application owns — `.tex`
 stays LaTeX's — and a format whose plugin is switched off falls back to plain
 text rather than to an error. See
-[`yaz-plugin-formats`](https://github.com/texyaz/yaz-plugin-formats) for the
+[`yaz-formats`](https://github.com/texyaz/yaz-formats) for the
 worked example; it is about sixty lines.
 
 ## Publishing, and how updates reach people
@@ -165,10 +165,10 @@ Worth knowing before you plan around it:
 
 All public, all written against this API, all about as small as they look:
 
-- [`yaz-plugin-formats`](https://github.com/texyaz/yaz-plugin-formats) —
+- [`yaz-formats`](https://github.com/texyaz/yaz-formats) —
   contributing languages; the simplest of the three, and no capabilities.
-- [`yaz-plugin-obsidian`](https://github.com/texyaz/yaz-plugin-obsidian) — one
+- [`yaz-obsidian`](https://github.com/texyaz/yaz-obsidian) — one
   command, one capability, and a picker.
-- [`yaz-plugin-zotero`](https://github.com/texyaz/yaz-plugin-zotero) — the
+- [`yaz-zotero`](https://github.com/texyaz/yaz-zotero) — the
   demanding one: two capabilities, a library to search, and a bibliography to
   write into.
