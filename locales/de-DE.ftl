@@ -580,3 +580,10 @@ format-toml = TOML
 format-yaml = YAML
 format-bibtex = BibTeX
 format-text = Nur Text
+
+## Das Obsidian-Plugin
+
+obsidian-command-insert-note = Notiz aus dem Vault einfügen
+obsidian-pick-note = Notiz auswählen
+obsidian-pick-note-filter = Vault durchsuchen…
+obsidian-no-notes = Keine Notizen gefunden. Den Vault-Ort unter Verbindungen prüfen.

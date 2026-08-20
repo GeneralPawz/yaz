@@ -54,11 +54,17 @@ export interface Format {
 }
 
 /**
- * The formats, in the order settings lists them.
+ * The formats the application itself knows.
  *
- * LaTeX is first and is not optional: it is what the application is for, and
- * an editor whose LaTeX support can be switched off is an editor with a
- * setting nobody should touch.
+ * Two, and both are here because neither can be a plugin's. LaTeX is what the
+ * application is for, and an editor whose LaTeX support could be switched off
+ * would have a setting nobody should touch. Plain text is the floor that makes
+ * every file openable, and a floor supplied by a plugin is a floor that can go
+ * missing.
+ *
+ * Everything else — Markdown, TOML, YAML, BibTeX — is contributed by
+ * `yaz-plugin-formats` through `registerFormat`, which is what proves the
+ * contribution API works before anyone outside meets it (ADR-0005, ADR-0021).
  */
 export const FORMATS: Format[] = [
   {
@@ -72,42 +78,6 @@ export const FORMATS: Format[] = [
       ]);
       return StreamLanguage.define(stex);
     },
-  },
-  {
-    id: "markdown",
-    extensions: ["md", "markdown", "mdown", "mkd"],
-    labelKey: "format-markdown",
-    load: async () => (await import("./markdown")).markdown(),
-  },
-  {
-    id: "toml",
-    extensions: ["toml"],
-    labelKey: "format-toml",
-    load: async () => {
-      const [{ StreamLanguage }, { toml }] = await Promise.all([
-        import("@codemirror/language"),
-        import("@codemirror/legacy-modes/mode/toml"),
-      ]);
-      return StreamLanguage.define(toml);
-    },
-  },
-  {
-    id: "yaml",
-    extensions: ["yaml", "yml"],
-    labelKey: "format-yaml",
-    load: async () => {
-      const [{ StreamLanguage }, { yaml }] = await Promise.all([
-        import("@codemirror/language"),
-        import("@codemirror/legacy-modes/mode/yaml"),
-      ]);
-      return StreamLanguage.define(yaml);
-    },
-  },
-  {
-    id: "bibtex",
-    extensions: ["bib", "bibtex"],
-    labelKey: "format-bibtex",
-    load: async () => (await import("./bibtex")).bibtex(),
   },
   {
     id: "text",

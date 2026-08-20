@@ -53,7 +53,19 @@ type Result<T> = std::result::Result<T, CommandError>;
 /// their manifests are read and diffed at install time ([ADR-0013]).
 ///
 /// [ADR-0013]: https://github.com/GeneralPawz/yaz/blob/main/docs/adr/0013-update-distribution.md
-const CORE_MANIFESTS: &[&str] = &[include_str!("../../../plugins/zotero/manifest.json")];
+/// The manifests of the plugins that ship enabled.
+///
+/// `include_str!` on a submodule path, deliberately: a clone without
+/// `--recurse-submodules` fails to compile with the path in the error, rather
+/// than quietly producing an application missing half its features
+/// ([ADR-0021]).
+///
+/// [ADR-0021]: https://github.com/texyaz/yaz/blob/main/docs/adr/0021-plugin-distribution.md
+const CORE_MANIFESTS: &[&str] = &[
+    include_str!("../../../plugins/zotero/manifest.json"),
+    include_str!("../../../plugins/obsidian/manifest.json"),
+    include_str!("../../../plugins/formats/manifest.json"),
+];
 
 /// A core plugin the application ships with.
 #[derive(Debug, Serialize)]

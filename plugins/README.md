@@ -1,29 +1,46 @@
-# Core plugins
+# Plugins
 
-Bundled with the application, toggleable, maintained by us — and **written
-strictly against the public `@yaz/api`, with no privileged access whatsoever**.
+Each of these is **its own repository**, present here as a git submodule
+([ADR-0021](../docs/adr/0021-plugin-distribution.md)):
 
-That last part is the whole point. Shipping the Zotero bridge, the Obsidian
-bridge and Vim mode as *plugins* means the plugin API is exercised by demanding,
-real features from the start, and its inadequacies surface to us before they
-surface to an external author.
+| Directory | Repository | What it does |
+| --- | --- | --- |
+| `zotero` | [texyaz/yaz-plugin-zotero](https://github.com/texyaz/yaz-plugin-zotero) | Cite from Zotero, quote highlighted passages |
+| `obsidian` | [texyaz/yaz-plugin-obsidian](https://github.com/texyaz/yaz-plugin-obsidian) | Bring a vault note in, translated to LaTeX |
+| `formats` | [texyaz/yaz-plugin-formats](https://github.com/texyaz/yaz-plugin-formats) | Markdown, TOML, YAML and BibTeX highlighting |
 
-**The rule: a core plugin that needs an API which does not exist yet gets the API
-added to core as public API — never a private back door.** A pull request that
-adds a shortcut for a first-party plugin is the failure mode
-[ADR-0005](../docs/adr/0005-extensibility-tiers.md) exists to prevent.
+All three ship enabled in a new installation. They are what the application is
+*for*, and an editor that arrives unable to do any of it until the user goes
+looking for a plugin list is an editor that arrives broken.
 
-Structurally these are identical to community plugins: `manifest.json` plus a
-bundled `main.js`. Start from [`packages/plugin-template`](../packages/plugin-template).
+## Clone with them
 
-Planned, in roughly the order they arrive:
+```sh
+git clone --recurse-submodules git@github.com:texyaz/yaz.git
+# already cloned?
+git submodule update --init --recursive
+```
 
-| Plugin | Phase |
-| --- | --- |
-| `vim` | 4 |
-| `zotero` | 5 |
-| `obsidian` | 5 |
-| `bibliography`, `outline`, `synctex` | 5 |
-| `templates`, `export`, `git`, `spellcheck`, `tables`, `figures`, `snippets`, `stats` | 6 |
+Without them the Rust build fails at `include_str!` with the missing path in
+the error. That is deliberate: a build that quietly produced an application
+missing half its features would be worse.
 
-The directory is empty until the plugin runtime lands in phase 3.
+## They are not privileged
+
+Bundled does not mean privileged. Each is loaded through the same runtime and
+refused by the same capability broker as anything installed later
+([ADR-0006](../docs/adr/0006-plugin-runtime-and-capabilities.md)), each can be
+switched off, and each is written strictly against the public `@yaz/api`.
+
+**The rule: a plugin that needs an API which does not exist yet gets the API
+added as *public* API — never a private back door.** A change that adds a
+shortcut for a first-party plugin is the failure mode
+[ADR-0005](../docs/adr/0005-extensibility-tiers.md) exists to prevent. The
+formats plugin is the worked example: it needed a way to contribute a language,
+so `Plugin.registerFormat` exists for everyone.
+
+## Writing one
+
+See [writing a plugin](../docs/plugins/writing-a-plugin.md). The short version:
+a `manifest.json`, a class extending `Plugin`, and a directory you point yaz at
+while you work on it — no commit, no push, no release.

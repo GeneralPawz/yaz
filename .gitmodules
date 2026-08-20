@@ -1,0 +1,9 @@
+[submodule "plugins/zotero"]
+	path = plugins/zotero
+	url = git@github.com:texyaz/yaz-plugin-zotero.git
+[submodule "plugins/obsidian"]
+	path = plugins/obsidian
+	url = git@github.com:texyaz/yaz-plugin-obsidian.git
+[submodule "plugins/formats"]
+	path = plugins/formats
+	url = git@github.com:texyaz/yaz-plugin-formats.git

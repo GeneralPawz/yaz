@@ -579,3 +579,10 @@ format-toml = TOML
 format-yaml = YAML
 format-bibtex = BibTeX
 format-text = Plain text
+
+## The Obsidian plugin
+
+obsidian-command-insert-note = Insert note from vault
+obsidian-pick-note = Choose a note
+obsidian-pick-note-filter = Search your vault…
+obsidian-no-notes = No notes found. Check the vault location in Connections.

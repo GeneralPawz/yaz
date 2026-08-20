@@ -7,7 +7,7 @@
  * decides: the extension, and the two formats that can never be switched off.
  */
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
   FORMATS,
@@ -15,15 +15,46 @@ import {
   format,
   formatOf,
   isEnabled,
+  setContributedFormats,
 } from "./registry";
 
+/** A format as a plugin would contribute it. */
+const contribution = (id: string, extensions: string[]) => ({
+  id,
+  extensions,
+  labelKey: `format-${id}`,
+  load: async () => ({}) as never,
+});
+
+afterEach(() => setContributedFormats([]));
+
 describe("formatOf", () => {
-  it("knows the ones a LaTeX project is made of", () => {
+  it("knows the two the application itself has", () => {
+    // Two, and only two: LaTeX is what the application is for, and plain text
+    // is the floor that makes every file openable. Everything else arrives
+    // from a plugin (ADR-0021).
     expect(formatOf("main.tex")).toBe("latex");
-    expect(formatOf("BIMwissT.bib")).toBe("bibtex");
-    expect(formatOf("yaz.toml")).toBe("toml");
+    expect(formatOf("LICENSE")).toBe("text");
+  });
+
+  it("knows a format a plugin contributed", () => {
+    setContributedFormats([contribution("markdown", ["md"])]);
     expect(formatOf("README.md")).toBe("markdown");
-    expect(formatOf(".github/workflows/ci.yml")).toBe("yaml");
+  });
+
+  it("forgets it again when the plugin is gone", () => {
+    setContributedFormats([contribution("markdown", ["md"])]);
+    setContributedFormats([]);
+    // Plain text rather than an error: a file whose plugin was switched off
+    // still opens, which is the floor the whole design rests on.
+    expect(formatOf("README.md")).toBe("text");
+  });
+
+  it("does not let a plugin take an extension the application owns", () => {
+    // A plugin claiming `.tex` would take LaTeX away from a LaTeX editor, and
+    // whether it succeeded would depend on load order.
+    setContributedFormats([contribution("mine", ["tex"])]);
+    expect(formatOf("main.tex")).toBe("latex");
   });
 
   it("does not care about case", () => {
@@ -69,13 +100,13 @@ describe("isEnabled", () => {
 });
 
 describe("the registry", () => {
-  it("offers only the formats that may be switched off", () => {
-    expect(optionalFormats().map((entry) => entry.id)).toEqual([
-      "markdown",
-      "toml",
-      "yaml",
-      "bibtex",
-    ]);
+  it("offers nothing to switch off until a plugin contributes one", () => {
+    expect(optionalFormats()).toEqual([]);
+  });
+
+  it("offers a contributed format, and never the two built-in ones", () => {
+    setContributedFormats([contribution("markdown", ["md"])]);
+    expect(optionalFormats().map((entry) => entry.id)).toEqual(["markdown"]);
   });
 
   it("gives plain text no language to load", () => {
