@@ -294,6 +294,27 @@ export function metadata(text: string): Map<string, string> {
   return found;
 }
 
+/**
+ * Fill a document's metadata into a stretch of its source.
+ *
+ * For the places that are rendered from the text rather than decorated over
+ * it — a table's cells, above all. The title page of the thesis this was built
+ * against sets the author and the reviewer in a `tabular`, and a table is drawn
+ * from its source, so `\theauthor` reached the screen as those letters.
+ */
+export function fillMetadata(
+  text: string,
+  declared: ReadonlyMap<string, string>,
+): string {
+  let filled = text;
+  for (const [command, value] of declared) {
+    filled = filled.split(`${BACKSLASH}${command}`).join(value);
+  }
+  return filled;
+}
+
+const BACKSLASH = String.fromCharCode(92);
+
 /** The argument of the last `\name{...}` in the text, outside comments. */
 function argumentOf(text: string, name: string): string | null {
   let value: string | null = null;

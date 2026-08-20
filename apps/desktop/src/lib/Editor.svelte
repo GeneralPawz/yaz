@@ -37,6 +37,8 @@
     richTextEnabled,
     setRichText,
     setShowComments,
+    setShowLineBreaks,
+    setShowMachinery,
   } from "./editor/richText";
   import { imageSource } from "./editor/semanticView";
   import { changesIn, setSegments, stitched } from "./editor/stitched";
@@ -93,6 +95,21 @@
      * buffer and come back the moment the switch moves.
      */
     comments?: boolean;
+    /**
+     * Whether an explicit line break shows as itself or as the break it makes.
+     *
+     * Off draws the break, which is what a reader sees; on shows the two
+     * characters, which is what someone checking a title block wants.
+     */
+    lineBreaks?: boolean;
+    /**
+     * Whether the document's machinery is on screen.
+     *
+     * `\begin{titlepage}`, `\renewcommand{\arraystretch}{1.2}` — instructions to
+     * the typesetter that produce no words. Off by default, because rich text
+     * is a view of the document rather than of the instructions for making it.
+     */
+    machinery?: boolean;
     /**
      * Whether the page is drawn as white paper whatever the interface is.
      *
@@ -189,6 +206,8 @@
     zoom,
     wrap,
     comments = true,
+    lineBreaks = false,
+    machinery = false,
     paperLight = false,
     justified = true,
     shortcuts,
@@ -482,6 +501,14 @@
 
   $effect(() => {
     view?.dispatch({ effects: setShowComments.of(comments) });
+  });
+
+  $effect(() => {
+    view?.dispatch({ effects: setShowLineBreaks.of(lineBreaks) });
+  });
+
+  $effect(() => {
+    view?.dispatch({ effects: setShowMachinery.of(machinery) });
   });
 
   $effect(() => {

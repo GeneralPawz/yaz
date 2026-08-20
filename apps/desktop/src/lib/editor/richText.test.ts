@@ -18,6 +18,8 @@ import {
   richText,
   setRichText,
   setShowComments,
+  setShowLineBreaks,
+  setShowMachinery,
   setWrapperCollapsed,
 } from "./richText";
 
@@ -956,5 +958,96 @@ describe("a figure", () => {
     const view = mount(wordy);
     caret(view, wordy.indexOf("Ein Satz") + 4);
     expect(view.contentDOM.querySelector(".cm-yaz-figure")).toBeNull();
+  });
+});
+
+describe("the rest of a title page", () => {
+  const doc = [
+    "BSLdocumentclass{report}",
+    "BSLtitle{Ein Titel}",
+    "BSLauthor{Friedrich}",
+    "BSLreviewer{Prof. Melzner}",
+    "BSLbegin{document}",
+    "BSLbegin{titlepage}",
+    "BSLcentering",
+    "{BSLLarge {BSLtextls[200]{Bauhaus-Universität}}BSLpar}",
+    "Fakultät BauBSLBSL Professur Baubetrieb",
+    "BSLincludegraphics[width=0.5BSLtextwidth]{images/logo.png}",
+    "BSLrenewcommand{BSLarraystretch}{1.2}",
+    "BSLbegin{tabular}{ll}",
+    "Erstellung: & BSLtheauthor BSLBSL",
+    "Prüfung: & BSLthereviewer",
+    "BSLend{tabular}",
+    "BSLend{titlepage}",
+    "Ein Satz danach.",
+    "BSLend{document}",
+  ]
+    .map((line) => line.split("BSL").join(B))
+    .join("\n");
+
+  function reading(): EditorView {
+    const view = mount(doc);
+    caret(view, doc.indexOf("Ein Satz") + 4);
+    return view;
+  }
+
+  it("hides the environment that is only arrangement", () => {
+    // `\begin{titlepage}` is an instruction to the typesetter.
+    expect(visible(reading())).not.toContain("titlepage");
+  });
+
+  it("draws a logo that is not inside a figure", () => {
+    // Which is how a title page puts one on the page.
+    const view = reading();
+    expect(view.contentDOM.querySelector(".cm-yaz-figure")).not.toBeNull();
+    expect(visible(view)).not.toContain("includegraphics");
+  });
+
+  it("hides a setting and both of its arguments", () => {
+    // `\renewcommand{\arraystretch}{1.2}` read as three words in the middle
+    // of the author's name.
+    const shown = visible(reading());
+    expect(shown).not.toContain("renewcommand");
+    expect(shown).not.toContain("arraystretch");
+    expect(shown).not.toContain("1.2");
+  });
+
+  it("fills the author and the reviewer into the table", () => {
+    // A table is drawn from its source, so these reached the screen as their
+    // command names until the source was filled in first.
+    const shown = visible(reading());
+    expect(shown).toContain("Friedrich");
+    expect(shown).toContain("Prof. Melzner");
+    expect(shown).not.toContain("theauthor");
+  });
+
+  it("spaces the letters out where the document asks", () => {
+    const view = reading();
+    const tracked = view.contentDOM.querySelector(".cm-yaz-tracked");
+    expect(tracked).not.toBeNull();
+    expect(tracked?.getAttribute("style")).toContain("0.2em");
+  });
+
+  it("draws an explicit break instead of its markup", () => {
+    const view = reading();
+    expect(view.contentDOM.querySelector(".cm-yaz-linebreak")).not.toBeNull();
+  });
+
+  it("shows the markup when asked to", () => {
+    const view = mount(doc);
+    view.dispatch({ effects: setShowLineBreaks.of(true) });
+    caret(view, doc.indexOf("Ein Satz") + 4);
+    expect(view.contentDOM.querySelector(".cm-yaz-linebreak")).toBeNull();
+  });
+
+  it("shows the machinery when asked to", () => {
+    const view = mount(doc);
+    view.dispatch({ effects: setShowMachinery.of(true) });
+    caret(view, doc.indexOf("Ein Satz") + 4);
+    expect(visible(view)).toContain("renewcommand");
+  });
+
+  it("leaves the buffer exactly as it was", () => {
+    expect(reading().state.doc.toString()).toBe(doc);
   });
 });

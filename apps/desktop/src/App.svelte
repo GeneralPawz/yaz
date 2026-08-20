@@ -232,6 +232,22 @@
    */
   let comments = $state(true);
   /**
+   * Whether an explicit line break shows as itself.
+   *
+   * Off, because the break is the thing a reader sees and the two characters
+   * asking for it are not. On for checking a title block, or working out why a
+   * line ended early.
+   */
+  let lineBreaks = $state(false);
+  /**
+   * Whether the document's machinery is on screen.
+   *
+   * `\begin{titlepage}`, `\renewcommand`, `\addcontentsline`: instructions that
+   * produce no words. On when the author is working on the machinery itself and
+   * would rather not put the whole view back to source.
+   */
+  let machinery = $state(false);
+  /**
    * Whether the page is white paper whatever the interface is.
    *
    * A separate question from the colour mode, and not a consequence of it:
@@ -969,6 +985,24 @@
               ? t("joined-unexpanded", { missing: joinedMissing.join(", ") })
               : undefined,
           action: toggleJoined,
+        },
+        {
+          labelKey: "menu-view-line-breaks",
+          icon: "wrap" as const,
+          group: "group-editing",
+          checked: lineBreaks,
+          action: () => {
+            lineBreaks = !lineBreaks;
+          },
+        },
+        {
+          labelKey: "menu-view-machinery",
+          icon: "wrench" as const,
+          group: "group-editing",
+          checked: machinery,
+          action: () => {
+            machinery = !machinery;
+          },
         },
         {
           labelKey: "menu-view-comments",
@@ -2121,6 +2155,8 @@
         {zoom}
         {wrap}
         {comments}
+        {lineBreaks}
+        {machinery}
         {paperLight}
         {justified}
         {resolveImage}

@@ -238,16 +238,26 @@ export function braceCommands(
     // `\textbfx` is not `\textbf`: the index read the name to where the letters
     // stopped, so a longer command can never be read as a shorter one with
     // text after it.
-    if (text[token.after] !== "{") continue;
+    //
+    // An option comes first where there is one — `\textls[200]{...}`,
+    // `\caption[Kurz]{Lang}` — and it is skipped rather than refused, because a
+    // command with an option is the same command.
+    let open = token.after;
+    if (text[open] === "[") {
+      const close = text.indexOf("]", open);
+      if (close === -1) continue;
+      open = close + 1;
+    }
+    if (text[open] !== "{") continue;
 
-    const end = matchBrace(text, token.after);
+    const end = matchBrace(text, open);
     if (end === null) continue;
 
     found.push({
       command: token.name,
       from: token.at,
       to: end,
-      argFrom: token.after + 1,
+      argFrom: open + 1,
       argTo: end - 1,
     });
     // A nested command inside the argument is in the index too, and is found on

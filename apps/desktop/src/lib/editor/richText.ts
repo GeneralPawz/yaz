@@ -74,8 +74,11 @@ import type { Pass } from "./pass";
 import { escapeHtml, inlineHtml } from "./inline";
 import { renderMath, renderMathEnvironment } from "./math";
 import { renderTable, tooComplexToDraw } from "./tabular";
+import { fillMetadata, metadata } from "./typography";
 import { entriesFor, generatedIn, hasGenerated } from "./generated";
 import type { BreakKind, Entry, ListingKind } from "./generated";
+import { STRUCTURAL_ENVIRONMENTS } from "./semantics";
+import { setShowLineBreaks, showLineBreaks, showMachinery } from "./viewModes";
 import {
   braceCommands,
   commentRanges,
@@ -144,6 +147,15 @@ const QUOTE_ENVIRONMENTS = ["quote", "quotation", "verse"];
 
 /** Bullets by nesting depth, as LaTeX itself sets them. */
 const BULLETS = ["•", "◦", "▪", "·"];
+
+// Re-exported so a caller reaches for one module to switch any part of the
+// view on or off, rather than having to know which file each flag lives in.
+export {
+  setShowLineBreaks,
+  setShowMachinery,
+  showLineBreaks,
+  showMachinery,
+} from "./viewModes";
 
 /** Turn rich text on or off. */
 export const setRichText = StateEffect.define<boolean>();
@@ -507,6 +519,7 @@ function build(state: EditorState): DecorationSet {
 
   boundaries(pass);
   comments(pass);
+  structure(pass);
   generated(pass);
   tables(pass);
   mathematics(pass);
@@ -776,8 +789,34 @@ function comments(pass: Pass): void {
   }
 }
 
+/**
+ * Environments that are arrangement, with their `\begin` and `\end` hidden.
+ *
+ * The same treatment a list gets, for the same reason: what is inside them is
+ * the document, and `\begin{titlepage}` is an instruction to the typesetter.
+ */
+function structure(pass: Pass): void {
+  for (const found of environments(pass.text, STRUCTURAL_ENVIRONMENTS)) {
+    for (const [from, to] of [
+      [found.from, found.bodyFrom],
+      [found.bodyTo, found.to],
+    ]) {
+      if (!drawable(pass, from!, to!)) continue;
+      // The line break goes too, or a blank line is left where the command was.
+      const whole = lineHide(pass.state, from!, to!);
+      replace(pass, whole?.from ?? from!, whole?.to ?? to!);
+    }
+  }
+}
+
 /** Tables, drawn from their source. */
 function tables(pass: Pass): void {
+  // Once, not once per table. Read inside the loop this was five walks of the
+  // document per table, which is quadratic in a document made largely of
+  // tables — and the keystroke tripwire caught it at 29x the cost for 6x the
+  // document.
+  const declared = metadata(pass.text);
+
   for (const table of environments(
     pass.text,
     Object.keys(TABLE_ENVIRONMENTS),
@@ -789,7 +828,13 @@ function tables(pass: Pass): void {
     );
     if (!read) continue;
 
-    const body = pass.text.slice(read.bodyFrom, table.bodyTo);
+    // Filled before it is drawn: a table is rendered from its source, so
+    // `\theauthor` in a cell would otherwise reach the screen as those letters.
+    // The title page of a real thesis sets the author and the reviewer this way.
+    const body = fillMetadata(
+      pass.text.slice(read.bodyFrom, table.bodyTo),
+      declared,
+    );
     // A construct this parser would draw wrongly is shown as source instead.
     // The author can see that source is source; they cannot see that a drawn
     // table has quietly lost a row.
@@ -1199,7 +1244,8 @@ const decorations = StateField.define<DecorationSet>({
       (effect) =>
         effect.is(setRichText) ||
         effect.is(setWrapperCollapsed) ||
-        effect.is(setShowComments),
+        effect.is(setShowComments) ||
+        effect.is(setShowLineBreaks),
     );
     if (
       transaction.docChanged ||
@@ -1301,6 +1347,8 @@ export function richText(): Extension {
     richTextEnabled,
     wrapperCollapsed,
     showComments,
+    showLineBreaks,
+    showMachinery,
     decorations,
     cursorStaysOutOfTheFold,
     theme,

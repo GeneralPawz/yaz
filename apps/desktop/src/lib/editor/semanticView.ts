@@ -22,13 +22,16 @@ import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import { t } from "../i18n";
 import { glossaryEntries } from "./generated";
 import { drawable, replace } from "./pass";
+import { showLineBreaks, showMachinery } from "./viewModes";
 import type { Pass } from "./pass";
 import {
   SEMANTIC_COMMANDS,
   includedGraphics,
   labelledMarker,
+  lineBreaks,
   listOptions,
   metadataUses,
+  settingCommands,
   quotationMarks,
   sectionNumbers,
   semantics,
@@ -399,6 +402,24 @@ class FigureWidget extends WidgetType {
   }
 }
 
+/** An explicit line break, drawn as the break rather than as the two marks. */
+class BreakWidget extends WidgetType {
+  override eq(): boolean {
+    // Every one is the same, so CodeMirror may reuse any of them.
+    return true;
+  }
+
+  override toDOM(): HTMLElement {
+    const node = document.createElement("span");
+    node.className = "cm-yaz-linebreak";
+    // A real break rather than a styled block: what follows has to start on
+    // the next line inside the same paragraph, which is what `\\` means.
+    node.append(document.createElement("br"));
+    node.setAttribute("aria-hidden", "true");
+    return node;
+  }
+}
+
 /** What the semantic pass worked out, for the passes that run after it. */
 export interface Meaning {
   /** The label each heading carries, by the heading's start offset. */
@@ -467,11 +488,12 @@ export function semanticMarkup(pass: Pass): Meaning {
   );
   const books = pass.state.facet(bibliography);
   const follow = pass.state.facet(followCitation);
+  const resolve = pass.state.facet(imageSource);
   const marks = quotationMarks(pass.text);
 
   // Figures, drawn as figures. Before the labels and captions inside them are
   // looked at on their own account, because the whole environment is claimed.
-  drawFigures(pass, floats, found.captions, targeted);
+  drawFigures(pass, floats, found.captions, targeted, resolve);
 
   // A label is folded into whatever it labels — the heading shows it on hover
   // — so nothing of it is left on screen.
@@ -562,6 +584,28 @@ export function semanticMarkup(pass: Pass): Meaning {
     replace(pass, use.from, use.to, new TextWidget(value, "cm-yaz-declared"));
   }
 
+  // `\textls[200]{...}` spaces the letters out, which is what a university
+  // name across the top of a title page is set in. The amount is thousandths
+  // of an em, as `microtype` counts it.
+  for (const spaced of braceCommands(pass.text, ["textls"])) {
+    const option = /\[(-?\d+)\]/.exec(
+      pass.text.slice(spaced.from, spaced.argFrom),
+    );
+    const amount = option ? Number(option[1]) / 1000 : 0.1;
+    if (spaced.argTo > spaced.argFrom) {
+      pass.ranges.push(
+        Decoration.mark({
+          class: "cm-yaz-tracked",
+          attributes: { style: `letter-spacing:${amount}em` },
+        }).range(spaced.argFrom, spaced.argTo),
+      );
+    }
+    if (drawable(pass, spaced.from, spaced.argFrom)) {
+      replace(pass, spaced.from, spaced.argFrom);
+      replace(pass, spaced.argTo, spaced.to);
+    }
+  }
+
   // Declarations style the group they open and are then hidden. Sizes and
   // shapes are marks, which is what lets several of them apply to one group.
   for (const declaration of declarations(pass.text)) {
@@ -627,6 +671,38 @@ export function semanticMarkup(pass: Pass): Meaning {
     );
   }
 
+  // `\renewcommand{\arraystretch}{1.2}` and the like: their arguments are
+  // settings, and a reader has no use for either the command or them.
+  const machinery = pass.state.field(showMachinery, false);
+  if (!machinery) {
+    for (const setting of settingCommands(pass.text)) {
+      if (drawable(pass, setting.from, setting.to)) {
+        replace(pass, setting.from, setting.to);
+      }
+    }
+  }
+
+  // An explicit break, unless the reader has asked to see the markup.
+  if (!pass.state.field(showLineBreaks, false)) {
+    for (const found of lineBreaks(pass.text)) {
+      if (!drawable(pass, found.from, found.to)) continue;
+      replace(pass, found.from, found.to, new BreakWidget());
+    }
+  }
+
+  // A figure's image where there is no figure around it — which is how a title
+  // page puts a logo on the page.
+  for (const graphic of includedGraphics(pass.text)) {
+    if (pass.covered.overlaps(graphic.from, graphic.to)) continue;
+    if (!drawable(pass, graphic.from, graphic.to)) continue;
+    replace(
+      pass,
+      graphic.from,
+      graphic.to,
+      new FigureWidget(graphic.path, "", "", "figure", resolve),
+    );
+  }
+
   for (const silent of silentCommands(pass.text)) {
     if (drawable(pass, silent.from, silent.to)) {
       replace(pass, silent.from, silent.to);
@@ -674,9 +750,8 @@ function drawFigures(
   }[],
   captions: readonly Occurrence[],
   targeted: ReadonlyMap<string, Target>,
+  resolve: ((path: string) => Promise<string | null>) | null,
 ): void {
-  const resolve = pass.state.facet(imageSource);
-
   for (const float of floats) {
     if (!float.name.startsWith("figure") && float.name !== "wrapfigure") {
       continue;
@@ -795,6 +870,7 @@ export const semanticTheme = EditorView.baseTheme({
     color: "var(--yaz-text-secondary)",
     textAlign: "center",
   },
+  ".cm-yaz-linebreak": { display: "inline" },
   ".cm-yaz-quote-mark": { color: "var(--yaz-text-secondary)" },
   // A declaration's size is inline style rather than a class: there are ten of
   // them and the scale is the value, not a name.

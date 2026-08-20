@@ -478,6 +478,8 @@ status-language-unset = No language set
 
 menu-view-wrap = Wrap long lines
 menu-view-comments = Comments
+menu-view-line-breaks = Explicit line breaks
+menu-view-machinery = Document machinery
 menu-view-paper = White paper
 
 ## Ribbon command groups

@@ -24,7 +24,7 @@
  */
 
 import { braceCommands, matchBrace, plainText } from "./structure";
-import { Kind, commentRanges, tokensIn } from "./tokens";
+import { Kind, commentRanges, tokensIn, within } from "./tokens";
 import type { BraceCommand, Heading } from "./structure";
 
 /** Commands that name a target the document defines elsewhere. */
@@ -512,6 +512,40 @@ export function quotationMarks(text: string): { open: string; close: string } {
 }
 
 /**
+ * Explicit line breaks.
+ *
+ * `\\` ends a line inside a paragraph, optionally with a length after it —
+ * `\\[1em]` — and `\newline` is the same thing spelled out. Both are markup
+ * standing for something a reader can see happening, which is why the view
+ * draws the break rather than the marks.
+ */
+export function lineBreaks(text: string): Silent[] {
+  const found: Silent[] = [];
+
+  for (const token of tokensIn(text)) {
+    const explicit =
+      (token.kind === Kind.Escape && token.character === BACKSLASH) ||
+      (token.kind === Kind.Command &&
+        (token.name === "newline" || token.name === "linebreak"));
+    if (!explicit) continue;
+
+    // The optional length goes with it: `\\[1em]` is one instruction.
+    let end = token.after;
+    if (text[end] === "*") end += 1;
+    if (text[end] === "[") {
+      const close = text.indexOf("]", end);
+      if (close !== -1) end = close + 1;
+    }
+
+    found.push({ command: "linebreak", from: token.at, to: end });
+  }
+
+  return found;
+}
+
+const BACKSLASH = String.fromCharCode(92);
+
+/**
  * Commands that stand for nothing a reader sees.
  *
  * `\noindent` and `\centering` change how the next paragraph is set, which is
@@ -521,6 +555,8 @@ export function quotationMarks(text: string): { open: string; close: string } {
  */
 export const SILENT_COMMANDS = new Set([
   "noindent",
+  "par",
+  "vfill",
   "centering",
   "raggedright",
   "raggedleft",
@@ -536,6 +572,69 @@ export const SILENT_COMMANDS = new Set([
   "endfoot",
   "endlastfoot",
 ]);
+
+/**
+ * Commands whose arguments are settings rather than text.
+ *
+ * `\renewcommand{\arraystretch}{1.2}` sets a table's row height and is on the
+ * title page of the thesis this was built against, where it read as the words
+ * `renewcommand arraystretch 1.2` in the middle of the author's name. The
+ * number of arguments is fixed per command, because guessing how many braces
+ * belong to a command is how a renderer swallows the paragraph after it.
+ */
+export const SETTING_COMMANDS: Record<string, number> = {
+  renewcommand: 2,
+  setlength: 2,
+  setcounter: 2,
+  thispagestyle: 1,
+  pagestyle: 1,
+  pagenumbering: 1,
+  addbibresource: 1,
+  graphicspath: 1,
+  hypersetup: 1,
+};
+
+/** Every setting command, covering the arguments it takes. */
+export function settingCommands(text: string): Silent[] {
+  const found: Silent[] = [];
+
+  for (const token of tokensIn(text)) {
+    if (token.kind !== Kind.Command) continue;
+    const braces = SETTING_COMMANDS[token.name];
+    if (braces === undefined) continue;
+
+    let cursor = token.after;
+    let taken = 0;
+    while (taken < braces && text[cursor] === "{") {
+      const end = matchBrace(text, cursor);
+      if (end === null) break;
+      cursor = end;
+      taken += 1;
+    }
+    if (taken < braces) continue;
+
+    found.push({ command: token.name, from: token.at, to: cursor });
+  }
+
+  return found;
+}
+
+/**
+ * Environments that are arrangement and hold nothing of their own.
+ *
+ * Their `\begin` and `\end` lines are hidden the way a list's are: what is
+ * inside them is the document, and `\begin{titlepage}` is a instruction to the
+ * typesetter that a reader has no use for.
+ */
+export const STRUCTURAL_ENVIRONMENTS = [
+  "titlepage",
+  "center",
+  "flushleft",
+  "flushright",
+  "landscape",
+  "abstract",
+  "sloppypar",
+];
 
 /** Where a silent command sits. */
 export interface Silent {
@@ -575,7 +674,9 @@ export function includedGraphics(
     /\\includegraphics\s*(?:\[[^\]]*\])?\s*\{/g,
   )) {
     const at = match.index;
-    if (comments.some((range) => at >= range.from && at < range.to)) continue;
+    // A binary search, not a scan: a document with many comments and many
+    // figures would otherwise cost the product of the two.
+    if (within(comments, at)) continue;
     const open = at + match[0].length - 1;
     const end = matchBrace(text, open);
     if (end === null) continue;

@@ -479,6 +479,8 @@ status-language-unset = Keine Sprache gesetzt
 
 menu-view-wrap = Lange Zeilen umbrechen
 menu-view-comments = Kommentare
+menu-view-line-breaks = Explizite Zeilenumbrüche
+menu-view-machinery = Dokument-Innereien
 menu-view-paper = Weißes Papier
 
 ## Befehlsgruppen im Menüband
