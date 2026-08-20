@@ -12,7 +12,7 @@
 
 import { EditorSelection, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import {
   richText,
@@ -22,6 +22,11 @@ import {
   setShowMachinery,
   setWrapperCollapsed,
 } from "./richText";
+import {
+  PACKAGE_COMMANDS,
+  PACKAGE_ENVIRONMENTS,
+} from "../../../../../plugins/latex-packages/src/vocabulary";
+import { setContributions } from "./vocabulary";
 
 const B = String.fromCharCode(92);
 
@@ -67,6 +72,26 @@ function visible(view: EditorView): string {
 function caret(view: EditorView, at: number): void {
   view.dispatch({ selection: EditorSelection.cursor(at) });
 }
+
+/**
+ * Install the packages, the way a running yaz gets them.
+ *
+ * The real plugin's table rather than a fixture, so what these exercise is
+ * what a user has — and so a command moving between core and plugin is caught
+ * here rather than in the application.
+ */
+function withPackages(): void {
+  setContributions([
+    {
+      pluginId: "com.yaz.latex-packages",
+      commands: PACKAGE_COMMANDS,
+      environments: PACKAGE_ENVIRONMENTS,
+    },
+  ]);
+}
+
+beforeEach(withPackages);
+afterEach(() => setContributions([]));
 
 describe("the buffer", () => {
   it("is the LaTeX, whatever is rendered over it", () => {

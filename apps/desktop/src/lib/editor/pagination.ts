@@ -37,6 +37,7 @@ import type { DecorationSet } from "@codemirror/view";
 
 import { pageBreaks } from "./generated";
 import { environments, headings } from "./structure";
+import { environmentsOfKind } from "./vocabulary";
 
 /** Whether the sheets are drawn at all. */
 export const paginated = Facet.define<boolean, boolean>({
@@ -65,17 +66,15 @@ export const linesPerLandscapePage = Facet.define<number, number>({
 });
 
 /**
- * The environments that turn the paper.
+ * Where the paper is turned, as ranges of the document.
  *
- * `pdflscape`'s `landscape` is the one a real document uses — the thesis this
- * was built against turns one page for one wide table — and `sidewaystable`
- * from `rotating` does the same thing for a single float.
+ * Which environments turn it is not decided here: `landscape` is pdflscape's
+ * and `sidewaystable` is rotating's, so both arrive from a plugin
+ * ([`vocabulary.ts`](./vocabulary.ts)). A document with neither package simply
+ * has no turned regions, which is the right answer for it.
  */
-const TURNED = ["landscape", "sidewaystable", "sidewaysfigure"];
-
-/** Where the paper is turned, as ranges of the document. */
 export function turnedRegions(text: string): { from: number; to: number }[] {
-  return environments(text, TURNED).map((found) => ({
+  return environments(text, environmentsOfKind("turned")).map((found) => ({
     from: found.from,
     to: found.to,
   }));

@@ -25,55 +25,27 @@
 
 import { braceCommands, matchBrace, plainText } from "./structure";
 import { Kind, commentRanges, tokensIn, within } from "./tokens";
+import { commandsOfKind, renderingOf } from "./vocabulary";
 import type { BraceCommand, Heading } from "./structure";
 
-/** Commands that name a target the document defines elsewhere. */
-export const REFERENCE_COMMANDS = [
-  "ref",
-  "eqref",
-  "autoref",
-  "cref",
-  "Cref",
-  "pageref",
-  "nameref",
-] as const;
-
-/** Commands that cite the bibliography. */
-export const CITATION_COMMANDS = [
-  "cite",
-  "parencite",
-  "textcite",
-  "footcite",
-  "autocite",
-  "citep",
-  "citet",
-  "supercite",
-] as const;
-
-/** Commands that print a glossary entry. */
-export const GLOSSARY_COMMANDS = [
-  "gls",
-  "Gls",
-  "glspl",
-  "Glspl",
-  "acrshort",
-  "acrlong",
-  "acrfull",
-  "glsdesc",
-] as const;
-
-/** Commands whose argument is a label, not text. */
-export const LABEL_COMMANDS = ["label"] as const;
-
-/** Every one-argument command this module understands. */
-export const SEMANTIC_COMMANDS: readonly string[] = [
-  ...REFERENCE_COMMANDS,
-  ...CITATION_COMMANDS,
-  ...GLOSSARY_COMMANDS,
-  ...LABEL_COMMANDS,
-  "enquote",
-  "caption",
-];
+/**
+ * Every one-argument command the preview draws, as the vocabulary knows them.
+ *
+ * Read rather than listed, because half of them are a plugin's: `\ref` is
+ * LaTeX's and `\parencite` is biblatex's, and which of those is present depends
+ * on what is installed ([`vocabulary.ts`](./vocabulary.ts)).
+ */
+export function semanticCommands(): string[] {
+  return [
+    ...commandsOfKind("reference"),
+    ...commandsOfKind("citation"),
+    ...commandsOfKind("glossary"),
+    ...commandsOfKind("quotation"),
+    ...commandsOfKind("label"),
+    ...commandsOfKind("caption"),
+    ...commandsOfKind("tracking"),
+  ];
+}
 
 /** One occurrence, sorted into what it is. */
 export interface Occurrence {
@@ -97,14 +69,10 @@ export interface Semantics {
   captions: Occurrence[];
 }
 
-const REFERENCES = new Set<string>(REFERENCE_COMMANDS);
-const CITATIONS = new Set<string>(CITATION_COMMANDS);
-const GLOSSARY = new Set<string>(GLOSSARY_COMMANDS);
-
 /** Sort every semantic command in the text into its kind. */
 export function semantics(
   text: string,
-  commands: BraceCommand[] = braceCommands(text, SEMANTIC_COMMANDS),
+  commands: BraceCommand[] = braceCommands(text, semanticCommands()),
 ): Semantics {
   const found: Semantics = {
     labels: [],
@@ -125,12 +93,31 @@ export function semantics(
       argTo: command.argTo,
     };
 
-    if (command.command === "label") found.labels.push(occurrence);
-    else if (REFERENCES.has(command.command)) found.references.push(occurrence);
-    else if (CITATIONS.has(command.command)) found.citations.push(occurrence);
-    else if (GLOSSARY.has(command.command)) found.glossary.push(occurrence);
-    else if (command.command === "enquote") found.quotations.push(occurrence);
-    else if (command.command === "caption") found.captions.push(occurrence);
+    // Sorted by what the vocabulary says the command *means*, not by its
+    // name — which is what lets a plugin's `\parencite` land in the same list
+    // as LaTeX's `\cite` without this module knowing that either exists.
+    switch (renderingOf(command.command)?.kind) {
+      case "label":
+        found.labels.push(occurrence);
+        break;
+      case "reference":
+        found.references.push(occurrence);
+        break;
+      case "citation":
+        found.citations.push(occurrence);
+        break;
+      case "glossary":
+        found.glossary.push(occurrence);
+        break;
+      case "quotation":
+        found.quotations.push(occurrence);
+        break;
+      case "caption":
+        found.captions.push(occurrence);
+        break;
+      default:
+        break;
+    }
   }
 
   return found;
@@ -545,63 +532,15 @@ export function lineBreaks(text: string): Silent[] {
 
 const BACKSLASH = String.fromCharCode(92);
 
-/**
- * Commands that stand for nothing a reader sees.
- *
- * `\noindent` and `\centering` change how the next paragraph is set, which is
- * drawn rather than written out; `\FloatBarrier` and `\par` are instructions
- * to the typesetter. All of them are hidden, and all of them come back when
- * the caret reaches them.
- */
-export const SILENT_COMMANDS = new Set([
-  "noindent",
-  "par",
-  "vfill",
-  "centering",
-  "raggedright",
-  "raggedleft",
-  "FloatBarrier",
-  "par",
-  "clearpage",
-  "hline",
-  "toprule",
-  "midrule",
-  "bottomrule",
-  "endfirsthead",
-  "endhead",
-  "endfoot",
-  "endlastfoot",
-]);
-
-/**
- * Commands whose arguments are settings rather than text.
- *
- * `\renewcommand{\arraystretch}{1.2}` sets a table's row height and is on the
- * title page of the thesis this was built against, where it read as the words
- * `renewcommand arraystretch 1.2` in the middle of the author's name. The
- * number of arguments is fixed per command, because guessing how many braces
- * belong to a command is how a renderer swallows the paragraph after it.
- */
-export const SETTING_COMMANDS: Record<string, number> = {
-  renewcommand: 2,
-  setlength: 2,
-  setcounter: 2,
-  thispagestyle: 1,
-  pagestyle: 1,
-  pagenumbering: 1,
-  addbibresource: 1,
-  graphicspath: 1,
-  hypersetup: 1,
-};
-
 /** Every setting command, covering the arguments it takes. */
 export function settingCommands(text: string): Silent[] {
   const found: Silent[] = [];
 
   for (const token of tokensIn(text)) {
     if (token.kind !== Kind.Command) continue;
-    const braces = SETTING_COMMANDS[token.name];
-    if (braces === undefined) continue;
+    const rendering = renderingOf(token.name);
+    if (rendering?.kind !== "setting") continue;
+    const braces = rendering.braces;
 
     let cursor = token.after;
     let taken = 0;
@@ -619,23 +558,6 @@ export function settingCommands(text: string): Silent[] {
   return found;
 }
 
-/**
- * Environments that are arrangement and hold nothing of their own.
- *
- * Their `\begin` and `\end` lines are hidden the way a list's are: what is
- * inside them is the document, and `\begin{titlepage}` is a instruction to the
- * typesetter that a reader has no use for.
- */
-export const STRUCTURAL_ENVIRONMENTS = [
-  "titlepage",
-  "center",
-  "flushleft",
-  "flushright",
-  "landscape",
-  "abstract",
-  "sloppypar",
-];
-
 /** Where a silent command sits. */
 export interface Silent {
   command: string;
@@ -649,7 +571,7 @@ export function silentCommands(text: string): Silent[] {
 
   for (const token of tokensIn(text)) {
     if (token.kind !== Kind.Command) continue;
-    if (!SILENT_COMMANDS.has(token.name)) continue;
+    if (renderingOf(token.name)?.kind !== "silent") continue;
     found.push({ command: token.name, from: token.at, to: token.after });
   }
 

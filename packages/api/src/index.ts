@@ -92,6 +92,32 @@ export abstract class Plugin {
     throw new Error("not implemented");
   }
 
+  /**
+   * Teach the preview what a package's commands mean.
+   *
+   * yaz knows LaTeX itself — the kernel and the standard classes — and nothing
+   * else. `\gls` is glossaries, `\parencite` is biblatex, `\enquote` is
+   * csquotes: each is somebody's package, each could be replaced by another
+   * doing the same job, and there is no end to the list. So they arrive from
+   * here.
+   *
+   * # This is a declaration, not a scanner
+   *
+   * A plugin never walks the document. yaz walks it once per keystroke and a
+   * second walk costs more than everything else in the pass put together — so
+   * a contribution says *what a name means*, and yaz does the finding. A
+   * plugin never sees an offset.
+   *
+   * A contribution may not claim a name LaTeX itself defines. `\section` means
+   * what LaTeX says it means, and a preview that depended on which plugins were
+   * installed would be a preview of something other than the document.
+   *
+   * \since 0.3.0
+   */
+  registerLatexVocabulary(_vocabulary: LatexVocabulary): void {
+    throw new Error("not implemented");
+  }
+
   /** Read this plugin's persisted settings. */
   loadData<T>(): Promise<T | null> {
     throw new Error("not implemented");
@@ -595,7 +621,68 @@ export interface EditorExtension {
   provider: unknown;
 }
 
-/** A settings tab contributed by a plugin. @since 0.1.0 */
+/**
+ * What a package's commands and environments mean.
+ *
+ * The shapes are deliberately a small closed vocabulary rather than a callback
+ * that draws: yaz owns the drawing, and a rendering it does not recognise is
+ * ignored rather than trusted. That is what keeps one plugin from making the
+ * preview slow or wrong for the whole document.
+ *
+ * \since 0.3.0
+ */
+export interface LatexVocabulary {
+  /** Commands, by name without the backslash. */
+  commands?: Record<string, LatexRendering>;
+  /** Environments, by the name in `\begin{...}`. */
+  environments?: Record<string, LatexEnvironmentRendering>;
+}
+
+/** How one command is drawn. \since 0.3.0 */
+export type LatexRendering =
+  /** As the number or title of what it names. */
+  | { kind: "reference" }
+  /** As the bibliography's short form. */
+  | { kind: "citation" }
+  /** As the glossary entry it names. */
+  | { kind: "glossary"; plural?: boolean; capital?: boolean; long?: boolean }
+  /** Wrapped in the document language's quotation marks. */
+  | { kind: "quotation" }
+  /** With its letters spaced out. */
+  | { kind: "tracking" }
+  /** Styled, with the markup hidden. */
+  | { kind: "inline"; className: string }
+  /** Hidden: it produces no words. */
+  | { kind: "silent" }
+  /** Hidden, along with the arguments it takes. */
+  | { kind: "setting"; braces: number }
+  /** Standing in for a generated list. */
+  | { kind: "listing"; listing: LatexListing; braces?: number }
+  /** Ending the page. */
+  | { kind: "pagebreak" };
+
+/** The generated lists a command can stand for. \since 0.3.0 */
+export type LatexListing =
+  "contents" | "figures" | "tables" | "glossary" | "bibliography" | "index";
+
+/** How one environment is drawn. \since 0.3.0 */
+export type LatexEnvironmentRendering =
+  /** Arrangement only: its `\begin` and `\end` lines are hidden. */
+  | { kind: "structural" }
+  /** A list, whose items get markers. */
+  | { kind: "list" }
+  /** A table, drawn from its source. `columnArguments` come before the spec. */
+  | { kind: "table"; columnArguments: number }
+  /** Mathematics, typeset whole. */
+  | { kind: "math" }
+  /** A float, which carries a number and a caption. */
+  | { kind: "float"; counts: "figure" | "table" }
+  /** Turns the paper it sits on. */
+  | { kind: "turned" }
+  /** Sets its contents apart as quoted. */
+  | { kind: "quote" };
+
+/** A settings tab contributed by a plugin. \since 0.1.0 */
 export interface SettingsTab {
   /** Message key for the tab title. */
   titleKey: string;

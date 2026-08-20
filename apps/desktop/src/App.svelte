@@ -62,6 +62,7 @@
     setContributedFormats,
   } from "./lib/formats/registry";
   import type { FormatId, FormatPreferences } from "./lib/formats/registry";
+  import { setContributions } from "./lib/editor/vocabulary";
   import {
     ALL_VISIBLE,
     buildTree,
@@ -84,6 +85,7 @@
   import ObsidianPlugin from "../../../plugins/obsidian/src/main";
   import FormatsPlugin from "../../../plugins/formats/src/main";
   import LearnPlugin from "../../../plugins/learn/src/main";
+  import LatexPackagesPlugin from "../../../plugins/latex-packages/src/main";
 
   /** The plugin the shell asks about connection status on the user's behalf. */
   const ZOTERO_PLUGIN_ID = "com.yaz.zotero";
@@ -1877,11 +1879,21 @@
         "com.yaz.obsidian": ObsidianPlugin,
         "com.yaz.formats": FormatsPlugin,
         "com.yaz.learn": LearnPlugin,
+        "com.yaz.latex-packages": LatexPackagesPlugin,
       })
       .then(() => {
         // What the plugins offered, handed to the registry once they have all
         // loaded. Held apart from the built-in formats, so which came from
         // where stays answerable (ADR-0021).
+        // What the plugins know about LaTeX packages. yaz knows LaTeX
+        // itself and nothing else (ADR-0005, and `vocabulary.ts`).
+        setContributions(
+          runtime.vocabularies.map((entry) => ({
+            pluginId: entry.pluginId,
+            commands: entry.commands as never,
+            environments: entry.environments as never,
+          })),
+        );
         setContributedFormats(
           runtime.formats.map((entry) => ({
             id: entry.id,

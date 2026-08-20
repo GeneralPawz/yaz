@@ -8,7 +8,7 @@
  * abbreviation and four characters of markup.
  */
 
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { headings, environments } from "./structure";
 import {
@@ -22,8 +22,33 @@ import {
   targets,
   includedGraphics,
 } from "./semantics";
+import {
+  PACKAGE_COMMANDS,
+  PACKAGE_ENVIRONMENTS,
+} from "../../../../../plugins/latex-packages/src/vocabulary";
+import { setContributions } from "./vocabulary";
 
 const B = String.fromCharCode(92);
+
+/**
+ * Install the packages, the way a running yaz gets them.
+ *
+ * The real plugin's table rather than a fixture, so what these exercise is
+ * what a user has — and so a command moving between core and plugin is caught
+ * here rather than in the application.
+ */
+function withPackages(): void {
+  setContributions([
+    {
+      pluginId: "com.yaz.latex-packages",
+      commands: PACKAGE_COMMANDS,
+      environments: PACKAGE_ENVIRONMENTS,
+    },
+  ]);
+}
+
+beforeEach(withPackages);
+afterEach(() => setContributions([]));
 
 describe("semantics", () => {
   const text = [
@@ -31,23 +56,26 @@ describe("semantics", () => {
     `Wie ${B}gls{BIM} in ${B}ref{ch:vor} beschrieben ${B}parencite{meister2021}.`,
     `${B}enquote{Ein Zitat}`,
   ].join("\n");
-  const found = semantics(text);
+  // Computed per test, not once for the block: the vocabulary is installed by
+  // `beforeEach`, and a value built at describe time would be built against an
+  // empty one.
+  const sorted = () => semantics(text);
 
   it("sorts each command into what it is", () => {
-    expect(found.labels.map((o) => o.key)).toEqual(["ch:vor"]);
-    expect(found.references.map((o) => o.key)).toEqual(["ch:vor"]);
-    expect(found.citations.map((o) => o.key)).toEqual(["meister2021"]);
-    expect(found.glossary.map((o) => o.key)).toEqual(["BIM"]);
-    expect(found.quotations.map((o) => o.key)).toEqual(["Ein Zitat"]);
+    expect(sorted().labels.map((o) => o.key)).toEqual(["ch:vor"]);
+    expect(sorted().references.map((o) => o.key)).toEqual(["ch:vor"]);
+    expect(sorted().citations.map((o) => o.key)).toEqual(["meister2021"]);
+    expect(sorted().glossary.map((o) => o.key)).toEqual(["BIM"]);
+    expect(sorted().quotations.map((o) => o.key)).toEqual(["Ein Zitat"]);
   });
 
   it("keeps the whole command's range, for hiding it", () => {
-    const [reference] = found.references;
+    const [reference] = sorted().references;
     expect(text.slice(reference!.from, reference!.to)).toBe(`${B}ref{ch:vor}`);
   });
 
   it("keeps the argument's range, for showing it", () => {
-    const [quotation] = found.quotations;
+    const [quotation] = sorted().quotations;
     expect(text.slice(quotation!.argFrom, quotation!.argTo)).toBe("Ein Zitat");
   });
 

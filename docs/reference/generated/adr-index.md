@@ -35,3 +35,7 @@ useful than a tidy directory.
 | [0017 — Repository layout and monorepo tooling](/adr/0017-repository-layout) | Accepted |
 | [0018 — Licensing: AGPL-3.0 application, MIT plugin API](/adr/0018-licensing) | Accepted |
 | [0019 — TLS trust: bundled roots or the operating system store](/adr/0019-tls-trust-store) | Accepted |
+| [0020 — Edit a multi-file document as one, behind a mode](/adr/0020-stitched-multi-file-editing) | Accepted |
+| [0021 — Plugins are their own repositories, released and updated on their own](/adr/0021-plugin-distribution) | Accepted |
+| [0022 — MCP: calling out is a capability, exposing tools is a declaration](/adr/0022-mcp-and-tool-declaration) | Accepted |
+| [0023 — The preview knows LaTeX; packages are plugins](/adr/0023-latex-vocabulary-boundary) | Accepted |

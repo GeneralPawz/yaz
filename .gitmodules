@@ -10,3 +10,6 @@
 [submodule "plugins/learn"]
 	path = plugins/learn
 	url = git@github.com:texyaz/yaz-learn.git
+[submodule "plugins/latex-packages"]
+	path = plugins/latex-packages
+	url = git@github.com:texyaz/yaz-latex-packages.git

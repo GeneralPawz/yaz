@@ -77,7 +77,7 @@ import { renderTable, tooComplexToDraw } from "./tabular";
 import { fillMetadata, metadata } from "./typography";
 import { entriesFor, generatedIn, hasGenerated } from "./generated";
 import type { BreakKind, Entry, ListingKind } from "./generated";
-import { STRUCTURAL_ENVIRONMENTS } from "./semantics";
+import { environmentRenderingOf, environmentsOfKind } from "./vocabulary";
 import { setShowLineBreaks, showLineBreaks, showMachinery } from "./viewModes";
 import {
   braceCommands,
@@ -100,50 +100,6 @@ const INLINE: Record<string, string> = {
   underline: "cm-yaz-underline",
   textsc: "cm-yaz-smallcaps",
 };
-
-/** Environments that are mathematics, handed to KaTeX whole. */
-const MATH_ENVIRONMENTS = [
-  "equation",
-  "equation*",
-  "align",
-  "align*",
-  "alignat",
-  "alignat*",
-  "flalign",
-  "flalign*",
-  "gather",
-  "gather*",
-  "multline",
-  "multline*",
-  "displaymath",
-  "eqnarray",
-  "eqnarray*",
-];
-
-/**
- * Table environments, and how many `{...}` arguments precede the column
- * specification.
- *
- * `tabular*` and `tabularx` take a target width first. Reading that as the
- * column specification would give a table of no columns.
- */
-const TABLE_ENVIRONMENTS: Record<string, number> = {
-  tabular: 0,
-  "tabular*": 1,
-  tabularx: 1,
-  longtable: 0,
-};
-
-/** Lists whose items get a marker. */
-const LIST_ENVIRONMENTS = ["itemize", "enumerate", "description"];
-
-/**
- * Environments that set their contents apart as quoted.
- *
- * Styled in place like a list and for the same reason: a quotation is
- * somebody's words, and the author has to be able to type into them.
- */
-const QUOTE_ENVIRONMENTS = ["quote", "quotation", "verse"];
 
 /** Bullets by nesting depth, as LaTeX itself sets them. */
 const BULLETS = ["•", "◦", "▪", "·"];
@@ -796,7 +752,10 @@ function comments(pass: Pass): void {
  * the document, and `\begin{titlepage}` is an instruction to the typesetter.
  */
 function structure(pass: Pass): void {
-  for (const found of environments(pass.text, STRUCTURAL_ENVIRONMENTS)) {
+  for (const found of environments(
+    pass.text,
+    environmentsOfKind("structural"),
+  )) {
     for (const [from, to] of [
       [found.from, found.bodyFrom],
       [found.bodyTo, found.to],
@@ -817,14 +776,15 @@ function tables(pass: Pass): void {
   // document.
   const declared = metadata(pass.text);
 
-  for (const table of environments(
-    pass.text,
-    Object.keys(TABLE_ENVIRONMENTS),
-  )) {
+  for (const table of environments(pass.text, environmentsOfKind("table"))) {
+    // How many `{...}` arguments come before the column specification is a
+    // property of the environment — `tabularx` takes a width first — and the
+    // vocabulary is where that is written down.
+    const rendering = environmentRenderingOf(table.name);
     const read = columnSpec(
       pass.text,
       table.bodyFrom,
-      TABLE_ENVIRONMENTS[table.name] ?? 0,
+      rendering?.kind === "table" ? rendering.columnArguments : 0,
     );
     if (!read) continue;
 
@@ -876,7 +836,10 @@ function mathematics(pass: Pass): void {
     );
   };
 
-  for (const environment of environments(pass.text, MATH_ENVIRONMENTS)) {
+  for (const environment of environments(
+    pass.text,
+    environmentsOfKind("math"),
+  )) {
     if (pass.covered.overlaps(environment.from, environment.to)) continue;
     const html = renderMathEnvironment(
       environment.name,
@@ -918,7 +881,7 @@ function mathematics(pass: Pass): void {
  * order, so one pass with a stack answers it for all of them.
  */
 function lists(pass: Pass, meaning: Meaning): void {
-  const found = environments(pass.text, LIST_ENVIRONMENTS);
+  const found = environments(pass.text, environmentsOfKind("list"));
   if (found.length === 0) return;
 
   const depths = nestingDepths(found);
@@ -1064,7 +1027,7 @@ function indent(
  * are styled in place.
  */
 function quotes(pass: Pass): void {
-  for (const quote of environments(pass.text, QUOTE_ENVIRONMENTS)) {
+  for (const quote of environments(pass.text, environmentsOfKind("quote"))) {
     for (const [from, to] of [
       [quote.from, quote.bodyFrom],
       [quote.bodyTo, quote.to],

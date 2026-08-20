@@ -97,6 +97,13 @@ export interface RegisteredFormat {
   load: () => Promise<unknown>;
 }
 
+/** A LaTeX vocabulary a plugin contributed, and who contributed it. */
+export interface RegisteredVocabulary {
+  pluginId: string;
+  commands: Record<string, unknown>;
+  environments: Record<string, unknown>;
+}
+
 /**
  * Loads plugins and owns the `App` they see.
  */
@@ -110,6 +117,14 @@ export class PluginRuntime {
    * collect what was offered. A plugin cannot make its format the active one.
    */
   readonly formats: RegisteredFormat[] = [];
+  /**
+   * What plugins have taught the preview about packages.
+   *
+   * Held rather than applied, like the formats: which of these is in force is
+   * the shell's decision, and a plugin cannot make its own vocabulary the
+   * active one.
+   */
+  readonly vocabularies: RegisteredVocabulary[] = [];
   private readonly loaded = new Map<string, Plugin>();
 
   constructor(private readonly context: HostContext) {}
@@ -171,6 +186,16 @@ export class PluginRuntime {
         ),
         nameKey: contribution.nameKey,
         load: contribution.load,
+      });
+    };
+
+    plugin.registerLatexVocabulary = function registerLatexVocabulary(
+      vocabulary,
+    ) {
+      runtime.vocabularies.push({
+        pluginId,
+        commands: vocabulary.commands ?? {},
+        environments: vocabulary.environments ?? {},
       });
     };
 

@@ -25,7 +25,7 @@ import { drawable, replace } from "./pass";
 import { showLineBreaks, showMachinery } from "./viewModes";
 import type { Pass } from "./pass";
 import {
-  SEMANTIC_COMMANDS,
+  semanticCommands,
   includedGraphics,
   labelledMarker,
   lineBreaks,
@@ -41,6 +41,7 @@ import {
 } from "./semantics";
 import type { Occurrence, Target } from "./semantics";
 import { braceCommands, environments, headings } from "./structure";
+import { environmentsOfKind } from "./vocabulary";
 import {
   ALIGNMENTS,
   SHAPES,
@@ -455,17 +456,12 @@ function glossaryForm(command: string, name: string, detail: string): string {
 export function semanticMarkup(pass: Pass): Meaning {
   const found = semantics(
     pass.text,
-    braceCommands(pass.text, SEMANTIC_COMMANDS),
+    braceCommands(pass.text, semanticCommands()),
   );
   const structure = headings(pass.text);
-  const floats = environments(pass.text, [
-    "figure",
-    "figure*",
-    "table",
-    "table*",
-    "longtable",
-    "sidewaystable",
-  ]);
+  // Which environments are floats depends on what is loaded: `figure` is
+  // LaTeX's, `longtable` is a package's ([`vocabulary.ts`](./vocabulary.ts)).
+  const floats = environments(pass.text, environmentsOfKind("float"));
   const targeted = targets(
     pass.text,
     structure,

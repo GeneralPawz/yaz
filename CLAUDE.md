@@ -16,7 +16,7 @@ do not silently deviate.
 The load-bearing ones:
 
 - **0004** — There is ONE CodeMirror buffer holding the raw `.tex`. Visual mode
-  is *decorations over that buffer*, never a second document model. Do not
+  is _decorations over that buffer_, never a second document model. Do not
   introduce ProseMirror or a LaTeX↔document converter.
 - **0005** — Three tiers: core / core plugins / community plugins. Core plugins
   (`plugins/`) use only the public `@yaz/api`. **Never add a privileged back door
@@ -29,6 +29,10 @@ The load-bearing ones:
   equivalent. No ARM64EC.
 - **0015** — Performance budgets fail the build. Keystroke latency (<16 ms p99)
   is the one that matters most; **do not put IPC on the keystroke path.**
+- **0023** — The preview knows **LaTeX itself** (kernel + standard classes) and
+  nothing else. Anything a `\usepackage` adds goes in `yaz-latex-packages`, not
+  in `vocabulary.ts`. The test is "does `\documentclass{article}` alone define
+  it", never "does a real thesis use it".
 
 ## Environment (this machine)
 

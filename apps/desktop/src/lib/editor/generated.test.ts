@@ -7,7 +7,7 @@
  * against a one-line example gets wrong.
  */
 
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   captionEntries,
@@ -20,6 +20,11 @@ import {
   machinery,
   pageBreaks,
 } from "./generated";
+import {
+  PACKAGE_COMMANDS,
+  PACKAGE_ENVIRONMENTS,
+} from "../../../../../plugins/latex-packages/src/vocabulary";
+import { setContributions } from "./vocabulary";
 
 const B = String.fromCharCode(92);
 
@@ -39,6 +44,26 @@ const body = [
   `${B}glsaddall`,
   `${B}end{document}`,
 ].join("\n");
+
+/**
+ * Install the packages, the way a running yaz gets them.
+ *
+ * The real plugin's table rather than a fixture, so what these exercise is
+ * what a user has — and so a command moving between core and plugin is caught
+ * here rather than in the application.
+ */
+function withPackages(): void {
+  setContributions([
+    {
+      pluginId: "com.yaz.latex-packages",
+      commands: PACKAGE_COMMANDS,
+      environments: PACKAGE_ENVIRONMENTS,
+    },
+  ]);
+}
+
+beforeEach(withPackages);
+afterEach(() => setContributions([]));
 
 describe("listings", () => {
   it("finds each generated list, and says which it is", () => {

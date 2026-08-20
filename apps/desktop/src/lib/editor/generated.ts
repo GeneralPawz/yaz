@@ -25,6 +25,7 @@
 
 import { environments, headings, matchBrace, plainText } from "./structure";
 import { Kind, tokensIn } from "./tokens";
+import { renderingOf } from "./vocabulary";
 
 /** Which generated list a command stands for. */
 export type ListingKind =
@@ -59,24 +60,15 @@ export interface Entry {
   key: string | null;
 }
 
-/**
- * The commands, by name.
+/*
+ * Which command stands for which list is not decided here.
  *
- * A map rather than a list because the name is read out of the text once and
- * looked up, which also means `\printglossaries` can never be read as
+ * `\tableofcontents` is LaTeX's and `\printglossaries` is the glossaries
+ * package's, so the set depends on what is installed
+ * ([`vocabulary.ts`](./vocabulary.ts)). The name is still read out of the text
+ * once and looked up, which is what stops `\printglossaries` being read as
  * `\printglossary` with three characters left over.
  */
-const LISTING_KINDS = new Map<string, ListingKind>([
-  ["tableofcontents", "contents"],
-  ["listoffigures", "figures"],
-  ["listoftables", "tables"],
-  ["printglossaries", "glossary"],
-  ["printglossary", "glossary"],
-  ["printacronyms", "glossary"],
-  ["printbibliography", "bibliography"],
-  ["bibliography", "bibliography"],
-  ["printindex", "index"],
-]);
 
 /** How a page is ended. */
 export type BreakKind =
@@ -88,27 +80,6 @@ export interface PageBreak {
   from: number;
   to: number;
 }
-
-const BREAK_KINDS = new Set<string>([
-  "cleardoublepage",
-  "clearpage",
-  "newpage",
-  "pagebreak",
-]);
-
-/**
- * Commands that arrange for something rather than saying anything.
- *
- * `\makeglossaries` does not appear in the document; it makes the glossary
- * possible. In rich text it is scaffolding standing in the middle of the room,
- * and the author who needs it can see it again in source view.
- */
-const MACHINERY = new Set([
-  "makeglossaries",
-  "makeindex",
-  "glsaddall",
-  "glsresetall",
-]);
 
 /**
  * Walk the text once, handing each command outside a comment to `visit`.
@@ -167,31 +138,36 @@ export function generatedIn(text: string): Generated {
   const found: Generated = { listings: [], breaks: [], machinery: [] };
 
   eachCommand(text, (name, at, after) => {
-    const listing = LISTING_KINDS.get(name);
-    if (listing) {
-      // `\bibliography{refs}` names its file; the rest take at most an option.
-      const braces = name === "bibliography" ? 1 : 0;
-      found.listings.push({
-        kind: listing,
-        from: at,
-        to: pastArguments(text, after, braces),
-      });
-      return;
-    }
+    const rendering = renderingOf(name);
+    if (!rendering) return;
 
-    if (BREAK_KINDS.has(name)) {
-      found.breaks.push({ kind: name as BreakKind, from: at, to: after });
-      return;
+    switch (rendering.kind) {
+      case "listing":
+        found.listings.push({
+          kind: rendering.listing,
+          from: at,
+          // `\bibliography{refs}` names its file; the rest take at most an
+          // option, and the vocabulary says which is which.
+          to: pastArguments(text, after, rendering.braces ?? 0),
+        });
+        break;
+      case "pagebreak":
+        found.breaks.push({ kind: name as BreakKind, from: at, to: after });
+        break;
+      case "setting":
+        // The arguments go with it: `\addcontentsline{toc}{chapter}{Glossar}`
+        // is bookkeeping all the way to its last brace.
+        found.machinery.push({
+          from: at,
+          to: pastArguments(text, after, rendering.braces),
+        });
+        break;
+      case "silent":
+        found.machinery.push({ from: at, to: after });
+        break;
+      default:
+        break;
     }
-
-    if (name === "addcontentsline") {
-      // Three arguments, and all three are bookkeeping: which list, what level,
-      // and the text that goes in it — which is already the heading below it.
-      found.machinery.push({ from: at, to: pastArguments(text, after, 3) });
-      return;
-    }
-
-    if (MACHINERY.has(name)) found.machinery.push({ from: at, to: after });
   });
 
   return found;

@@ -66,6 +66,7 @@ const CORE_MANIFESTS: &[&str] = &[
     include_str!("../../../plugins/obsidian/manifest.json"),
     include_str!("../../../plugins/formats/manifest.json"),
     include_str!("../../../plugins/learn/manifest.json"),
+    include_str!("../../../plugins/latex-packages/manifest.json"),
 ];
 
 /// A core plugin the application ships with.
