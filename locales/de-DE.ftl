@@ -520,20 +520,29 @@ group-files = Dateien
 ## Ein Dokument bearbeiten, das aus mehreren Dateien besteht
 
 menu-view-joined = Verbundenes Dokument
-joined-entered =
-    { $count } Dateien werden als ein Dokument bearbeitet. Beim Speichern wird
-    jede davon geschrieben.
-joined-missing =
-    { $count } Dateien werden als ein Dokument bearbeitet. Diese konnten nicht
-    gelesen werden und stehen weiterhin als Befehl im Text: { $missing }
-joined-refused =
-    Diese Änderung reicht von einer Datei in die nächste – es gibt keine eine
-    Datei, in die sie gehört. Bitte innerhalb einer Datei bearbeiten.
-joined-left =
-    { $file } gehört nicht zum Dokument, die verbundene Ansicht ist daher aus.
+joined-entered = { $count } Dateien werden als ein Dokument bearbeitet. Beim Speichern wird jede davon geschrieben.
+joined-missing = { $count } Dateien werden als ein Dokument bearbeitet. Diese konnten nicht gelesen werden und stehen weiterhin als Befehl im Text: { $missing }
+joined-refused = Diese Änderung reicht von einer Datei in die nächste – es gibt keine eine Datei, in die sie gehört. Bitte innerhalb einer Datei bearbeiten.
+joined-left = { $file } gehört nicht zum Dokument, die verbundene Ansicht ist daher aus.
 joined-save-failed = { $file } konnte nicht gespeichert werden: { $error }
 joined-unexpanded = Nicht eingefügt, nicht lesbar: { $missing }
-joined-drifted =
-    Das verbundene Dokument passt nicht mehr zu seinen Dateien, Änderungen
-    werden nicht geschrieben. Verbundene Ansicht ausschalten, um wieder
-    einzelne Dateien zu bearbeiten.
+joined-drifted = Das verbundene Dokument passt nicht mehr zu seinen Dateien, Änderungen werden nicht geschrieben. Verbundene Ansicht ausschalten, um wieder einzelne Dateien zu bearbeiten.
+
+## Erzeugte Verzeichnisse, aus dem Dokument selbst
+
+listing-contents = Inhalt
+listing-figures = Abbildungen
+listing-tables = Tabellen
+listing-glossary = Glossar
+listing-bibliography = Literatur
+listing-index = Index
+listing-empty-contents = Keine Überschriften in dieser Datei. Die Dateien des Dokuments verbinden, um das ganze Inhaltsverzeichnis zu sehen.
+listing-empty-figures = Keine beschrifteten Abbildungen in dieser Datei.
+listing-empty-tables = Keine beschrifteten Tabellen in dieser Datei.
+listing-empty-glossary = Keine Glossareinträge in dieser Datei.
+listing-empty-bibliography = Wird beim Übersetzen aus der Literaturdatei erzeugt.
+listing-empty-index = Wird beim Übersetzen erzeugt.
+pagebreak-clearpage = Seitenumbruch
+pagebreak-cleardoublepage = Seitenumbruch, auf eine rechte Seite
+pagebreak-newpage = Seitenumbruch
+pagebreak-pagebreak = Seitenumbruch

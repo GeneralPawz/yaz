@@ -70,6 +70,8 @@ import { t } from "../i18n";
 import { escapeHtml, inlineHtml } from "./inline";
 import { renderMath, renderMathEnvironment } from "./math";
 import { renderTable, tooComplexToDraw } from "./tabular";
+import { entriesFor, generatedIn, hasGenerated } from "./generated";
+import type { BreakKind, Entry, ListingKind } from "./generated";
 import {
   braceCommands,
   environments,
@@ -213,6 +215,143 @@ class RenderedWidget extends WidgetType {
   }
 
   /** Handled above; CodeMirror should not act on it as well. */
+  override ignoreEvent(): boolean {
+    return true;
+  }
+}
+
+/**
+ * A generated list — the contents, the figures, the glossary — drawn out.
+ *
+ * Built from the buffer rather than from a build, so it is what the document
+ * says about itself and not what LaTeX will paginate. That is why there are no
+ * page numbers: a number here would be a guess, and a wrong page number is
+ * worse than none in the one place a reader trusts numbers.
+ *
+ * Each line goes to the thing it names, which is what makes this a way of
+ * moving around the document rather than a picture of one.
+ */
+class ListingWidget extends WidgetType {
+  constructor(
+    readonly kind: ListingKind,
+    readonly entries: Entry[],
+  ) {
+    super();
+  }
+
+  /**
+   * Compared by content, so a keystroke elsewhere does not rebuild the list.
+   *
+   * A contents list of a hundred lines is a hundred DOM nodes, and rebuilding
+   * them on every character would be the most expensive thing on the keystroke
+   * path by a wide margin.
+   */
+  override eq(other: ListingWidget): boolean {
+    return (
+      other.kind === this.kind &&
+      other.entries.length === this.entries.length &&
+      other.entries.every(
+        (entry, index) =>
+          entry.label === this.entries[index]?.label &&
+          entry.detail === this.entries[index]?.detail &&
+          entry.level === this.entries[index]?.level,
+      )
+    );
+  }
+
+  override toDOM(view: EditorView): HTMLElement {
+    const box = document.createElement("div");
+    box.className = "cm-yaz-listing";
+
+    const title = document.createElement("div");
+    title.className = "cm-yaz-listing-title";
+    title.textContent = t(`listing-${this.kind}`);
+    box.append(title);
+
+    if (this.entries.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "cm-yaz-listing-empty";
+      // Which is the true answer, and in a document split across files it is
+      // also an invitation: joined, the headings are there to be listed.
+      empty.textContent = t(`listing-empty-${this.kind}`);
+      box.append(empty);
+      return box;
+    }
+
+    const list = document.createElement("ol");
+    list.className = "cm-yaz-listing-entries";
+    for (const entry of this.entries) {
+      const row = document.createElement("li");
+      row.className = `cm-yaz-listing-entry cm-yaz-listing-level-${entry.level}`;
+
+      const link = document.createElement("button");
+      link.type = "button";
+      link.className = "cm-yaz-listing-link";
+      link.textContent = entry.label;
+      link.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        // Not `posAtDOM`: the point of a contents line is to go somewhere else.
+        view.dispatch({
+          selection: EditorSelection.cursor(
+            Math.min(entry.at, view.state.doc.length),
+          ),
+          scrollIntoView: true,
+        });
+        view.focus();
+      });
+      row.append(link);
+
+      if (entry.detail) {
+        const detail = document.createElement("span");
+        detail.className = "cm-yaz-listing-detail";
+        detail.textContent = entry.detail;
+        row.append(detail);
+      }
+      list.append(row);
+    }
+    box.append(list);
+    return box;
+  }
+
+  override ignoreEvent(): boolean {
+    return false;
+  }
+}
+
+/**
+ * Where a page ends, as a rule across the measure.
+ *
+ * Not where LaTeX will end the page — that is typesetting, and guessing at it
+ * would put two different sets of page breaks in front of the same author
+ * (ADR-0004's reason for not paginating). This is only the break the author
+ * asked for, drawn as the thing it is instead of as a word.
+ */
+class PageBreakWidget extends WidgetType {
+  constructor(readonly kind: BreakKind) {
+    super();
+  }
+
+  override eq(other: PageBreakWidget): boolean {
+    return other.kind === this.kind;
+  }
+
+  override toDOM(view: EditorView): HTMLElement {
+    const rule = document.createElement("div");
+    rule.className = "cm-yaz-pagebreak";
+    const label = document.createElement("span");
+    label.className = "cm-yaz-pagebreak-label";
+    label.textContent = t(`pagebreak-${this.kind}`);
+    rule.append(label);
+    rule.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      view.dispatch({
+        selection: EditorSelection.cursor(view.posAtDOM(rule)),
+      });
+      view.focus();
+    });
+    return rule;
+  }
+
   override ignoreEvent(): boolean {
     return true;
   }
@@ -397,6 +536,7 @@ function build(state: EditorState): DecorationSet {
   };
 
   boundaries(pass);
+  generated(pass);
   tables(pass);
   mathematics(pass);
   lists(pass);
@@ -553,6 +693,53 @@ function boundaries(pass: Pass): void {
       found.end.to,
       new BoundaryWidget("end", true),
     );
+  }
+}
+
+/**
+ * The document's generated parts: its lists, its page breaks, its scaffolding.
+ *
+ * Guarded by a cheap look first, because most documents have none of this and
+ * would otherwise pay for a walk of themselves on every keystroke.
+ */
+function generated(pass: Pass): void {
+  if (!hasGenerated(pass.text)) return;
+  const found = generatedIn(pass.text);
+
+  for (const listing of found.listings) {
+    if (touched(pass.state, listing.from, listing.to)) {
+      pass.covered.claim(listing.from, listing.to);
+      continue;
+    }
+    replace(
+      pass,
+      listing.from,
+      listing.to,
+      new ListingWidget(listing.kind, entriesFor(listing.kind, pass.text)),
+    );
+  }
+
+  for (const pageBreak of found.breaks) {
+    if (touched(pass.state, pageBreak.from, pageBreak.to)) {
+      pass.covered.claim(pageBreak.from, pageBreak.to);
+      continue;
+    }
+    replace(
+      pass,
+      pageBreak.from,
+      pageBreak.to,
+      new PageBreakWidget(pageBreak.kind),
+    );
+  }
+
+  for (const command of found.machinery) {
+    // Hidden rather than drawn, and revealed by the caret like everything else
+    // — so it is one arrow key away rather than a mode switch away.
+    if (touched(pass.state, command.from, command.to)) {
+      pass.covered.claim(command.from, command.to);
+      continue;
+    }
+    replace(pass, command.from, command.to);
   }
 }
 
@@ -1070,6 +1257,82 @@ export function richText(): Extension {
  * ([ADR-0010](https://generalpawz.github.io/yaz/adr/0010-theming)).
  */
 const theme = EditorView.baseTheme({
+  // A generated list, set as the reference it is: quiet rules, no page numbers,
+  // and every line a way of getting there.
+  ".cm-yaz-listing": {
+    display: "block",
+    inlineSize: "100%",
+    textAlign: "start",
+    border: "1px solid var(--yaz-border)",
+    borderRadius: "var(--yaz-radius-md)",
+    background: "var(--yaz-bg-secondary)",
+    padding: "var(--yaz-space-3) var(--yaz-space-4)",
+    margin: "var(--yaz-space-3) 0",
+    fontFamily: "var(--yaz-font-sans)",
+  },
+  ".cm-yaz-listing-title": {
+    fontSize: "0.8em",
+    textTransform: "uppercase",
+    letterSpacing: "0.08em",
+    color: "var(--yaz-text-muted)",
+    marginBlockEnd: "var(--yaz-space-2)",
+  },
+  ".cm-yaz-listing-empty": {
+    margin: "0",
+    fontSize: "0.9em",
+    color: "var(--yaz-text-muted)",
+    fontStyle: "italic",
+  },
+  ".cm-yaz-listing-entries": {
+    listStyle: "none",
+    margin: "0",
+    padding: "0",
+  },
+  ".cm-yaz-listing-entry": {
+    lineHeight: "1.5",
+    paddingBlock: "0.05em",
+  },
+  ".cm-yaz-listing-level-1": { paddingInlineStart: "1.2em" },
+  ".cm-yaz-listing-level-2": { paddingInlineStart: "2.4em" },
+  ".cm-yaz-listing-level-3": { paddingInlineStart: "3.6em" },
+  ".cm-yaz-listing-link": {
+    font: "inherit",
+    color: "var(--yaz-text-primary)",
+    background: "none",
+    border: "none",
+    padding: "0",
+    cursor: "pointer",
+    textAlign: "start",
+  },
+  ".cm-yaz-listing-link:hover": {
+    color: "var(--yaz-accent)",
+    textDecoration: "underline",
+  },
+  ".cm-yaz-listing-detail": {
+    color: "var(--yaz-text-muted)",
+    fontSize: "0.9em",
+    marginInlineStart: "0.5em",
+  },
+  // The break the author asked for, drawn as a break.
+  ".cm-yaz-pagebreak": {
+    display: "flex",
+    inlineSize: "100%",
+    alignItems: "center",
+    gap: "var(--yaz-space-2)",
+    margin: "var(--yaz-space-3) 0",
+    color: "var(--yaz-text-muted)",
+    fontFamily: "var(--yaz-font-sans)",
+    fontSize: "0.72em",
+    textTransform: "uppercase",
+    letterSpacing: "0.08em",
+    cursor: "pointer",
+    userSelect: "none",
+  },
+  ".cm-yaz-pagebreak::before, .cm-yaz-pagebreak::after": {
+    content: '""',
+    flex: "1",
+    borderTop: "1px dashed var(--yaz-border)",
+  },
   ".cm-yaz-heading": {
     fontWeight: "700",
   },

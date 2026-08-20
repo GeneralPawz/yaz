@@ -10,6 +10,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import { availableLocales, locale, setLocale, t } from "./i18n";
+import enUS from "../../../../locales/en-US.ftl?raw";
+import deDE from "../../../../locales/de-DE.ftl?raw";
 
 afterEach(() => setLocale("en-US"));
 
@@ -36,6 +38,50 @@ describe("t", () => {
 
   it("returns the key when no catalogue has it", () => {
     expect(t("no-such-message-key")).toBe("no-such-message-key");
+  });
+});
+
+describe("every message in the catalogues", () => {
+  /**
+   * Keys whose value is written on the following lines instead of after the
+   * `=`.
+   *
+   * The parser here reads the `key = value` subset and skips continuation
+   * lines by design, so a value written that way resolves to its own key and
+   * the interface shows `listing-empty-contents` where a sentence should be.
+   * It costs nothing to write the sentence on one line, and this is what says
+   * so — a translator has no way to know otherwise, and the string looks fine
+   * in the catalogue.
+   */
+  function blockValued(source: string): string[] {
+    const found: string[] = [];
+    const lines = source.split(/\r?\n/);
+
+    lines.forEach((line, index) => {
+      const match = /^([a-zA-Z][\w-]*)\s*=\s*(.*)$/.exec(line);
+      if (!match || match[2]!.trim() !== "") return;
+      // A plural selector is a different thing and is knowingly not resolved
+      // until the real Fluent runtime lands (ADR-0011, phase 3).
+      if ((lines[index + 1] ?? "").includes("->")) return;
+      found.push(match[1]!);
+    });
+
+    return found;
+  }
+
+  it("is written where the parser can read it", () => {
+    expect(blockValued(enUS)).toEqual([]);
+    expect(blockValued(deDE)).toEqual([]);
+  });
+
+  it("resolves to something other than its own name", () => {
+    // The same failure seen from the other side, and the one a reader would
+    // actually notice.
+    for (const source of [enUS, deDE]) {
+      for (const key of blockValued(source)) {
+        expect(t(key)).not.toBe(key);
+      }
+    }
   });
 });
 

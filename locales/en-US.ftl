@@ -519,17 +519,29 @@ group-files = Files
 ## Editing a document that lives in several files
 
 menu-view-joined = Joined document
-joined-entered =
-    Editing { $count } files as one document. Saving writes each of them.
-joined-missing =
-    Editing { $count } files as one document. These could not be read and are
-    shown as commands: { $missing }
-joined-refused =
-    That edit runs from one file into the next, so there is no one file to
-    write it to. Edit inside one of them.
+joined-entered = Editing { $count } files as one document. Saving writes each of them.
+joined-missing = Editing { $count } files as one document. These could not be read and are shown as commands: { $missing }
+joined-refused = That edit runs from one file into the next, so there is no one file to write it to. Edit inside one of them.
 joined-left = { $file } is not part of the document, so the joined view is off.
 joined-save-failed = { $file } could not be saved: { $error }
 joined-unexpanded = Not shown, could not be read: { $missing }
-joined-drifted =
-    The joined document no longer matches its files, so edits are not
-    being written. Switch the joined view off to go back to one file.
+joined-drifted = The joined document no longer matches its files, so edits are not being written. Switch the joined view off to go back to one file.
+
+## Generated lists, drawn from what the document says about itself
+
+listing-contents = Contents
+listing-figures = Figures
+listing-tables = Tables
+listing-glossary = Glossary
+listing-bibliography = Bibliography
+listing-index = Index
+listing-empty-contents = No headings in this file. Join the document's files to list the whole contents.
+listing-empty-figures = No captioned figures in this file.
+listing-empty-tables = No captioned tables in this file.
+listing-empty-glossary = No glossary entries in this file.
+listing-empty-bibliography = Built from the bibliography file when compiled.
+listing-empty-index = Built when the document is compiled.
+pagebreak-clearpage = Page break
+pagebreak-cleardoublepage = Page break, to a right-hand page
+pagebreak-newpage = Page break
+pagebreak-pagebreak = Page break

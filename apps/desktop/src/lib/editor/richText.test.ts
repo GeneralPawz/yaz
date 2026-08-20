@@ -507,3 +507,86 @@ describe("a whole paper", () => {
     expect(visible(view)).toContain("Introduction");
   });
 });
+
+describe("the parts LaTeX generates", () => {
+  const doc = [
+    "\\" + "documentclass{report}",
+    "\\" + "begin{document}",
+    "\\" + "tableofcontents",
+    "\\" + "cleardoublepage",
+    "\\" + "addcontentsline{toc}{chapter}{Glossar}",
+    "\\" + "chapter{Vorbemerkungen}",
+    "Der Anlass war ein anderer.",
+    "\\" + "section{Anlass}",
+    "\\" + "end{document}",
+  ].join("\n");
+
+  /**
+   * Mounted with the caret in the prose.
+   *
+   * Folding the preamble puts the caret on the first line below it, which in a
+   * document like this one is the `\tableofcontents` — so it is revealed, and a
+   * test that did not move the caret would be asking about the revealed state
+   * while believing it asked about the drawn one.
+   */
+  function reading(source = doc): EditorView {
+    const view = mount(source);
+    const prose = source.indexOf("Der Anlass");
+    caret(view, prose === -1 ? source.length - 1 : prose + 4);
+    return view;
+  }
+
+  it("draws the contents from the document's own headings", () => {
+    // Which is the point: the list is what the document says about itself, and
+    // it is right the moment a heading is typed rather than after a compile.
+    const shown = visible(reading());
+    expect(shown).toContain("Vorbemerkungen");
+    expect(shown).not.toContain("\\" + "tableofcontents");
+  });
+
+  it("titles the list, so an empty one is still legible", () => {
+    expect(visible(reading())).toContain("Contents");
+  });
+
+  it("draws a page break instead of the word for it", () => {
+    expect(visible(reading())).not.toContain("cleardoublepage");
+  });
+
+  it("hides the bookkeeping", () => {
+    // `addcontentsline` says nothing to a reader; it arranges for a heading to
+    // appear in a list that is already drawn above it.
+    expect(visible(reading())).not.toContain("addcontentsline");
+  });
+
+  it("gives the source back when the caret arrives", () => {
+    // The rule the whole view runs on: what you are editing, you can see.
+    const view = mount(doc);
+    caret(view, doc.indexOf("\\" + "tableofcontents") + 3);
+    expect(visible(view)).toContain("\\" + "tableofcontents");
+  });
+
+  it("leaves the buffer exactly as it was", () => {
+    // ADR-0004 again. Everything above is decoration over this text.
+    expect(reading().state.doc.toString()).toBe(doc);
+  });
+
+  it("says so when there is nothing to list", () => {
+    // A `main.tex` on its own holds no headings at all, and a box that explains
+    // itself beats one that looks broken.
+    const alone = [
+      "\\" + "begin{document}",
+      "\\" + "tableofcontents",
+      "Ein Satz, damit der Cursor woanders steht.",
+      "\\" + "end{document}",
+    ].join("\n");
+    const view = mount(alone);
+    caret(view, alone.indexOf("Ein Satz") + 4);
+    expect(visible(view)).toContain("No headings in this file");
+  });
+
+  it("does nothing at all in source view", () => {
+    const view = mount(doc, false);
+    expect(visible(view)).toContain("\\" + "tableofcontents");
+    expect(visible(view)).toContain("\\" + "addcontentsline");
+  });
+});

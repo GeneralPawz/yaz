@@ -151,6 +151,8 @@ function within(
  * `\section[Short]{A rather longer title for the contents page}`.
  */
 export function headings(text: string): Heading[] {
+  if (text === memoisedHeadingsText) return memoisedHeadings;
+
   const comments = commentRanges(text);
   const found: Heading[] = [];
 
@@ -202,8 +204,21 @@ export function headings(text: string): Heading[] {
     index = end - 1;
   }
 
+  memoisedHeadingsText = text;
+  memoisedHeadings = found;
   return found;
 }
+
+/**
+ * The last answer, for the same reason {@link commentRanges} keeps one.
+ *
+ * A decoration pass asks for the headings to colour them, and the contents
+ * listing asks again to list them. Both are handed the same string, so the
+ * comparison is a pointer check and the second walk of a hundred-page
+ * manuscript does not happen.
+ */
+let memoisedHeadingsText: string | null = null;
+let memoisedHeadings: Heading[] = [];
 
 /**
  * Strip the markup a heading title may contain, for display in a list.
