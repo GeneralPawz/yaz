@@ -24,6 +24,7 @@
  */
 
 import { environments, headings, matchBrace, plainText } from "./structure";
+import { sectionNumbers } from "./semantics";
 import { Kind, tokensIn } from "./tokens";
 import { renderingOf } from "./vocabulary";
 
@@ -194,15 +195,29 @@ export function machinery(text: string): { from: number; to: number }[] {
  * `report` and `book` show down to `\section` by default, which is two levels
  * below `\chapter`. Going deeper turns a page of contents into six.
  */
-const CONTENTS_DEPTH = 2;
+/**
+ * How deep the contents goes.
+ *
+ * Three, which is `\subsubsection` — what `\setcounter{tocdepth}{2}` gives by
+ * default in `report` and what a thesis actually has. Two showed a contents
+ * with the numbered subsections missing, which read as the list being wrong
+ * rather than as being shallow.
+ */
+const CONTENTS_DEPTH = 3;
 
 /** The contents, from the document's own headings. */
 export function contentsEntries(text: string): Entry[] {
-  return headings(text)
+  const found = headings(text);
+  const numbers = sectionNumbers(found);
+  return found
     .filter((heading) => heading.level <= CONTENTS_DEPTH)
     .map((heading) => ({
       label: plainText(heading.title),
-      detail: null,
+      // The number LaTeX will print in front of it — `2.1.3` — carried as the
+      // detail so the list reads as a table of contents rather than as an
+      // indented outline. A starred heading has none, which is correct: it is
+      // not numbered in the document either.
+      detail: numbers.get(heading.from) ?? null,
       level: heading.level,
       at: heading.titleFrom,
       key: null,
@@ -345,7 +360,23 @@ export function glossaryEntries(text: string): Entry[] {
     });
   });
 
-  return found;
+  // Alphabetical, and by the *key* — which is what `\printglossaries` sorts by
+  // and is not always what the entry is called. `\newglossaryentry{BIM}` sorts
+  // under B whatever its `name` field says.
+  //
+  // Sorted here rather than left in source order because a glossary in the
+  // order somebody happened to define its terms is not a glossary; it is a
+  // list, and the reader cannot look anything up in it.
+  return found.sort((left, right) =>
+    (left.key ?? left.label).localeCompare(
+      right.key ?? right.label,
+      undefined,
+      {
+        sensitivity: "base",
+        numeric: true,
+      },
+    ),
+  );
 }
 
 /** What a listing of each kind is built from. */

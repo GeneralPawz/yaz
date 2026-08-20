@@ -15,10 +15,11 @@ import {
   linesPerPage,
   pageStarts,
   paginated,
+  pagination,
   turnedRegions,
 } from "./pagination";
 import type { Layout } from "./pass";
-import { layoutOf, richText, richTextEnabled } from "./richText";
+import { layoutOf, richText, richTextEnabled, setRichText } from "./richText";
 import { EditorView } from "@codemirror/view";
 import {
   PACKAGE_COMMANDS,
@@ -426,5 +427,185 @@ describe("counting what is drawn rather than what is written", () => {
     // The text does not share the sheet the machinery is on.
     const afterMatter = layout.matter[0]!.to + 1;
     expect(starts).toContain(afterMatter);
+  });
+});
+
+/**
+ * The sheets a running editor actually draws.
+ *
+ * Everything above calls `pageStarts` with a layout in hand, which is the
+ * arithmetic in isolation — and the arithmetic was right while the page view
+ * was visibly wrong, because the *field* never asked for it. Rich text is
+ * switched on by an effect carrying no edit, so a page view that redrew only
+ * on `docChanged` paginated an empty layout once and never looked again.
+ *
+ * These mount a view and count what is on the screen. They are slower and they
+ * are the ones that would have caught it.
+ */
+describe("the sheets a running editor draws", () => {
+  /** A mounted view with the page on, rich text on, and a known geometry. */
+  function paged(doc: string, perPage: number, measure = 0): EditorView {
+    const view = new EditorView({
+      state: EditorState.create({
+        doc,
+        extensions: [
+          richText(),
+          pagination(),
+          paginated.of(true),
+          linesPerPage.of(perPage),
+          charactersPerLine.of(measure),
+        ],
+      }),
+      parent: globalThis.document.body,
+    });
+    views.push(view);
+    // Exactly how the application turns it on: an effect, with no edit.
+    view.dispatch({ effects: setRichText.of(true) });
+    // And out of the way. Collapsing the preamble pushes the caret to the
+    // first position after the fold, and whatever is there is shown as source
+    // — which is the right behaviour and the wrong place to be standing when
+    // the question is what the page looks like.
+    view.dispatch({
+      selection: { anchor: view.state.doc.length },
+      scrollIntoView: false,
+    });
+    return view;
+  }
+
+  /** How many sheets are drawn. */
+  function sheetCount(view: EditorView): number {
+    return view.contentDOM.querySelectorAll(".cm-yaz-sheet-first").length;
+  }
+
+  it("repaginates when rich text is switched on", () => {
+    // The bug, exactly. Switching rich text on folds the preamble away and
+    // makes every paragraph wrap, and neither changes the document — so a page
+    // view watching only for edits kept the sheets it had.
+    const preamble = Array.from(
+      { length: 40 },
+      (_, index) => `${B}usepackage{p${index}}`,
+    ).join("\n");
+    const doc = [
+      `${B}documentclass{article}`,
+      preamble,
+      `${B}begin{document}`,
+      "The first paragraph.",
+      `${B}end{document}`,
+    ].join("\n");
+
+    const view = paged(doc, 10);
+    // Forty folded lines of preamble are no rows at all, so the whole document
+    // is one short sheet of matter and one of text. Counted as source it would
+    // have been five sheets.
+    expect(sheetCount(view)).toBeLessThan(4);
+  });
+
+  it("repaginates when wrapping is switched on", () => {
+    const paragraph = "x".repeat(60);
+    const body = Array.from({ length: 6 }, () => paragraph).join("\n" + "\n");
+    const doc = `${B}begin{document}${nothing}${body}${nothing}${B}end{document}`;
+
+    const narrow = sheetCount(paged(doc, 10, 10));
+    const wide = sheetCount(paged(doc, 10, 0));
+    expect(narrow).toBeGreaterThan(wide);
+  });
+
+  it("draws no blank sheet where two page breaks meet", () => {
+    // `\clearpage` before a table of contents is two instructions to begin a
+    // page, and beginning a page that has already begun is nothing at all. It
+    // was drawing an empty sheet of paper between them.
+    const doc = [
+      `${B}begin{document}`,
+      `${B}begin{titlepage}`,
+      "A Thesis",
+      `${B}end{titlepage}`,
+      `${B}clearpage`,
+      `${B}tableofcontents`,
+      `${B}clearpage`,
+      "The first paragraph.",
+      `${B}end{document}`,
+    ].join("\n");
+
+    const view = paged(doc, 40);
+    for (const sheet of view.contentDOM.querySelectorAll(
+      ".cm-yaz-sheet-first",
+    )) {
+      // Every sheet drawn has something on it.
+      expect(sheet.textContent?.trim().length ?? 0).toBeGreaterThan(0);
+    }
+  });
+
+  it("gives a divided listing its paper", () => {
+    // The second sheet of a glossary is a block widget with no line of its
+    // own, so nothing puts the margins on it. It came out as tall as its
+    // contents and floating in the middle of the document.
+    //
+    // Deliberately a small document with a small page. A long one is not more
+    // realistic here, it is just outside the viewport: CodeMirror renders what
+    // it can see, and in jsdom nothing has a height, so a hundred lines
+    // collapse into a `cm-gap` and the assertions test nothing.
+    const terms = Array.from(
+      { length: 8 },
+      (_, index) =>
+        `${B}newglossaryentry{g${index}}{name={Term ${index}},description={d}}`,
+    ).join("\n");
+    const doc = [
+      `${B}documentclass{article}`,
+      terms,
+      `${B}begin{document}`,
+      `${B}printglossaries`,
+      "",
+      "A paragraph after it.",
+      `${B}end{document}`,
+    ].join("\n");
+
+    const view = paged(doc, 5);
+    const carried = view.contentDOM.querySelectorAll(".cm-yaz-listing-sheet");
+    expect(carried.length).toBeGreaterThan(0);
+    for (const sheet of carried) {
+      expect(sheet.classList.contains("cm-yaz-sheet-first")).toBe(true);
+      expect(sheet.classList.contains("cm-yaz-sheet-last")).toBe(true);
+      expect((sheet as HTMLElement).style.minBlockSize).not.toBe("");
+    }
+  });
+
+  it("numbers the sheets, and does not number the matter", () => {
+    const doc = [
+      `${B}documentclass{article}`,
+      `${B}begin{document}`,
+      "One.",
+      `${B}clearpage`,
+      "Two.",
+      `${B}clearpage`,
+      "Three.",
+      `${B}end{document}`,
+    ].join("\n");
+
+    const view = paged(doc, 40);
+    const folios = [...view.contentDOM.querySelectorAll(".cm-yaz-folio")].map(
+      (node) => node.textContent,
+    );
+    // Counting from one at the first sheet of paper: the machinery the file
+    // wraps the document in is not page one of the document.
+    expect(folios.slice(0, 3)).toEqual(["1", "2", "3"]);
+  });
+
+  it("keeps the front matter off the first sheet of paper", () => {
+    // What the file wraps the document in is not a page of the document. It
+    // was taking the title page's sheet, so the first thing on the paper was
+    // the machinery.
+    const doc = [
+      `${B}documentclass{article}`,
+      `${B}usepackage{graphicx}`,
+      `${B}begin{document}`,
+      "The first paragraph.",
+      `${B}end{document}`,
+    ].join("\n");
+
+    const view = paged(doc, 40);
+    const first = view.contentDOM.querySelector(".cm-yaz-sheet-first");
+    expect(first?.classList.contains("cm-yaz-sheet-matter")).toBe(true);
+    // And it closes there: the text is on the next sheet, not underneath it.
+    expect(first?.classList.contains("cm-yaz-sheet-last")).toBe(true);
   });
 });

@@ -66,7 +66,14 @@ import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import type { DecorationSet } from "@codemirror/view";
 
 import { t } from "../i18n";
-import { Covered, drawable, emptyLayout, replace, touched } from "./pass";
+import {
+  Covered,
+  drawable,
+  emptyLayout,
+  NO_LAYOUT,
+  replace,
+  touched,
+} from "./pass";
 import { semanticMarkup, semanticTheme } from "./semanticView";
 import type { Meaning } from "./semanticView";
 import { labelledMarker } from "./semantics";
@@ -237,6 +244,16 @@ class ListingWidget extends WidgetType implements Tall {
     readonly sheet = 1,
     /** How many sheets the whole listing runs to. */
     readonly sheets = 1,
+    /**
+     * How many rows of paper this stands on, when it is its own sheet.
+     *
+     * Zero for the first sheet of a listing, which sits on a line and takes
+     * the sheet that line is on. The sheets after it are block widgets with no
+     * line of their own, so they have to be paper themselves — otherwise they
+     * come out as tall as their contents and with none of the margins, which
+     * is a page of glossary floating in the middle of the document.
+     */
+    readonly paperRows = 0,
   ) {
     super();
   }
@@ -265,6 +282,7 @@ class ListingWidget extends WidgetType implements Tall {
       other.kind === this.kind &&
       other.sheet === this.sheet &&
       other.sheets === this.sheets &&
+      other.paperRows === this.paperRows &&
       other.entries.length === this.entries.length &&
       other.entries.every(
         (entry, index) =>
@@ -278,6 +296,19 @@ class ListingWidget extends WidgetType implements Tall {
   override toDOM(view: EditorView): HTMLElement {
     const box = document.createElement("div");
     box.className = "cm-yaz-listing";
+
+    if (this.paperRows > 0) {
+      // Its own sheet, and it has to say so: the classes that carry the
+      // margins and the shadow are put on lines by the page view, and this is
+      // not a line.
+      box.classList.add(
+        "cm-yaz-sheet",
+        "cm-yaz-sheet-first",
+        "cm-yaz-sheet-last",
+        "cm-yaz-listing-sheet",
+      );
+      box.style.minBlockSize = `calc(${this.paperRows} * var(--yaz-line-height, 1.6) * 1em)`;
+    }
 
     // Only the first sheet carries the heading, the way a contents list in a
     // book says "Contents" once and then keeps going.
@@ -496,7 +527,7 @@ class BoundaryWidget extends WidgetType {
  */
 function build(state: EditorState): Rendered {
   if (!state.field(richTextEnabled, false)) {
-    return { decorations: Decoration.none, layout: emptyLayout() };
+    return { decorations: Decoration.none, layout: NO_LAYOUT };
   }
 
   const pass: Pass = {
@@ -771,6 +802,7 @@ function listed(pass: Pass, from: number, to: number, kind: ListingKind): void {
   ) {
     return;
   }
+  const perPage = pass.state.facet(linesPerPage);
 
   // The rest stand after it, in order. `side` keeps them in that order: two
   // block widgets at one position are otherwise drawn in an order CodeMirror
@@ -780,7 +812,7 @@ function listed(pass: Pass, from: number, to: number, kind: ListingKind): void {
     const slice = entries.slice((sheet - 1) * perSheet, sheet * perSheet);
     pass.ranges.push(
       Decoration.widget({
-        widget: new ListingWidget(kind, slice, sheet, sheets),
+        widget: new ListingWidget(kind, slice, sheet, sheets, perPage),
         block: true,
         side: sheet,
       }).range(at),
@@ -1334,7 +1366,7 @@ const rendered = StateField.define<Rendered>({
  * an empty layout says.
  */
 export function layoutOf(state: EditorState): Layout {
-  return state.field(rendered, false)?.layout ?? emptyLayout();
+  return state.field(rendered, false)?.layout ?? NO_LAYOUT;
 }
 
 /** A field's value after a transaction, without building the new state. */

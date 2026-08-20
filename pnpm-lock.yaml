@@ -122,15 +122,6 @@ importers:
         specifier: ^6.0.0
         version: 6.0.3
 
-  plugins/zotero:
-    devDependencies:
-      '@yaz/api':
-        specifier: workspace:*
-        version: link:../../packages/api
-      typescript:
-        specifier: ^6.0.0
-        version: 6.0.3
-
 packages:
 
   '@algolia/abtesting@1.22.0':

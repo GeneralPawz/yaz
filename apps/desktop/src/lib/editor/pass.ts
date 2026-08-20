@@ -65,7 +65,7 @@ export interface Layout {
   readonly matter: { from: number; to: number }[];
 }
 
-/** An empty layout, for a pass that has not run. */
+/** A fresh empty layout, for a pass that is about to fill it in. */
 export function emptyLayout(): Layout {
   return {
     skipped: new Set(),
@@ -74,6 +74,21 @@ export function emptyLayout(): Layout {
     matter: [],
   };
 }
+
+/**
+ * The layout of a view that is not drawing rich text.
+ *
+ * One shared value rather than a fresh one each time, because the page view
+ * decides whether to redraw by comparing the layout it has against the layout
+ * the state holds. A new empty object per call would compare unequal to itself
+ * and repaginate the document on every keystroke.
+ */
+export const NO_LAYOUT: Layout = {
+  skipped: new Set(),
+  hiddenChars: new Map(),
+  widgetRows: new Map(),
+  matter: [],
+};
 
 /** A line break, by code, so the scan below compares numbers. */
 const NEWLINE = 10;

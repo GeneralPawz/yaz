@@ -196,10 +196,13 @@ export function pageStarts(
     startOfLine(range.to + 1);
   }
 
-  const ordered = [...starts].sort((a, b) => a - b);
-  if (perPage <= 0) return ordered;
-
   const rows = rowsOf(state, layout, measure);
+  const ordered = withoutBlanks(
+    state,
+    [...starts].sort((a, b) => a - b),
+    rows,
+  );
+  if (perPage <= 0) return ordered;
 
   // And the sheet simply filling up. Walked rather than computed per break, so
   // a long stretch between two of the document's own breaks is divided evenly
@@ -240,7 +243,49 @@ export function pageStarts(
     }
   }
 
-  return filled;
+  return withoutBlanks(state, filled, rows);
+}
+
+/**
+ * Drop the sheets that would come out blank.
+ *
+ * Several things start a page — `\clearpage`, the end of a title page, a
+ * generated list, the front matter — and where two of them meet, the sheet
+ * between them holds nothing. That is a blank sheet of paper in the middle of
+ * the document, which is not what any of those instructions meant: they each
+ * mean *begin* a page, and beginning a page that has already begun is nothing
+ * at all.
+ *
+ * The last start is kept whatever it holds, because the document ends there and
+ * a page that runs out of text still ends on a sheet.
+ */
+function withoutBlanks(
+  state: EditorState,
+  starts: readonly number[],
+  rows: (line: number) => number,
+): number[] {
+  const kept: number[] = [];
+  for (let index = 0; index < starts.length; index += 1) {
+    const from = starts[index]!;
+    if (index === starts.length - 1) {
+      kept.push(from);
+      break;
+    }
+
+    const until = starts[index + 1]!;
+    let drawn = 0;
+    for (
+      let number = state.doc.lineAt(from).number;
+      number <= state.doc.lines && state.doc.line(number).from < until;
+      number += 1
+    ) {
+      drawn += rows(number);
+      if (drawn > 0) break;
+    }
+    if (drawn > 0) kept.push(from);
+  }
+  // A document that draws nothing at all still starts somewhere.
+  return kept.length > 0 ? kept : [0];
 }
 
 /**
@@ -254,12 +299,18 @@ class FillWidget extends WidgetType {
   constructor(
     readonly lines: number,
     readonly turned: boolean,
+    /** Which sheet this closes, or zero for one that carries no folio. */
+    readonly folio: number,
   ) {
     super();
   }
 
   override eq(other: FillWidget): boolean {
-    return other.lines === this.lines && other.turned === this.turned;
+    return (
+      other.lines === this.lines &&
+      other.turned === this.turned &&
+      other.folio === this.folio
+    );
   }
 
   override toDOM(): HTMLElement {
@@ -268,7 +319,21 @@ class FillWidget extends WidgetType {
       ? "cm-yaz-page-fill cm-yaz-page-fill-turned"
       : "cm-yaz-page-fill";
     node.style.blockSize = `calc(${this.lines} * var(--yaz-line-height, 1.6) * 1em)`;
-    node.setAttribute("aria-hidden", "true");
+
+    if (this.folio > 0) {
+      // The number goes here rather than on the last line of text, because a
+      // folio sits at the foot of the *paper* — and the foot of the paper is
+      // the bottom of this, whatever the text did.
+      const number = document.createElement("span");
+      number.className = "cm-yaz-folio";
+      number.textContent = String(this.folio);
+      // Decorative: a screen reader announcing a page number that is not the
+      // compiler's page number would be telling the reader something false.
+      number.setAttribute("aria-hidden", "true");
+      node.append(number);
+    } else {
+      node.setAttribute("aria-hidden", "true");
+    }
     return node;
   }
 }
@@ -292,6 +357,9 @@ function sheets(state: EditorState): DecorationSet {
   let onThisSheet = 0;
   let sheetTurned = false;
   let sheetIsMatter = false;
+  // Counted rather than derived, because the matter takes a sheet and does not
+  // take a number: it is not a page of the document.
+  let folio = 0;
   for (let number = 1; number <= state.doc.lines; number += 1) {
     const line = state.doc.line(number);
     const first = startLines.has(number);
@@ -301,6 +369,7 @@ function sheets(state: EditorState): DecorationSet {
       onThisSheet = 0;
       sheetTurned = isTurned(turned, line.from);
       sheetIsMatter = isMatter(layout, number);
+      if (!sheetIsMatter) folio += 1;
     }
     onThisSheet += rows(number);
 
@@ -319,12 +388,19 @@ function sheets(state: EditorState): DecorationSet {
     // matter has no rest: it is a label on the file rather than a page of it,
     // and padding it out to a full sheet would say it was a page.
     const fits = sheetTurned ? perTurned : perPage;
-    if (last && !sheetIsMatter && fits > 0 && onThisSheet < fits) {
+    if (last && !sheetIsMatter && fits > 0) {
       builder.add(
         line.to,
         line.to,
         Decoration.widget({
-          widget: new FillWidget(fits - onThisSheet, sheetTurned),
+          // Always, even when the text reached the bottom: this is the foot of
+          // the page and it carries the number, so a full page that skipped it
+          // would be the one page in the document with no folio on it.
+          widget: new FillWidget(
+            Math.max(0, fits - onThisSheet),
+            sheetTurned,
+            folio,
+          ),
           block: true,
           side: 1,
         }),
@@ -345,15 +421,30 @@ function sheets(state: EditorState): DecorationSet {
 const decorations = StateField.define<DecorationSet>({
   create: (state) => sheets(state),
   update(value, transaction) {
+    const before = transaction.startState;
+    const now = transaction.state;
+
     const reconfigured =
-      transaction.startState.facet(paginated) !==
-        transaction.state.facet(paginated) ||
-      transaction.startState.facet(linesPerPage) !==
-        transaction.state.facet(linesPerPage) ||
-      transaction.startState.facet(linesPerLandscapePage) !==
-        transaction.state.facet(linesPerLandscapePage);
-    if (transaction.docChanged || reconfigured)
-      return sheets(transaction.state);
+      before.facet(paginated) !== now.facet(paginated) ||
+      before.facet(linesPerPage) !== now.facet(linesPerPage) ||
+      before.facet(linesPerLandscapePage) !==
+        now.facet(linesPerLandscapePage) ||
+      // Wrapping decides how many rows a paragraph takes, which is most of
+      // what decides where a sheet ends. Leaving this out is why switching
+      // "wrap long lines" on left the sheets exactly as they were.
+      before.facet(charactersPerLine) !== now.facet(charactersPerLine);
+
+    // The sheets are a function of what the rich-text pass drew, so they have
+    // to be redrawn when it draws something different — which is not only when
+    // the document changes. Rich text is *switched on* by an effect carrying no
+    // edit at all, and moving the caret reveals markup that was hidden a moment
+    // ago. Without this the page view paginated an empty layout, once, and
+    // never looked again: every line one row, nothing folded, nothing tall.
+    const relaid = layoutOf(before) !== layoutOf(now);
+
+    if (transaction.docChanged || reconfigured || relaid) {
+      return sheets(now);
+    }
     return value;
   },
   provide: (field) => EditorView.decorations.from(field),
@@ -393,6 +484,27 @@ const theme = EditorView.baseTheme({
    * what is. Giving it a full sheet of A4 says it is a page of the paper, and
    * the first thing the reader would see is a mostly-blank one.
    */
+  /*
+   * The folio, at the foot of the paper.
+   *
+   * Not the number the compiler will print — this page view counts rows and
+   * LaTeX typesets, and the two do not agree (see the note at the top). It is
+   * the number of *this* sheet, which is what makes a long document navigable
+   * on screen. Quiet, because a number that is not the printed one should not
+   * be read as if it were.
+   */
+  ".cm-yaz-page-fill": {
+    position: "relative",
+  },
+  ".cm-yaz-folio": {
+    position: "absolute",
+    insetBlockEnd: "0",
+    insetInline: "0",
+    textAlign: "center",
+    fontSize: "0.85em",
+    color: "var(--yaz-text-muted)",
+    userSelect: "none",
+  },
   ".cm-yaz-sheet-matter": {
     paddingBlock: "var(--yaz-space-2)",
     background: "none",
