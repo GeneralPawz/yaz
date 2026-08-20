@@ -16,6 +16,7 @@ app-tagline = Aus Ideen und Quellen werden Aufsätze.
 ## Dateisystemfehler — Schlüssel aus yaz-core::Error::message_key()
 
 error-fs-not-found = { $path } wurde nicht gefunden.
+error-plugin-manifest = In diesem Ordner liegt eine manifest.json, die nicht als Plugin gelesen werden konnte.
 error-fs-outside-root = { $path } liegt außerhalb von { $root }, worauf dieser Vorgang beschränkt ist.
 error-fs-undecodable = { $path } ließ sich nicht als Text lesen. Möglicherweise ist es eine Binärdatei oder verwendet eine nicht unterstützte Kodierung.
 error-fs-conflicting-write = { $path } wurde außerhalb von yaz geändert, seit Sie es geöffnet haben. Jetzt zu speichern würde diese Änderungen verwerfen.

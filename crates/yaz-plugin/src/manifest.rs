@@ -41,7 +41,225 @@ pub struct Manifest {
     /// [ADR-0013](https://github.com/GeneralPawz/yaz/blob/main/docs/adr/0013-update-distribution.md).
     #[serde(default)]
     pub capabilities: Vec<Capability>,
+    /// Where the plugin's own updates come from, and how eagerly to take them.
+    ///
+    /// Absent for a plugin that does not update itself — which is every plugin
+    /// loaded from a development directory, and any that is happy to arrive
+    /// only with the application.
+    #[serde(default)]
+    pub updates: Option<Updates>,
+}
+
+/// Where a plugin's updates come from.
+///
+/// The plugin says, rather than the application holding a list of plugins it
+/// knows about. That is Obsidian's shape and deliberately so: it is a shape
+/// plugin authors already understand, it needs no registry to exist before the
+/// first plugin can ship, and a plugin hosted somewhere we have never heard of
+/// is a `source` nobody has written yet rather than a plugin we have forbidden
+/// ([ADR-0021]).
+///
+/// [ADR-0021]: https://github.com/texyaz/yaz/blob/main/docs/adr/0021-plugin-distribution.md
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Updates {
+    /// Which mechanism fetches them.
+    pub source: UpdateSource,
+    /// What to fetch, read according to `source`. For GitHub: `owner/name`.
+    pub repository: String,
+    /// Which stream to follow.
+    #[serde(default)]
+    pub channel: UpdateChannel,
+}
+
+/// The mechanisms an update can come through.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum UpdateSource {
+    /// A GitHub repository's releases.
+    Github,
+}
+
+/// How eagerly a plugin takes its own updates.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum UpdateChannel {
+    /// Published releases only. What almost every plugin wants.
+    #[default]
+    Release,
+    /// Pre-releases too, for someone testing a plugin before it ships.
+    Prerelease,
+    /// Never. The plugin arrives with the application and stays as it is.
+    Manual,
+}
+
+impl Manifest {
+    /// Whether this plugin may be updated to `candidate`.
+    ///
+    /// Three conditions, and each is a way an update goes wrong in a manner
+    /// that reports as the *application* being broken rather than the plugin:
+    ///
+    /// - it must be the same plugin, because an id changing mid-update is
+    ///   either a mistake or an attempt to become a plugin somebody trusted;
+    /// - it must be newer, so a rollback is a deliberate act and not something
+    ///   a mis-tagged release does by itself;
+    /// - and the running application must satisfy the candidate's
+    ///   `minAppVersion`, or the plugin loads and then fails against an API it
+    ///   expected to find.
+    pub fn accepts_update(&self, candidate: &Manifest, app_version: &Version) -> bool {
+        candidate.id == self.id
+            && candidate.version > self.version
+            && &candidate.min_app_version <= app_version
+    }
+
+    /// Whether this plugin looks for updates at all.
+    pub fn updates_itself(&self) -> bool {
+        matches!(
+            self.updates.as_ref().map(|u| u.channel),
+            Some(UpdateChannel::Release) | Some(UpdateChannel::Prerelease)
+        )
+    }
 }
 
 // TODO(phase-3): validation (reject wildcard net hosts, reject reserved ids),
 // capability-diff against an installed version, checksum verification.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A manifest, with the parts a test cares about set.
+    fn manifest(version: &str, min_app: &str) -> Manifest {
+        Manifest {
+            id: "com.example.plugin".to_owned(),
+            name: "Example".to_owned(),
+            version: Version::parse(version).expect("a version"),
+            min_app_version: Version::parse(min_app).expect("a version"),
+            author: "Someone".to_owned(),
+            description: "An example.".to_owned(),
+            repository: None,
+            capabilities: Vec::new(),
+            updates: None,
+        }
+    }
+
+    fn app(version: &str) -> Version {
+        Version::parse(version).expect("a version")
+    }
+
+    #[test]
+    fn takes_a_newer_version() {
+        let installed = manifest("0.2.0", "0.2.0");
+        let candidate = manifest("0.3.0", "0.2.0");
+        assert!(installed.accepts_update(&candidate, &app("0.2.0")));
+    }
+
+    #[test]
+    fn refuses_an_older_one() {
+        // A rollback should be a deliberate act, not something a mis-tagged
+        // release does by itself.
+        let installed = manifest("0.3.0", "0.2.0");
+        let candidate = manifest("0.2.0", "0.2.0");
+        assert!(!installed.accepts_update(&candidate, &app("0.2.0")));
+    }
+
+    #[test]
+    fn refuses_the_same_one() {
+        let installed = manifest("0.2.0", "0.2.0");
+        assert!(!installed.accepts_update(&installed.clone(), &app("0.2.0")));
+    }
+
+    #[test]
+    fn refuses_one_the_application_is_too_old_for() {
+        // The failure this prevents is the worst kind: the plugin installs,
+        // loads, and then fails against an API that is not there — which
+        // reports as the application being broken.
+        let installed = manifest("0.2.0", "0.2.0");
+        let candidate = manifest("0.3.0", "0.9.0");
+        assert!(!installed.accepts_update(&candidate, &app("0.2.0")));
+    }
+
+    #[test]
+    fn takes_one_the_application_exactly_satisfies() {
+        let installed = manifest("0.2.0", "0.2.0");
+        let candidate = manifest("0.3.0", "0.3.0");
+        assert!(installed.accepts_update(&candidate, &app("0.3.0")));
+    }
+
+    #[test]
+    fn refuses_a_different_plugin() {
+        // An id changing mid-update is either a mistake or an attempt to
+        // become a plugin somebody already trusted.
+        let installed = manifest("0.2.0", "0.2.0");
+        let mut candidate = manifest("0.3.0", "0.2.0");
+        candidate.id = "com.example.other".to_owned();
+        assert!(!installed.accepts_update(&candidate, &app("0.2.0")));
+    }
+
+    #[test]
+    fn a_plugin_without_an_updates_block_does_not_update_itself() {
+        assert!(!manifest("0.2.0", "0.2.0").updates_itself());
+    }
+
+    #[test]
+    fn a_manual_channel_does_not_update_itself() {
+        let mut plugin = manifest("0.2.0", "0.2.0");
+        plugin.updates = Some(Updates {
+            source: UpdateSource::Github,
+            repository: "texyaz/yaz-plugin-example".to_owned(),
+            channel: UpdateChannel::Manual,
+        });
+        assert!(!plugin.updates_itself());
+    }
+
+    #[test]
+    fn a_release_channel_does() {
+        let mut plugin = manifest("0.2.0", "0.2.0");
+        plugin.updates = Some(Updates {
+            source: UpdateSource::Github,
+            repository: "texyaz/yaz-plugin-example".to_owned(),
+            channel: UpdateChannel::Release,
+        });
+        assert!(plugin.updates_itself());
+    }
+
+    #[test]
+    fn reads_the_updates_block_a_real_plugin_ships() {
+        let source = r#"{
+            "id": "com.yaz.zotero",
+            "name": "Zotero",
+            "version": "0.2.0",
+            "minAppVersion": "0.2.0",
+            "author": "yaz",
+            "description": "Cite from Zotero.",
+            "capabilities": [{ "kind": "zotero" }],
+            "updates": {
+                "source": "github",
+                "repository": "texyaz/yaz-plugin-zotero",
+                "channel": "release"
+            }
+        }"#;
+        let manifest: Manifest = serde_json::from_str(source).expect("it parses");
+        let updates = manifest.updates.expect("an updates block");
+        assert_eq!(updates.source, UpdateSource::Github);
+        assert_eq!(updates.repository, "texyaz/yaz-plugin-zotero");
+        assert_eq!(updates.channel, UpdateChannel::Release);
+    }
+
+    #[test]
+    fn a_manifest_without_updates_still_parses() {
+        // Every manifest written before this field existed, and every plugin
+        // content to arrive with the application.
+        let source = r#"{
+            "id": "com.example.plugin",
+            "name": "Example",
+            "version": "0.1.0",
+            "minAppVersion": "0.1.0",
+            "author": "Someone",
+            "description": "An example."
+        }"#;
+        let manifest: Manifest = serde_json::from_str(source).expect("it parses");
+        assert!(manifest.updates.is_none());
+        assert!(!manifest.updates_itself());
+    }
+}

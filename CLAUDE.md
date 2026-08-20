@@ -48,7 +48,7 @@ The load-bearing ones:
 crates/     Rust workspace. yaz-app is THIN — wiring only, no domain logic.
 apps/       desktop/ = Svelte frontend
 packages/   api/ = @yaz/api, the public plugin contract (MIT, semver-strict)
-plugins/    Core plugins — structurally identical to community plugins
+plugins/    Submodules: texyaz/yaz-plugin-{zotero,obsidian,formats} (ADR-0021)
 docs/       VitePress site + ADRs
 locales/    Message catalogues (root-level: both Rust and TS consume them)
 themes/     yaz-light, yaz-dark
@@ -67,6 +67,8 @@ themes/     yaz-light, yaz-dark
 ## Commands
 
 ```bash
+git submodule update --init --recursive   # the bundled plugins; the Rust
+                                          # build fails without them
 pnpm install          # workspace deps
 pnpm dev              # run the app (dev mode: no updater, no live registry)
 pnpm app:build        # release binary + installer

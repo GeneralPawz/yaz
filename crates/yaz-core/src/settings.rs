@@ -55,6 +55,17 @@ pub struct Settings {
     /// Which optional text formats have their own support switched on.
     #[serde(default)]
     pub formats: FormatPreferences,
+
+    /// A plugin directory being worked on, loaded from disk as it is.
+    ///
+    /// The developer's way in, and deliberately not the user's: yaz reads this
+    /// plugin from wherever it is and never updates it, because the version on
+    /// disk is the one being edited and an update that overwrote it would
+    /// destroy work ([ADR-0021]).
+    ///
+    /// [ADR-0021]: https://github.com/texyaz/yaz/blob/main/docs/adr/0021-plugin-distribution.md
+    #[serde(default)]
+    pub development_plugin: Option<Utf8PathBuf>,
 }
 
 /// Text formats whose support the user switched off.
@@ -101,6 +112,7 @@ impl Default for Settings {
             // Empty means every format's own support is on, which is what a
             // format added in a later version has to arrive as.
             formats: FormatPreferences::default(),
+            development_plugin: None,
         }
     }
 }

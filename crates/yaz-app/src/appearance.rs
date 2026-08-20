@@ -301,3 +301,43 @@ pub fn set_format_preferences(preferences: FormatPreferences) -> Result<()> {
     settings.formats = preferences;
     Ok(settings.save(&directory)?)
 }
+
+/// The plugin directory being developed against, if any.
+#[tauri::command]
+pub fn get_development_plugin() -> Result<Option<String>> {
+    Ok(Settings::load(&config_dir()?)
+        .development_plugin
+        .map(|path| path.to_string()))
+}
+
+/// Point yaz at a plugin directory to load from disk, or `null` to stop.
+///
+/// The manifest is read and parsed here rather than at load time, so that a
+/// path that is not a plugin is refused while the person is looking at the
+/// dialog — instead of silently doing nothing until they wonder why their
+/// plugin never appears.
+#[tauri::command]
+pub fn set_development_plugin(path: Option<String>) -> Result<Option<String>> {
+    let directory = config_dir()?;
+    let mut settings = Settings::load(&directory);
+
+    let chosen = match path {
+        None => None,
+        Some(path) => {
+            let path = Utf8PathBuf::from(path);
+            let manifest = path.join("manifest.json");
+            let source = std::fs::read_to_string(&manifest).map_err(|error| {
+                CommandError::new("error-fs-not-found", format!("{manifest}: {error}"))
+            })?;
+            let parsed: yaz_plugin::Manifest = serde_json::from_str(&source).map_err(|error| {
+                CommandError::new("error-plugin-manifest", format!("{manifest}: {error}"))
+            })?;
+            tracing::info!(plugin = %parsed.id, path = %path, "development plugin set");
+            Some(path)
+        }
+    };
+
+    settings.development_plugin = chosen.clone();
+    settings.save(&directory)?;
+    Ok(chosen.map(|path| path.to_string()))
+}
