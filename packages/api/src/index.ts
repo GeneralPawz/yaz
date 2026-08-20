@@ -118,6 +118,34 @@ export abstract class Plugin {
     throw new Error("not implemented");
   }
 
+  /**
+   * Offer a tool to whatever agent is driving yaz over MCP.
+   *
+   * A tool is a **declaration, not a capability**. It can do nothing the
+   * plugin could not already do — it runs the plugin's own code, inside the
+   * plugin's own grants — so it is not something the broker has to allow. What
+   * it is, is something a future registry must be able to read off a manifest
+   * without running anything: *what does this plugin add to yaz?*
+   * ([ADR-0022](https://texyaz.github.io/yaz/adr/0022-mcp-and-tool-declaration).)
+   *
+   * That is why the manifest has to say so first:
+   *
+   * ```json
+   * "provides": { "tools": [
+   *   { "name": "search-library", "descriptionKey": "zotero-tool-search" }
+   * ] }
+   * ```
+   *
+   * A tool the manifest did not declare is **refused**. Without that the
+   * declaration would be a comment, free to drift out of date, and the answer
+   * to "what does this plugin add" would be "run it and see".
+   *
+   * \since 0.3.0
+   */
+  registerTool(_tool: ToolContribution): void {
+    throw new Error("not implemented");
+  }
+
   /** Read this plugin's persisted settings. */
   loadData<T>(): Promise<T | null> {
     throw new Error("not implemented");
@@ -681,6 +709,36 @@ export type LatexEnvironmentRendering =
   | { kind: "turned" }
   /** Sets its contents apart as quoted. */
   | { kind: "quote" };
+
+/**
+ * A tool an agent can call. \since 0.3.0
+ *
+ * The name must match one in the manifest's `provides.tools`.
+ */
+export interface ToolContribution {
+  /** Unqualified — `search`, not `zotero.search`. yaz namespaces it. */
+  name: string;
+  /**
+   * Message key for what the tool does.
+   *
+   * Read by a person deciding whether to switch MCP on, and by the agent
+   * deciding whether to call it — so it is a sentence, not a label.
+   */
+  descriptionKey: string;
+  /**
+   * JSON Schema for the arguments, as an agent will be shown it.
+   *
+   * Omitted means a tool that takes none.
+   */
+  schema?: Record<string, unknown>;
+  /**
+   * Do the thing, and return what the agent should see.
+   *
+   * Throwing is how a tool reports failure: the message reaches the agent as
+   * an error rather than as a result that happens to say "error".
+   */
+  run(argumentsGiven: Record<string, unknown>): Promise<unknown> | unknown;
+}
 
 /** A settings tab contributed by a plugin. \since 0.1.0 */
 export interface SettingsTab {

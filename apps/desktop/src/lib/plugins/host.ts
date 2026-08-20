@@ -37,6 +37,8 @@ import type {
   ProjectApi,
 } from "@yaz/api";
 
+import { listen } from "@tauri-apps/api/event";
+
 import { locale, t } from "../i18n";
 import * as ipc from "../ipc";
 import type { Row } from "../Picker.svelte";
@@ -88,6 +90,27 @@ export interface HostContext {
 }
 
 /** A text format a plugin contributed, and who contributed it. */
+/** A tool a plugin offered, and the code behind it. */
+export interface RegisteredTool {
+  pluginId: string;
+  /** Unqualified. Rust namespaces it by plugin before an agent sees it. */
+  name: string;
+  descriptionKey: string;
+  /** Resolved against the active locale, because that is what Rust is sent. */
+  description: string;
+  schema?: Record<string, unknown> | undefined;
+  run(argumentsGiven: Record<string, unknown>): Promise<unknown> | unknown;
+}
+
+/** An agent's call, as it arrives from the server. */
+interface Invocation {
+  /** Rust's handle on the waiting agent. Sent back with the answer. */
+  id: string;
+  pluginId: string;
+  tool: string;
+  arguments?: Record<string, unknown>;
+}
+
 export interface RegisteredFormat {
   pluginId: string;
   id: string;
@@ -125,7 +148,17 @@ export class PluginRuntime {
    * active one.
    */
   readonly vocabularies: RegisteredVocabulary[] = [];
+  /**
+   * Tools plugins have offered to an agent driving yaz over MCP.
+   *
+   * Held rather than applied, like the formats and the vocabularies. Whether
+   * the MCP server is running at all is the user's decision, and a plugin does
+   * not get to make itself reachable from outside the application.
+   */
+  readonly tools: RegisteredTool[] = [];
   private readonly loaded = new Map<string, Plugin>();
+  /** Stops a second `start()` adding a second listener for the same events. */
+  private listening = false;
 
   constructor(private readonly context: HostContext) {}
 
@@ -147,13 +180,86 @@ export class PluginRuntime {
         console.warn(`[yaz] no bundled code for plugin ${entry.id}`);
         continue;
       }
-      await this.instantiate(entry.id, factory);
+      await this.instantiate(entry.id, factory, entry.tools);
     }
+    await this.publishTools();
+    this.answerInvocations();
+  }
+
+  /**
+   * Tell the Rust side which tools each plugin ended up offering.
+   *
+   * Per plugin rather than all at once, because that is how they are withdrawn
+   * — a plugin switched off takes its own tools with it and leaves the others
+   * alone.
+   */
+  async publishTools(): Promise<void> {
+    const byPlugin = new Map<string, RegisteredTool[]>();
+    for (const tool of this.tools) {
+      const found = byPlugin.get(tool.pluginId) ?? [];
+      found.push(tool);
+      byPlugin.set(tool.pluginId, found);
+    }
+    for (const [pluginId, tools] of byPlugin) {
+      try {
+        await ipc.mcpSetPluginTools(
+          pluginId,
+          tools.map((tool) => ({
+            pluginId,
+            name: tool.name,
+            // Resolved here because this is where the catalogues are; Rust
+            // hands the text straight to the agent.
+            description: tool.description,
+            schema: tool.schema ?? null,
+          })),
+        );
+      } catch (error) {
+        // MCP being off is not a failure. Nothing is reachable, which is what
+        // "off" means, and the tools are still held here for when it is on.
+        console.debug(`[yaz] tools for ${pluginId} not published`, error);
+      }
+    }
+  }
+
+  /**
+   * Answer an agent's call, on the plugin's behalf.
+   *
+   * The request arrives as an event because the server is in Rust and the
+   * plugin is in the webview, and the reply goes back by command with the id
+   * the request carried. Rust holds the waiting agent; this side only has to
+   * answer, and to answer *always* — a call that is never replied to is an
+   * agent that waits for the timeout.
+   */
+  private answerInvocations(): void {
+    if (this.listening) return;
+    this.listening = true;
+
+    void listen<Invocation>("mcp://invoke", async (event) => {
+      const { id, pluginId, tool, arguments: given } = event.payload;
+      const found = this.tools.find(
+        (entry) => entry.pluginId === pluginId && entry.name === tool,
+      );
+
+      if (!found) {
+        // Registered once and withdrawn since, or never declared. Either way
+        // the agent gets an answer rather than a silence.
+        await ipc.mcpToolResult(id, null, `no such tool: ${pluginId}.${tool}`);
+        return;
+      }
+
+      try {
+        const result = await found.run(given ?? {});
+        await ipc.mcpToolResult(id, result ?? null, null);
+      } catch (error) {
+        await ipc.mcpToolResult(id, null, String(error));
+      }
+    });
   }
 
   private async instantiate(
     pluginId: string,
     factory: new () => Plugin,
+    declared: readonly string[] = [],
   ): Promise<void> {
     const app = this.createApp(pluginId);
     const plugin = new factory();
@@ -186,6 +292,33 @@ export class PluginRuntime {
         ),
         nameKey: contribution.nameKey,
         load: contribution.load,
+      });
+    };
+
+    plugin.registerTool = function registerTool(tool) {
+      // The manifest has to have said so first. Without this the declaration
+      // would be a comment: free to drift, and free to say less than the
+      // plugin actually does — which is exactly what a future registry would
+      // be reading to tell somebody what they are installing (ADR-0022).
+      //
+      // Rust refuses it again on the way to the server, because Rust is the
+      // one holding the manifest. This copy is here so that a plugin author
+      // finds out at the call site, in development, rather than from a tool
+      // that silently never appears.
+      if (!declared.includes(tool.name)) {
+        console.warn(
+          `[yaz] ${pluginId} registered the tool "${tool.name}", ` +
+            "which its manifest does not declare under provides.tools",
+        );
+        return;
+      }
+      runtime.tools.push({
+        pluginId,
+        name: tool.name,
+        descriptionKey: tool.descriptionKey,
+        description: t(tool.descriptionKey),
+        schema: tool.schema,
+        run: tool.run,
       });
     };
 

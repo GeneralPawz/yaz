@@ -55,7 +55,39 @@
         onrebind: (binding: string) => void;
         onreset: () => void;
       }
-    | { kind: "note"; labelKey: string };
+    | {
+        kind: "copy";
+        labelKey: string;
+        helpKey?: string | undefined;
+        /** The value itself. Shown so it can be read, and copied in one click. */
+        value: string;
+        /** Shown instead when there is nothing yet — not running, no token. */
+        emptyKey: string;
+        /** Whether it is a secret, and so masked until asked for. */
+        secret?: boolean | undefined;
+      }
+    | {
+        kind: "path";
+        labelKey: string;
+        helpKey?: string | undefined;
+        /** The chosen directory, or `null` for none. */
+        value: string | null;
+        emptyKey: string;
+        onchoose: () => void;
+        onclear: () => void;
+      }
+    | {
+        kind: "note";
+        labelKey: string;
+        /**
+         * Text to show instead of the key's message.
+         *
+         * For a note the caller has already resolved — a count, an address, a
+         * plugin's own name. The key is still required, because a note with no
+         * text yet must still say something (ADR-0011).
+         */
+        text?: string | undefined;
+      };
 
   /** A group of fields under a heading. */
   export interface Group {
@@ -97,6 +129,42 @@
 
   /** Which binding is waiting to be pressed, by its label. */
   let capturing = $state<string | null>(null);
+
+  /** Which copyable field just went to the clipboard, so it can say so. */
+  let copied = $state<string | null>(null);
+
+  /** Which secrets the user has asked to see. */
+  let revealed = $state(new Set<string>());
+
+  /** How long "copied" stays on the button, in milliseconds. */
+  const COPIED_FOR = 1500;
+
+  /**
+   * Put a value on the clipboard and say that it happened.
+   *
+   * The confirmation matters more than it looks: a token is a string of
+   * characters nobody can check by eye, so without it the only way to know the
+   * click worked is to paste somewhere and look.
+   */
+  async function copy(label: string, value: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(value);
+      copied = label;
+      setTimeout(() => {
+        if (copied === label) copied = null;
+      }, COPIED_FOR);
+    } catch {
+      // A clipboard the browser refuses is not worth an error dialog; the
+      // value is on screen and can be selected.
+    }
+  }
+
+  /** Show or hide a secret. */
+  function reveal(label: string): void {
+    const next = new Set(revealed);
+    if (!next.delete(label)) next.add(label);
+    revealed = next;
+  }
 
   /**
    * Take the pressed combination as the new binding.
@@ -184,7 +252,72 @@
 
               {#each group.fields as field, index (index)}
                 {#if field.kind === "note"}
-                  <p class="note">{t(field.labelKey)}</p>
+                  <p class="note">{field.text ?? t(field.labelKey)}</p>
+                {:else if field.kind === "copy"}
+                  <div class="row">
+                    <span class="label">{t(field.labelKey)}</span>
+                    <div class="control">
+                      <div class="copyable">
+                        <!-- Readonly rather than disabled: a disabled input
+                             cannot be selected, and the whole point is to get
+                             the value out of here and into a config file. -->
+                        <input
+                          type={field.secret && !revealed.has(field.labelKey)
+                            ? "password"
+                            : "text"}
+                          class="value"
+                          readonly
+                          value={field.value || t(field.emptyKey)}
+                        />
+                        {#if field.secret}
+                          <button
+                            type="button"
+                            class="action"
+                            disabled={!field.value}
+                            onclick={() => reveal(field.labelKey)}
+                          >
+                            {revealed.has(field.labelKey) ? t("copy-hide") : t("copy-show")}
+                          </button>
+                        {/if}
+                        <button
+                          type="button"
+                          class="action"
+                          disabled={!field.value}
+                          onclick={() => copy(field.labelKey, field.value)}
+                        >
+                          {copied === field.labelKey ? t("copy-done") : t("copy-action")}
+                        </button>
+                      </div>
+                      {#if field.helpKey}
+                        <p class="help">{t(field.helpKey)}</p>
+                      {/if}
+                    </div>
+                  </div>
+                {:else if field.kind === "path"}
+                  <div class="row">
+                    <span class="label">{t(field.labelKey)}</span>
+                    <div class="control">
+                      <div class="copyable">
+                        <input
+                          type="text"
+                          class="value"
+                          readonly
+                          value={field.value ?? t(field.emptyKey)}
+                        />
+                        <button type="button" class="action" onclick={field.onchoose}>
+                          {t("path-choose")}
+                        </button>
+                        {#if field.value}
+                          <button type="button" class="action" onclick={field.onclear}>
+                            {t("path-clear")}
+                          </button>
+                        {/if}
+                      </div>
+                      {#if field.helpKey}
+                        <p class="help">{t(field.helpKey)}</p>
+                      {/if}
+                    </div>
+                  </div>
                 {:else if field.kind === "select"}
                   <div class="row">
                     <label class="label" for="setting-{active?.id}-{index}">
@@ -507,6 +640,32 @@
 
   .action:hover {
     background: var(--yaz-bg-hover);
+  }
+
+  /* A value beside the buttons that act on it: read it, copy it, replace it. */
+  .copyable {
+    display: flex;
+    align-items: center;
+    gap: var(--yaz-space-2);
+    inline-size: 100%;
+  }
+
+  .value {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    font: inherit;
+    font-family: var(--yaz-font-mono);
+    font-size: 0.9em;
+    color: var(--yaz-text-primary);
+    background: var(--yaz-bg-primary);
+    border: 1px solid var(--yaz-border);
+    border-radius: var(--yaz-radius-sm);
+    padding: var(--yaz-space-1) var(--yaz-space-2);
+  }
+
+  .action:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
 
   .toggle {

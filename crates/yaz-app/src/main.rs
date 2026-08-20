@@ -18,6 +18,7 @@ mod commands;
 mod mcp;
 mod mcp_commands;
 mod plugin_host;
+mod plugin_updates;
 mod vcs_commands;
 
 /// True when running in development mode.
@@ -113,6 +114,7 @@ fn main() {
             plugin_host::plugin_zotero_reconnect,
             plugin_host::plugin_denials,
             plugin_host::plugin_list,
+            plugin_updates::plugin_latest_release,
             plugin_host::plugin_set_project,
             plugin_host::plugin_set_zotero_data_dir,
         ])

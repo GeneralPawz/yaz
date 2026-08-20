@@ -61,17 +61,37 @@ pub async fn mcp_set_project(
 
 /// Replace the tools a plugin provides.
 ///
-/// Called by the frontend once a plugin has loaded and declared them. The
-/// frontend has already refused anything the plugin's manifest did not declare
-/// — that check belongs where the manifest and the registration meet.
+/// Called by the frontend once a plugin has loaded and registered them.
+///
+/// **Anything the manifest did not declare is dropped here.** The runtime
+/// refuses it too, at the call site where a plugin author will see it, but
+/// that copy is a courtesy: the webview is not the boundary (ADR-0006) and the
+/// manifest is on this side. Without this check `provides.tools` would be a
+/// comment, and a registry reading manifests could not answer "what does this
+/// plugin add to yaz?" without running it (ADR-0022).
 #[tauri::command]
 pub async fn mcp_set_plugin_tools(
     plugin_id: String,
     tools: Vec<PluginTool>,
     app: tauri::AppHandle,
     state: tauri::State<'_, McpState>,
+    host: tauri::State<'_, crate::plugin_host::PluginHost>,
 ) -> Result<McpStatus> {
     let handle = app.clone();
+
+    let mut declared = Vec::new();
+    for tool in tools {
+        if host.declares_tool(&plugin_id, &tool.name).await {
+            declared.push(tool);
+        } else {
+            tracing::warn!(
+                plugin = %plugin_id,
+                tool = %tool.name,
+                "refused a tool the manifest does not declare"
+            );
+        }
+    }
+    let tools = declared;
 
     state
         .set_plugin_tools(&plugin_id, tools, move |owner, name, arguments| {

@@ -333,6 +333,124 @@ export interface CorePlugin {
   description: string;
   /** Capability identifiers its manifest declares. */
   capabilities: string[];
+  /**
+   * Tool names its manifest declares under `provides.tools`.
+   *
+   * Sent so the runtime can refuse a registration the manifest never mentioned
+   * at the call site, where a plugin author will see it. Rust refuses it again
+   * on the way to the server; this is the friendly copy, not the enforcing one
+   * (ADR-0022).
+   */
+  tools: string[];
+  /** Where its updates come from, or `null` if it does not take any. */
+  updates: PluginUpdates | null;
+  /** What it says it is, so an update can be compared against it. */
+  version: string;
+}
+
+/** A plugin's update arrangements, as its manifest declares them. */
+export interface PluginUpdates {
+  /** `github`, or another source somebody has written. */
+  source: string;
+  /** `owner/name` for GitHub. */
+  repository: string;
+  /** `stable` or `prerelease`. */
+  channel: string;
+}
+
+/** One tool, on its way to the MCP server. */
+export interface OutgoingTool {
+  pluginId: string;
+  name: string;
+  /** Already resolved against the active locale. */
+  description: string;
+  schema: Record<string, unknown> | null;
+}
+
+/** The MCP server's state, as Rust reports it. */
+export interface McpStatus {
+  running: boolean;
+  /** `127.0.0.1:PORT`, once it is listening. */
+  address: string | null;
+  /** What a client must send. Shown so it can be pasted into a config. */
+  token: string | null;
+  /** How many tools an agent can reach right now. */
+  tools: number;
+}
+
+/** Start answering MCP, on a port or on whichever one is free. */
+export function mcpStart(port?: number): Promise<McpStatus> {
+  return invoke<McpStatus>("mcp_start", { port: port ?? null });
+}
+
+/** Stop answering. */
+export function mcpStop(): Promise<McpStatus> {
+  return invoke<McpStatus>("mcp_stop");
+}
+
+/** Whether it is answering, and where. */
+export function mcpStatus(): Promise<McpStatus> {
+  return invoke<McpStatus>("mcp_status");
+}
+
+/**
+ * Replace the tools a plugin provides.
+ *
+ * Rust checks each against the plugin's manifest and drops what it did not
+ * declare, so this is a request rather than an instruction.
+ */
+export function mcpSetPluginTools(
+  pluginId: string,
+  tools: OutgoingTool[],
+): Promise<McpStatus> {
+  return invoke<McpStatus>("mcp_set_plugin_tools", { pluginId, tools });
+}
+
+/** Answer a call that came in over `mcp://invoke`. */
+export function mcpToolResult(
+  id: string,
+  result: unknown,
+  error: string | null,
+): Promise<void> {
+  return invoke<void>("mcp_tool_result", { id, result, error });
+}
+
+/**
+ * The newest version a plugin's own repository offers.
+ *
+ * `null` covers "takes no updates", "no releases" and "only drafts" — three
+ * situations a person reads the same way.
+ */
+export function pluginLatestRelease(pluginId: string): Promise<string | null> {
+  return invoke<string | null>("plugin_latest_release", { pluginId });
+}
+
+/** The directory a plugin is being developed in, if one is set. */
+export function getDevelopmentPlugin(): Promise<string | null> {
+  return invoke<string | null>("get_development_plugin");
+}
+
+/**
+ * Point yaz at a directory a plugin is being written in, or stop.
+ *
+ * Rust reads and parses the manifest before storing the path, so a directory
+ * that is not a plugin is refused while the person is still looking at the
+ * dialog.
+ */
+export function setDevelopmentPlugin(
+  path: string | null,
+): Promise<string | null> {
+  return invoke<string | null>("set_development_plugin", { path });
+}
+
+/** Tell an agent which project it is looking at. */
+export function mcpSetProject(root: string | null): Promise<void> {
+  return invoke<void>("mcp_set_project", { root });
+}
+
+/** Withdraw a plugin's tools, because it was switched off or reloaded. */
+export function mcpDropPluginTools(pluginId: string): Promise<McpStatus> {
+  return invoke<McpStatus>("mcp_drop_plugin_tools", { pluginId });
 }
 
 /**

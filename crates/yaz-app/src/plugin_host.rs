@@ -76,8 +76,19 @@ pub struct CorePlugin {
     id: String,
     name: String,
     description: String,
+    /// What it says it is, so an update can be compared against it.
+    version: String,
     /// Capability identifiers, for the interface to explain what it can do.
     capabilities: Vec<String>,
+    /// Tool names the manifest declares under `provides.tools`.
+    ///
+    /// Sent so the runtime can refuse a registration the manifest never
+    /// mentioned *at the call site*, where a plugin author will see it. This
+    /// is not the enforcing copy — [`PluginHost::declares_tool`] is, because
+    /// the manifest is here and the webview is not the boundary (ADR-0006).
+    tools: Vec<String>,
+    /// Where its updates come from, or `None` if it does not take any.
+    updates: Option<yaz_plugin::Updates>,
 }
 
 /// Everything the plugin layer needs, held as Tauri state.
@@ -94,6 +105,15 @@ pub struct PluginHost {
     zotero: RwLock<Option<Arc<Library>>>,
     /// The open project root, which scopes [`Capability::FsProject`].
     project_root: RwLock<Option<Utf8PathBuf>>,
+    /// Tool names each plugin's manifest declares, by plugin id.
+    ///
+    /// Kept because a tool is checked against the manifest when it is
+    /// registered, and by then the manifest has been parsed and dropped. The
+    /// alternative — trusting the webview's own copy — would make the
+    /// declaration decorative, which is the one thing ADR-0022 says it is not.
+    declared_tools: RwLock<HashMap<String, Vec<String>>>,
+    /// Where each plugin's updates come from, by plugin id.
+    updates: RwLock<HashMap<String, yaz_plugin::Updates>>,
     /// An explicit Zotero data directory, overriding discovery.
     ///
     /// Discovery is right for almost everyone, but a machine can hold several
@@ -117,6 +137,8 @@ impl PluginHost {
             zotero: RwLock::new(None),
             project_root: RwLock::new(None),
             zotero_data_dir: RwLock::new(None),
+            declared_tools: RwLock::new(HashMap::new()),
+            updates: RwLock::new(HashMap::new()),
         }
     }
 
@@ -220,17 +242,37 @@ impl PluginHost {
                         .iter()
                         .map(|c| c.id().to_owned())
                         .collect();
+                    let tools: Vec<String> = manifest
+                        .provides
+                        .tools
+                        .iter()
+                        .map(|tool| tool.name.clone())
+                        .collect();
                     self.load(&manifest.id, manifest.capabilities.clone()).await;
+                    self.declared_tools
+                        .write()
+                        .await
+                        .insert(manifest.id.clone(), tools.clone());
+                    if let Some(updates) = manifest.updates.clone() {
+                        self.updates
+                            .write()
+                            .await
+                            .insert(manifest.id.clone(), updates);
+                    }
                     tracing::info!(
                         plugin = %manifest.id,
                         capabilities = ?capabilities,
+                        tools = ?tools,
                         "core plugin loaded"
                     );
                     loaded.push(CorePlugin {
                         id: manifest.id,
                         name: manifest.name,
                         description: manifest.description,
+                        version: manifest.version.to_string(),
                         capabilities,
+                        tools,
+                        updates: manifest.updates,
                     });
                 }
                 Err(error) => {
@@ -239,6 +281,32 @@ impl PluginHost {
             }
         }
         loaded
+    }
+
+    /// Where a plugin's updates come from, as its manifest declares them.
+    ///
+    /// Held for the same reason the tool declarations are: the manifest is
+    /// parsed once at load and the update check happens much later, when
+    /// somebody presses the button.
+    pub async fn updates_for(&self, plugin_id: &str) -> Option<yaz_plugin::Updates> {
+        self.updates.read().await.get(plugin_id).cloned()
+    }
+
+    /// Whether a plugin's manifest declares a tool by this name.
+    ///
+    /// The check that makes `provides.tools` mean something. A plugin
+    /// registering a tool it never declared is refused here, on the way to the
+    /// MCP server, so the manifest cannot say less than the plugin does — and
+    /// a registry reading manifests can answer "what does this add to yaz?"
+    /// without running anything ([ADR-0022]).
+    ///
+    /// [ADR-0022]: https://github.com/texyaz/yaz/blob/main/docs/adr/0022-mcp-and-tool-declaration.md
+    pub async fn declares_tool(&self, plugin_id: &str, name: &str) -> bool {
+        self.declared_tools
+            .read()
+            .await
+            .get(plugin_id)
+            .is_some_and(|tools| tools.iter().any(|tool| tool == name))
     }
 
     /// Ensure an item exists in the project bibliography, and return its key.

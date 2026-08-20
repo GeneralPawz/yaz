@@ -17,6 +17,8 @@ app-tagline = Turn your ideas and sources into papers.
 error-fs-not-found = Could not find { $path }.
 error-mcp-listen = The agent server could not start: { $detail }
 error-plugin-manifest = That folder has a manifest.json that could not be read as a plugin.
+error-plugin-repository = That plugin names a repository yaz cannot make sense of: { $detail }
+error-plugin-update-check = The plugin's repository could not be reached: { $detail }
 error-fs-outside-root = { $path } is outside { $root }, which this operation is limited to.
 error-fs-undecodable = Could not read { $path } as text. It may be a binary file or use an unsupported encoding.
 error-fs-conflicting-write = { $path } was changed outside yaz since you opened it. Saving now would discard those changes.
@@ -599,3 +601,38 @@ learn-pick-name = Name the capture
 learn-capturing = Capturing…
 learn-captured = Saved to { $path }
 learn-failed = The capture failed: { $error }
+
+# Reading a value out of settings, and choosing a directory.
+copy-action = Copy
+copy-done = Copied
+copy-show = Show
+copy-hide = Hide
+path-choose = Choose…
+path-clear = Clear
+
+# The plugins panel: what is installed, what is being written, and MCP.
+settings-section-plugins = Plugins
+plugins-installed = Installed
+plugins-none = No plugins are loaded.
+plugins-update-label = Updates
+plugins-update-action = Check for updates
+plugins-update-checking = Checking…
+plugins-update-help = Each plugin says where its releases come from. yaz asks there.
+plugins-update-none = This plugin does not take updates.
+plugins-update-current = Up to date at { $version }.
+plugins-update-available = Version { $version } is available.
+plugins-update-unknown = No release found.
+plugins-update-unreachable = Could not reach the repository.
+plugins-development = Development
+plugins-development-directory = Plugin directory
+plugins-development-none = None chosen
+plugins-development-help = A plugin you are working on, loaded from disk instead of from a release.
+mcp-title = Model Context Protocol
+mcp-enabled = Let an agent drive yaz
+mcp-enabled-help = Listens on this machine only, and only for a client that sends the token.
+mcp-address = Address
+mcp-address-help = Put this in your agent's MCP configuration.
+mcp-token = Token
+mcp-token-help = The whole of the authentication. Treat it like a password.
+mcp-not-running = Not running
+mcp-tools = { $count } tools are reachable.

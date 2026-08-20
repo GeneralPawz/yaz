@@ -1540,6 +1540,104 @@
   const selectedEngineInfo = $derived(engines.find((e) => e.id === selectedEngine) ?? null);
 
   /**
+   * What yaz can be driven by, and what is driving it.
+   *
+   * Held rather than derived: the server is a live thing, and asking Rust each
+   * time the dialog rendered would put an IPC call in a reactive expression.
+   */
+  let mcp = $state<ipc.McpStatus>({
+    running: false,
+    address: null,
+    token: null,
+    tools: 0,
+  });
+
+  /** The bundled plugins, as Rust reported them at startup. */
+  let plugins = $state<ipc.CorePlugin[]>([]);
+
+  /** What the last update check found, by plugin id. */
+  let updateReport = $state<Record<string, string>>({});
+
+  /** Whether a check is in flight, so the button can say so. */
+  let checkingUpdates = $state(false);
+
+  /** A directory a plugin is being developed in, if the user picked one. */
+  let developmentPlugin = $state<string | null>(null);
+
+  /** Switch the MCP server on or off, and remember what happened. */
+  async function switchMcp(on: boolean): Promise<void> {
+    try {
+      mcp = on ? await ipc.mcpStart() : await ipc.mcpStop();
+      if (on) {
+        // The tools are held in the runtime whether or not anything is
+        // listening; starting the server is when they become reachable.
+        await runtime.publishTools();
+        mcp = await ipc.mcpStatus();
+        // An agent that can drive yaz should be able to see the open project.
+        await ipc.mcpSetProject(project?.root ?? null);
+      }
+    } catch (error) {
+      failure = String(error);
+    }
+  }
+
+  /**
+   * Ask each plugin's own repository what the newest release is.
+   *
+   * The plugin says where to look — yaz holds no list of plugins it knows
+   * about (ADR-0021) — so this reads the `updates` block out of each manifest
+   * and goes there. A plugin with no `updates` block does not take updates,
+   * which is a legitimate answer and not an error.
+   */
+  async function checkForUpdates(): Promise<void> {
+    checkingUpdates = true;
+    const found: Record<string, string> = {};
+    await Promise.all(
+      plugins.map(async (plugin) => {
+        if (!plugin.updates) {
+          found[plugin.id] = t("plugins-update-none");
+          return;
+        }
+        try {
+          const latest = await ipc.pluginLatestRelease(plugin.id);
+          found[plugin.id] =
+            latest === null
+              ? t("plugins-update-unknown")
+              : latest === plugin.version
+                ? t("plugins-update-current", { version: plugin.version })
+                : t("plugins-update-available", { version: latest });
+        } catch {
+          found[plugin.id] = t("plugins-update-unreachable");
+        }
+      }),
+    );
+    updateReport = found;
+    checkingUpdates = false;
+  }
+
+  /** Point yaz at a directory a plugin is being written in. */
+  async function chooseDevelopmentPlugin(): Promise<void> {
+    const picked = await open({ directory: true, multiple: false });
+    if (typeof picked !== "string") return;
+    developmentPlugin = picked;
+    try {
+      await ipc.setDevelopmentPlugin(picked);
+    } catch (error) {
+      failure = String(error);
+    }
+  }
+
+  /** Stop using it. */
+  async function clearDevelopmentPlugin(): Promise<void> {
+    developmentPlugin = null;
+    try {
+      await ipc.setDevelopmentPlugin(null);
+    } catch (error) {
+      failure = String(error);
+    }
+  }
+
+  /**
    * The settings dialog's contents.
    *
    * The engine choice lives here rather than in the toolbar: it is set once per
@@ -1773,6 +1871,92 @@
       ],
     },
     {
+      id: "plugins",
+      labelKey: "settings-section-plugins",
+      glyph: "⊞",
+      groups: [
+        {
+          titleKey: "plugins-installed",
+          fields: [
+            ...plugins.flatMap((plugin) => [
+              {
+                kind: "note" as const,
+                labelKey: "plugins-installed",
+                text: `${plugin.name} ${plugin.version} — ${plugin.description}`,
+              },
+              ...(updateReport[plugin.id]
+                ? [
+                    {
+                      kind: "note" as const,
+                      labelKey: "plugins-update-unknown",
+                      text: updateReport[plugin.id],
+                    },
+                  ]
+                : []),
+            ]),
+            ...(plugins.length === 0
+              ? [{ kind: "note" as const, labelKey: "plugins-none" }]
+              : []),
+            {
+              kind: "button" as const,
+              labelKey: "plugins-update-label",
+              helpKey: "plugins-update-help",
+              actionKey: checkingUpdates ? "plugins-update-checking" : "plugins-update-action",
+              onclick: () => void checkForUpdates(),
+            },
+          ],
+        },
+        {
+          titleKey: "plugins-development",
+          fields: [
+            {
+              kind: "path" as const,
+              labelKey: "plugins-development-directory",
+              helpKey: "plugins-development-help",
+              value: developmentPlugin,
+              emptyKey: "plugins-development-none",
+              onchoose: () => void chooseDevelopmentPlugin(),
+              onclear: () => void clearDevelopmentPlugin(),
+            },
+          ],
+        },
+        {
+          titleKey: "mcp-title",
+          fields: [
+            {
+              kind: "toggle" as const,
+              labelKey: "mcp-enabled",
+              helpKey: "mcp-enabled-help",
+              value: mcp.running,
+              onchange: (on: boolean) => void switchMcp(on),
+            },
+            {
+              kind: "copy" as const,
+              labelKey: "mcp-address",
+              helpKey: "mcp-address-help",
+              value: mcp.address ?? "",
+              emptyKey: "mcp-not-running",
+            },
+            {
+              kind: "copy" as const,
+              labelKey: "mcp-token",
+              helpKey: "mcp-token-help",
+              value: mcp.token ?? "",
+              emptyKey: "mcp-not-running",
+              // Masked until asked for: it is the whole of the authentication,
+              // and settings dialogs get screen-shared.
+              secret: true,
+            },
+            {
+              kind: "note" as const,
+              labelKey: "mcp-tools",
+              text: t("mcp-tools", { count: String(mcp.tools) }),
+            },
+          ],
+        },
+      ],
+    },
+    {
       id: "connections",
       labelKey: "settings-section-connections",
       glyph: "⇄",
@@ -1871,6 +2055,36 @@
       })
       .catch(() => {
         /* Every format on is the right answer when the file cannot be read. */
+      });
+
+    // What is installed, where its updates come from, and what it declares.
+    // Read once: the answer changes only when plugins are reloaded.
+    void ipc
+      .pluginList()
+      .then((found) => {
+        plugins = found;
+      })
+      .catch(() => {
+        /* The panel says "no plugins are loaded", which is then true. */
+      });
+    void ipc
+      .getDevelopmentPlugin()
+      .then((path) => {
+        developmentPlugin = path;
+      })
+      .catch(() => {
+        /* Nothing chosen is the right answer when the setting cannot be read. */
+      });
+    // Whether an agent is already being let in — the server survives a window
+    // reload, so the switch must show what is actually true and not what this
+    // window last did.
+    void ipc
+      .mcpStatus()
+      .then((status) => {
+        mcp = status;
+      })
+      .catch(() => {
+        /* Off is the right answer when it cannot be asked. */
       });
 
     void runtime

@@ -18,6 +18,8 @@ app-tagline = Aus Ideen und Quellen werden Aufsätze.
 error-fs-not-found = { $path } wurde nicht gefunden.
 error-mcp-listen = Der Agenten-Server konnte nicht starten: { $detail }
 error-plugin-manifest = In diesem Ordner liegt eine manifest.json, die nicht als Plugin gelesen werden konnte.
+error-plugin-repository = Dieses Plugin nennt ein Repository, mit dem yaz nichts anfangen kann: { $detail }
+error-plugin-update-check = Das Repository des Plugins war nicht erreichbar: { $detail }
 error-fs-outside-root = { $path } liegt außerhalb von { $root }, worauf dieser Vorgang beschränkt ist.
 error-fs-undecodable = { $path } ließ sich nicht als Text lesen. Möglicherweise ist es eine Binärdatei oder verwendet eine nicht unterstützte Kodierung.
 error-fs-conflicting-write = { $path } wurde außerhalb von yaz geändert, seit Sie es geöffnet haben. Jetzt zu speichern würde diese Änderungen verwerfen.
@@ -600,3 +602,38 @@ learn-pick-name = Aufnahme benennen
 learn-capturing = Wird aufgenommen…
 learn-captured = Gespeichert unter { $path }
 learn-failed = Aufnahme fehlgeschlagen: { $error }
+
+# Reading a value out of settings, and choosing a directory.
+copy-action = Kopieren
+copy-done = Kopiert
+copy-show = Anzeigen
+copy-hide = Verbergen
+path-choose = Auswählen…
+path-clear = Löschen
+
+# Der Plugin-Bereich: Installiertes, Entwicklung und MCP.
+settings-section-plugins = Plugins
+plugins-installed = Installiert
+plugins-none = Es sind keine Plugins geladen.
+plugins-update-label = Aktualisierungen
+plugins-update-action = Nach Aktualisierungen suchen
+plugins-update-checking = Wird gesucht…
+plugins-update-help = Jedes Plugin nennt selbst, woher seine Veröffentlichungen kommen. Dort fragt yaz nach.
+plugins-update-none = Dieses Plugin nimmt keine Aktualisierungen an.
+plugins-update-current = Aktuell mit { $version }.
+plugins-update-available = Version { $version } ist verfügbar.
+plugins-update-unknown = Keine Veröffentlichung gefunden.
+plugins-update-unreachable = Das Repository war nicht erreichbar.
+plugins-development = Entwicklung
+plugins-development-directory = Plugin-Verzeichnis
+plugins-development-none = Nichts ausgewählt
+plugins-development-help = Ein Plugin, an dem Sie arbeiten — von der Festplatte geladen statt aus einer Veröffentlichung.
+mcp-title = Model Context Protocol
+mcp-enabled = Einen Agenten yaz steuern lassen
+mcp-enabled-help = Hört nur auf diesem Rechner, und nur auf Clients, die das Token senden.
+mcp-address = Adresse
+mcp-address-help = Tragen Sie dies in die MCP-Konfiguration Ihres Agenten ein.
+mcp-token = Token
+mcp-token-help = Die gesamte Authentifizierung. Behandeln Sie es wie ein Passwort.
+mcp-not-running = Läuft nicht
+mcp-tools = { $count } Werkzeuge sind erreichbar.
