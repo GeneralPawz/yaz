@@ -55,10 +55,11 @@
   import { orderTabs } from "./lib/ribbonOrder";
   import FileTree from "./lib/files/FileTree.svelte";
   import {
-    OPTIONAL_FORMATS,
     formatOf,
     isEnabled,
     languageFor,
+    optionalFormats,
+    setContributedFormats,
   } from "./lib/formats/registry";
   import type { FormatId, FormatPreferences } from "./lib/formats/registry";
   import {
@@ -388,7 +389,7 @@
   /** Switch a format's own support on or off. */
   async function chooseFormat(id: FormatId, enabled: boolean) {
     formatPreferences = { ...formatPreferences, [id]: enabled };
-    const disabled = OPTIONAL_FORMATS.filter(
+    const disabled = optionalFormats().filter(
       (format) => !isEnabled(format.id, formatPreferences),
     ).map((format) => format.id);
     try {
@@ -1550,7 +1551,7 @@
           titleKey: "settings-group-formats",
           fields: [
             { kind: "note" as const, labelKey: "settings-formats-help" },
-            ...OPTIONAL_FORMATS.map((entry) => ({
+            ...optionalFormats().map((entry) => ({
               kind: "toggle" as const,
               labelKey: entry.labelKey,
               value: isEnabled(entry.id, formatPreferences),
@@ -1869,7 +1870,20 @@
 
     void runtime
       .start({ [ZOTERO_PLUGIN_ID]: ZoteroPlugin })
-      .then(refreshCommands)
+      .then(() => {
+        // What the plugins offered, handed to the registry once they have all
+        // loaded. Held apart from the built-in formats, so which came from
+        // where stays answerable (ADR-0021).
+        setContributedFormats(
+          runtime.formats.map((entry) => ({
+            id: entry.id,
+            extensions: entry.extensions,
+            labelKey: entry.nameKey,
+            load: async () => (await entry.load()) as never,
+          })),
+        );
+        refreshCommands();
+      })
       .catch((error) => {
         failure = String(error);
       });

@@ -87,11 +87,29 @@ export interface HostContext {
   showNotice(text: string): void;
 }
 
+/** A text format a plugin contributed, and who contributed it. */
+export interface RegisteredFormat {
+  pluginId: string;
+  id: string;
+  extensions: string[];
+  nameKey: string;
+  /** Loads the language, the first time a file of this format is opened. */
+  load: () => Promise<unknown>;
+}
+
 /**
  * Loads plugins and owns the `App` they see.
  */
 export class PluginRuntime {
   readonly commands: RegisteredCommand[] = [];
+  /**
+   * Text formats plugins have taught the editor about.
+   *
+   * Held rather than applied: the shell decides which format a file is and
+   * whether the user has that format switched on, and the runtime's job is to
+   * collect what was offered. A plugin cannot make its format the active one.
+   */
+  readonly formats: RegisteredFormat[] = [];
   private readonly loaded = new Map<string, Plugin>();
 
   constructor(private readonly context: HostContext) {}
@@ -138,6 +156,21 @@ export class PluginRuntime {
         name: t(command.nameKey),
         callback: command.callback,
         isAvailable: command.isAvailable,
+      });
+    };
+
+    plugin.registerFormat = function registerFormat(contribution) {
+      // Extensions are held lowercased, because a file called `README.MD` is
+      // the same format as one called `readme.md` and a plugin author should
+      // not have to think about it.
+      runtime.formats.push({
+        pluginId,
+        id: contribution.id,
+        extensions: contribution.extensions.map((entry) =>
+          entry.toLowerCase().replace(/^[.]/, ""),
+        ),
+        nameKey: contribution.nameKey,
+        load: contribution.load,
       });
     };
 

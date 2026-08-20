@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   FORMATS,
-  OPTIONAL_FORMATS,
+  optionalFormats,
   format,
   formatOf,
   isEnabled,
@@ -70,7 +70,7 @@ describe("isEnabled", () => {
 
 describe("the registry", () => {
   it("offers only the formats that may be switched off", () => {
-    expect(OPTIONAL_FORMATS.map((entry) => entry.id)).toEqual([
+    expect(optionalFormats().map((entry) => entry.id)).toEqual([
       "markdown",
       "toml",
       "yaml",

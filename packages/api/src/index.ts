@@ -77,6 +77,21 @@ export abstract class Plugin {
     throw new Error("not implemented");
   }
 
+  /**
+   * Teach the editor a text format.
+   *
+   * The editor opens any text file with line numbers, wrapping, Vim and
+   * search whether or not a plugin knows the format; what this adds is
+   * highlighting and whatever else the format wants. So registering is
+   * additive and failing to register is not fatal — a format nobody
+   * contributes is a file that still opens.
+   *
+   * @since 0.3.0
+   */
+  registerFormat(_format: FormatContribution): void {
+    throw new Error("not implemented");
+  }
+
   /** Read this plugin's persisted settings. */
   loadData<T>(): Promise<T | null> {
     throw new Error("not implemented");
@@ -528,6 +543,37 @@ export interface ObsidianApi {
   listNotes(): Promise<string[]>;
   /** Translate a note to LaTeX using the project's mapping. */
   translate(notePath: string): Promise<string>;
+}
+
+/**
+ * A text format a plugin teaches the editor about.
+ *
+ * # Why the language is loaded rather than given
+ *
+ * `load` is called the first time a file of this format is opened, and not
+ * before. A plugin that handed over its language at registration would have
+ * that language in the startup bundle for every user who never opens the
+ * format — which is the whole cost the plugin system exists to avoid, paid at
+ * the moment a plugin is installed rather than the moment it is used.
+ *
+ * @since 0.3.0
+ */
+export interface FormatContribution {
+  /** Stable identifier, e.g. `markdown`. Unique across plugins. */
+  id: string;
+  /** Extensions that name it, without the dot. Matched case-insensitively. */
+  extensions: string[];
+  /** Message key for the format's name, as settings lists it. */
+  nameKey: string;
+  /**
+   * Load the language support, once, when it is first needed.
+   *
+   * Returns a CodeMirror `Extension`. Typed as `unknown` here for the same
+   * reason {@link EditorExtension} is: the API does not make CodeMirror part
+   * of its own public contract, so that a later editor core is a change to
+   * yaz rather than a break for every plugin.
+   */
+  load(): Promise<unknown>;
 }
 
 /** An editor extension: a completion source, decoration, or diagnostic provider. @since 0.1.0 */

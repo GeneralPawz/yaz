@@ -46,3 +46,4 @@ decision we later reversed is more valuable than a tidy directory.
 | [0018](0018-licensing.md) | Licensing: AGPL-3.0 app, MIT plugin API | Accepted |
 | [0019](0019-tls-trust-store.md) | TLS trust: the OS store, bundled roots as fallback | Accepted |
 | [0020](0020-stitched-multi-file-editing.md) | Edit a multi-file document as one, behind a mode | Accepted |
+| [0021](0021-plugin-distribution.md) | Plugins are their own repositories, released and updated on their own | Accepted |

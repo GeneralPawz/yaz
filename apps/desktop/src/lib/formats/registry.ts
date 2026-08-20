@@ -26,9 +26,16 @@
 
 import type { Extension } from "@codemirror/state";
 
-/** A format the editor knows something about. */
+/**
+ * A format the editor knows something about.
+ *
+ * The built-in ones are named; a plugin's is whatever string it registered,
+ * which is why this is not a closed union. Closing it would mean a plugin
+ * could not name a format the application had not heard of, which is the
+ * point of letting a plugin contribute one.
+ */
 export type FormatId =
-  "latex" | "markdown" | "toml" | "yaml" | "bibtex" | "text";
+  "latex" | "markdown" | "toml" | "yaml" | "bibtex" | "text" | (string & {});
 
 /** What a format is, apart from its language. */
 export interface Format {
@@ -110,10 +117,36 @@ export const FORMATS: Format[] = [
   },
 ];
 
+/**
+ * Formats a plugin taught the editor about, added to the built-in ones.
+ *
+ * A separate list rather than a mutated `FORMATS`, so that what ships and what
+ * was contributed stay distinguishable — which is what makes "why is this file
+ * highlighted like that" answerable.
+ *
+ * Contributed formats are consulted *after* the built-in ones, so a plugin
+ * cannot take `.tex` away from LaTeX by claiming it. A plugin that wants to
+ * replace a built-in format is a thing to decide deliberately, not something
+ * to fall out of load order.
+ */
+let contributed: Format[] = [];
+
+/** Replace the contributed formats. Called when plugins finish loading. */
+export function setContributedFormats(formats: Format[]): void {
+  contributed = formats;
+}
+
+/** Every format the editor knows, built in and contributed. */
+export function allFormats(): Format[] {
+  return [...FORMATS, ...contributed];
+}
+
 /** Formats whose support can be switched off. */
-export const OPTIONAL_FORMATS = FORMATS.filter(
-  (format) => format.id !== "latex" && format.id !== "text",
-);
+export function optionalFormats(): Format[] {
+  return allFormats().filter(
+    (format) => format.id !== "latex" && format.id !== "text",
+  );
+}
 
 /** Which format a path names. */
 export function formatOf(path: string): FormatId {
@@ -123,13 +156,18 @@ export function formatOf(path: string): FormatId {
     ? name.slice(name.lastIndexOf(".") + 1)
     : "";
 
-  const found = FORMATS.find((format) => format.extensions.includes(extension));
+  const found = allFormats().find((format) =>
+    format.extensions.includes(extension),
+  );
   return found?.id ?? "text";
 }
 
 /** The format with an id, or plain text. */
 export function format(id: FormatId): Format {
-  return FORMATS.find((candidate) => candidate.id === id) ?? FORMATS.at(-1)!;
+  return (
+    allFormats().find((candidate) => candidate.id === id) ??
+    FORMATS.find((candidate) => candidate.id === "text")!
+  );
 }
 
 /** Which formats are switched on. Absent means on, so a new one arrives on. */
