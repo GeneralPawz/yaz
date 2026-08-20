@@ -5,6 +5,7 @@
   import Ribbon, {
     type RibbonAction,
     type RibbonControl,
+    type RibbonHeight,
     type RibbonTab,
   } from "./lib/Ribbon.svelte";
   import TitleBar from "./lib/TitleBar.svelte";
@@ -38,6 +39,7 @@
   } from "./lib/keys/registry";
   import type { CommandId, KeyPreferences, SuiteId } from "./lib/keys/registry";
   import type { LineNumbering } from "./lib/editor/lineNumbers";
+  import { orderTabs } from "./lib/ribbonOrder";
   import Prompt from "./lib/Prompt.svelte";
   import ThemeBuilder from "./lib/ThemeBuilder.svelte";
   import * as theming from "./lib/theme";
@@ -108,6 +110,14 @@
   /** Whether the ribbon's body shows, and which way it runs. */
   let ribbonOpen = $state(true);
   let ribbonVertical = $state(false);
+  /**
+   * How tall the ribbon is, as one of two named sizes.
+   *
+   * Not a draggable edge: a ribbon dragged thin has its labels cut off and one
+   * dragged tall is a window with no document in it, and both are states a
+   * handle invites.
+   */
+  let ribbonHeight = $state<RibbonHeight>("regular");
   /** Whether saving happens by itself. */
   let autosave = $state(false);
   /** What is in the title bar's search box. */
@@ -773,6 +783,15 @@
           },
         },
         {
+          labelKey: "ribbon-compact",
+          icon: "layout" as const,
+          group: "group-panes",
+          checked: ribbonHeight === "compact",
+          action: () => {
+            ribbonHeight = ribbonHeight === "compact" ? "regular" : "compact";
+          },
+        },
+        {
           labelKey: "ribbon-vertical",
           icon: "columns" as const,
           group: "group-panes",
@@ -993,7 +1012,7 @@
    * package option and a preamble command, which is the whole point.
    */
   const ribbonTabs = $derived<RibbonTab[]>(
-    order([
+    orderTabs([
     ...menus.map((menu) => ({
       id: menu.labelKey,
       labelKey: menu.labelKey,
@@ -1124,26 +1143,6 @@
     },
     ]),
   );
-
-/**
-   * The tab strip, in the order asked for.
-   *
-   * Sorted rather than arranged by hand: the tabs are built from several
-   * sources — the menus, and the three the ribbon declares itself — so a tab
-   * added to any of them would otherwise land wherever that source happened to
-   * be spliced in.
-   *
-   * Anything not named keeps the order it was built in, after the named ones.
-   */
-  const TAB_ORDER = ["menu-help", "menu-view", "ribbon-start"];
-
-  function order(tabs: RibbonTab[]): RibbonTab[] {
-    const rank = (tab: RibbonTab) => {
-      const at = TAB_ORDER.indexOf(tab.id);
-      return at === -1 ? TAB_ORDER.length : at;
-    };
-    return [...tabs].sort((a, b) => rank(a) - rank(b));
-  }
 
   /**
    * The buttons on the tab strip itself.
@@ -1687,6 +1686,7 @@
     <Ribbon
       tabs={ribbonTabs}
       actions={ribbonActions}
+      height={ribbonHeight}
       orientation="horizontal"
       expanded={ribbonOpen}
       ontoggle={() => (ribbonOpen = !ribbonOpen)}
@@ -1698,6 +1698,7 @@
       <Ribbon
         tabs={ribbonTabs}
         actions={ribbonActions}
+        height={ribbonHeight}
         orientation="vertical"
         expanded={ribbonOpen}
         ontoggle={() => (ribbonOpen = !ribbonOpen)}

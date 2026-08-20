@@ -503,3 +503,5 @@ date-none = No date
 compile-clean = Compile from scratch
 compile-choose-engine = Compile with…
 compile-open-log = Open the log
+
+ribbon-compact = Compact ribbon

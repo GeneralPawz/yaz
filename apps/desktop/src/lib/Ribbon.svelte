@@ -112,6 +112,18 @@
     menu?: MenuItem[] | undefined;
   }
 
+  /**
+   * How tall the ribbon is.
+   *
+   * Named sizes rather than a draggable edge. A ribbon dragged thin is a
+   * ribbon whose labels are cut off, and one dragged tall is a window with no
+   * document in it — neither is a state worth being able to reach, and both
+   * are states a drag handle invites. Two sizes cover what the choice is
+   * actually about: whether the commands get their labels and their large
+   * button, or whether the document gets the height.
+   */
+  export type RibbonHeight = "compact" | "regular";
+
   interface Props {
     tabs: RibbonTab[];
     /** Buttons at the end of the tab strip, in order. */
@@ -121,9 +133,18 @@
     /** Whether the body shows. The tab strip always does. */
     expanded: boolean;
     ontoggle: () => void;
+    /** How tall the body is when it shows. */
+    height: RibbonHeight;
   }
 
-  let { tabs, actions = [], orientation, expanded, ontoggle }: Props = $props();
+  let {
+    tabs,
+    actions = [],
+    orientation,
+    expanded,
+    ontoggle,
+    height,
+  }: Props = $props();
 
   let active = $state<string | null>(null);
   const current = $derived(tabs.find((tab) => tab.id === active) ?? tabs[0]);
@@ -131,6 +152,35 @@
   let open = $state<string | null>(null);
   /** Which tab-strip action has its right-click menu showing. */
   let openAction = $state<string | null>(null);
+
+  /**
+   * Where an open dropdown sits, in window coordinates.
+   *
+   * Fixed to the window rather than positioned inside the ribbon. A ribbon
+   * that scrolls is a ribbon whose menus are trapped in it — the body has to
+   * be able to clip its own overflow, and an absolutely positioned menu inside
+   * a clipping box is either cut off or turns the ribbon into a scroller,
+   * which is not something a ribbon should be.
+   */
+  let anchor = $state<{ x: number; y: number; alignEnd: boolean } | null>(null);
+
+  /** Take the position of the button a menu belongs to. */
+  function anchorTo(event: MouseEvent, alignEnd = false) {
+    const button = event.currentTarget as HTMLElement;
+    const box = button.getBoundingClientRect();
+    anchor = {
+      x: alignEnd ? window.innerWidth - box.right : box.left,
+      y: box.bottom,
+      alignEnd,
+    };
+  }
+
+  /** The menu's own position, as a style. */
+  const anchorStyle = $derived(
+    anchor
+      ? `top:${anchor.y}px;${anchor.alignEnd ? "right" : "left"}:${anchor.x}px`
+      : "",
+  );
 
   function choose(tab: RibbonTab) {
     // Clicking the tab you are on collapses the ribbon, which is how a ribbon
@@ -171,7 +221,7 @@
   }}
 />
 
-<section class="ribbon {orientation}" class:collapsed={!expanded}>
+<section class="ribbon {orientation} {height}" class:collapsed={!expanded}>
   <div class="tabs" role="tablist" aria-label={t("ribbon-title")}>
     {#each tabs as tab (tab.id)}
       <button
@@ -203,7 +253,9 @@
             // already means "the other ways to do this".
             event.preventDefault();
             event.stopPropagation();
-            openAction = openAction === action.id ? null : action.id;
+            const next = openAction === action.id ? null : action.id;
+            if (next) anchorTo(event, true);
+            openAction = next;
           }}
         >
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d={ICONS[action.icon]} /></svg>
@@ -212,7 +264,8 @@
         {#if openAction === action.id && action.menu?.length}
           <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
           <div
-            class="dropdown end"
+            class="dropdown"
+            style={anchorStyle}
             role="menu"
             tabindex="-1"
             onclick={(event) => event.stopPropagation()}
@@ -269,7 +322,9 @@
                     aria-expanded={open === control.labelKey}
                     onclick={(event) => {
                       event.stopPropagation();
-                      open = open === control.labelKey ? null : control.labelKey;
+                      const next = open === control.labelKey ? null : control.labelKey;
+                      if (next) anchorTo(event);
+                      open = next;
                     }}
                   >
                     {@render icon(control.icon)}
@@ -282,6 +337,7 @@
                     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
                     <div
                       class="dropdown"
+                      style={anchorStyle}
                       role="menu"
                       tabindex="-1"
                       onclick={(event) => event.stopPropagation()}
@@ -512,7 +568,11 @@
     align-items: stretch;
     gap: var(--yaz-space-2);
     padding: var(--yaz-space-2) var(--yaz-space-3);
+    /* Clipping is safe now that the menus are fixed to the window. A ribbon
+       narrower than its commands still has to end somewhere, and scrolling it
+       is better than pushing the window wider than the screen. */
     overflow-x: auto;
+    overflow-y: hidden;
   }
 
   .ribbon.vertical .body {
@@ -552,6 +612,41 @@
     gap: 2px;
     max-block-size: 4.5rem;
     flex: 1;
+  }
+
+  /* Compact: everything on one line, labels and all. The large button loses
+     its height with the rest — a tall button in a short ribbon is a button
+     sticking out of it. */
+  .ribbon.compact .controls {
+    flex-flow: row nowrap;
+    max-block-size: none;
+    align-items: center;
+  }
+
+  .ribbon.compact .group-title {
+    display: none;
+  }
+
+  .ribbon.compact .action.large {
+    flex-direction: row;
+    block-size: auto;
+    min-inline-size: 0;
+    padding: 2px var(--yaz-space-2);
+    gap: var(--yaz-space-2);
+  }
+
+  .ribbon.compact .action.large .icon {
+    inline-size: 1rem;
+    block-size: 1rem;
+  }
+
+  .ribbon.compact .action.large .icon svg {
+    inline-size: 0.875rem;
+    block-size: 0.875rem;
+  }
+
+  .ribbon.compact .body {
+    padding-block: var(--yaz-space-1);
   }
 
   .group-title {
@@ -651,24 +746,17 @@
     position: relative;
   }
 
+  /* Fixed to the window, so a menu is never clipped by the ribbon it opens
+     from and the ribbon is free to clip its own overflow. */
   .dropdown {
-    position: absolute;
-    inset-block-start: 100%;
-    inset-inline-start: 0;
-    /* An end-anchored menu, for a button at the end of the strip: opening
-       inward is the only direction with room. */
-    z-index: 15;
+    position: fixed;
+    z-index: 30;
     min-inline-size: 12rem;
     background: var(--yaz-bg-overlay);
     border: 1px solid var(--yaz-border);
     border-radius: var(--yaz-radius-md);
     box-shadow: var(--yaz-shadow-overlay);
     padding: var(--yaz-space-1) 0;
-  }
-
-  .dropdown.end {
-    inset-inline-start: auto;
-    inset-inline-end: 0;
   }
 
   .item {

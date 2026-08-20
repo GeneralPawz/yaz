@@ -504,3 +504,5 @@ date-none = Kein Datum
 compile-clean = Von Grund auf übersetzen
 compile-choose-engine = Übersetzen mit…
 compile-open-log = Protokoll öffnen
+
+ribbon-compact = Schmales Menüband
