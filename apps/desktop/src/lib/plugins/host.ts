@@ -237,6 +237,11 @@ export class PluginRuntime {
           if (!open) throw new Error("no project is open");
           return ipc.writeFile(open.root, path, contents);
         },
+        async writeBytes(path: string, contents: Uint8Array) {
+          const open = context.project();
+          if (!open) throw new Error("no project is open");
+          return ipc.writeProjectBytes(open.root, path, contents);
+        },
         async list() {
           throw new Error("fs.list is not implemented yet");
         },

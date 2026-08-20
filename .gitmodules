@@ -7,3 +7,6 @@
 [submodule "plugins/formats"]
 	path = plugins/formats
 	url = git@github.com:texyaz/yaz-plugin-formats.git
+[submodule "plugins/learn"]
+	path = plugins/learn
+	url = git@github.com:texyaz/yaz-learn.git

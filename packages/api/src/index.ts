@@ -218,6 +218,18 @@ export interface FileSystemApi {
    */
   writeText(path: string, contents: string): Promise<void>;
 
+  /**
+   * Write a file as bytes, creating the folders above it.
+   *
+   * For what is not text: an image, a generated figure. Same capability check
+   * as {@link FileSystemApi.writeText} — the bytes make no difference to
+   * *where* a plugin may write.
+   *
+   * @throws {CapabilityError} if the path is outside the granted capabilities.
+   * @since 0.3.0
+   */
+  writeBytes(path: string, contents: Uint8Array): Promise<void>;
+
   /** List a directory. */
   list(path: string): Promise<string[]>;
 }

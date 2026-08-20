@@ -587,3 +587,12 @@ obsidian-command-insert-note = Insert note from vault
 obsidian-pick-note = Choose a note
 obsidian-pick-note-filter = Search your vault…
 obsidian-no-notes = No notes found. Check the vault location in Connections.
+
+## The Learn plugin
+
+learn-command-capture = Capture element as an image
+learn-command-clip = Capture element as a clip
+learn-pick-name = Name the capture
+learn-capturing = Capturing…
+learn-captured = Saved to { $path }
+learn-failed = The capture failed: { $error }

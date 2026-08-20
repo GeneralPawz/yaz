@@ -83,6 +83,7 @@
   import ZoteroPlugin from "../../../plugins/zotero/src/main";
   import ObsidianPlugin from "../../../plugins/obsidian/src/main";
   import FormatsPlugin from "../../../plugins/formats/src/main";
+  import LearnPlugin from "../../../plugins/learn/src/main";
 
   /** The plugin the shell asks about connection status on the user's behalf. */
   const ZOTERO_PLUGIN_ID = "com.yaz.zotero";
@@ -1875,6 +1876,7 @@
         [ZOTERO_PLUGIN_ID]: ZoteroPlugin,
         "com.yaz.obsidian": ObsidianPlugin,
         "com.yaz.formats": FormatsPlugin,
+        "com.yaz.learn": LearnPlugin,
       })
       .then(() => {
         // What the plugins offered, handed to the registry once they have all

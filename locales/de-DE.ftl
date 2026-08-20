@@ -588,3 +588,12 @@ obsidian-command-insert-note = Notiz aus dem Vault einfügen
 obsidian-pick-note = Notiz auswählen
 obsidian-pick-note-filter = Vault durchsuchen…
 obsidian-no-notes = Keine Notizen gefunden. Den Vault-Ort unter Verbindungen prüfen.
+
+## Das Learn-Plugin
+
+learn-command-capture = Element als Bild aufnehmen
+learn-command-clip = Element als Clip aufnehmen
+learn-pick-name = Aufnahme benennen
+learn-capturing = Wird aufgenommen…
+learn-captured = Gespeichert unter { $path }
+learn-failed = Aufnahme fehlgeschlagen: { $error }

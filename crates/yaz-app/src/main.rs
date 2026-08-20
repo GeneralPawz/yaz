@@ -89,6 +89,7 @@ fn main() {
             vcs_commands::vcs_history,
             vcs_commands::vcs_restore,
             commands::read_project_bytes,
+            commands::write_project_bytes,
             commands::read_artefact,
             commands::locate_in_source,
             commands::report_ready,

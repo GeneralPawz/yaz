@@ -41,6 +41,15 @@ pub struct Manifest {
     /// [ADR-0013](https://github.com/GeneralPawz/yaz/blob/main/docs/adr/0013-update-distribution.md).
     #[serde(default)]
     pub capabilities: Vec<Capability>,
+    /// What the plugin adds to yaz, as opposed to what it asks yaz for.
+    ///
+    /// Declared so that it can be read without running the plugin — which is
+    /// what a person deciding whether to install it needs, and what a registry
+    /// would list ([ADR-0022]).
+    ///
+    /// [ADR-0022]: https://github.com/texyaz/yaz/blob/main/docs/adr/0022-mcp-and-tool-declaration.md
+    #[serde(default)]
+    pub provides: Provides,
     /// Where the plugin's own updates come from, and how eagerly to take them.
     ///
     /// Absent for a plugin that does not update itself — which is every plugin
@@ -48,6 +57,42 @@ pub struct Manifest {
     /// only with the application.
     #[serde(default)]
     pub updates: Option<Updates>,
+}
+
+/// What a plugin contributes.
+///
+/// A contribution is not a permission: none of this is granted by the broker,
+/// because none of it lets the plugin do anything it could not already do. It
+/// is here to be *read* — before installing, and by a registry.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Provides {
+    /// Tools the plugin adds to yaz's MCP server, for an agent to call.
+    #[serde(default)]
+    pub tools: Vec<ToolDeclaration>,
+}
+
+/// One tool a plugin says it provides.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolDeclaration {
+    /// Unique within the plugin. Namespaced by plugin id when exposed, so two
+    /// plugins may both provide `search` without knowing about each other.
+    pub name: String,
+    /// Message key for what the tool does, shown to a person and to an agent.
+    pub description_key: String,
+}
+
+impl Provides {
+    /// Whether the plugin declared a tool by this name.
+    ///
+    /// Asked when the plugin registers one. A tool the manifest did not
+    /// declare is refused, which is what stops the declaration being a comment
+    /// — a manifest entry nothing checks drifts out of date within one release
+    /// and then actively misleads, because people trust it.
+    pub fn declares_tool(&self, name: &str) -> bool {
+        self.tools.iter().any(|tool| tool.name == name)
+    }
 }
 
 /// Where a plugin's updates come from.
@@ -139,6 +184,7 @@ mod tests {
             description: "An example.".to_owned(),
             repository: None,
             capabilities: Vec::new(),
+            provides: Provides::default(),
             updates: None,
         }
     }
@@ -261,5 +307,76 @@ mod tests {
         let manifest: Manifest = serde_json::from_str(source).expect("it parses");
         assert!(manifest.updates.is_none());
         assert!(!manifest.updates_itself());
+    }
+
+    #[test]
+    fn a_declared_tool_is_recognised() {
+        let provides = Provides {
+            tools: vec![ToolDeclaration {
+                name: "search-library".to_owned(),
+                description_key: "zotero-tool-search".to_owned(),
+            }],
+        };
+        assert!(provides.declares_tool("search-library"));
+    }
+
+    #[test]
+    fn an_undeclared_tool_is_not() {
+        // What stops the declaration being a comment: a plugin registering a
+        // tool its manifest never mentioned is refused, so the manifest cannot
+        // drift out of date without somebody noticing.
+        let provides = Provides {
+            tools: vec![ToolDeclaration {
+                name: "search-library".to_owned(),
+                description_key: "zotero-tool-search".to_owned(),
+            }],
+        };
+        assert!(!provides.declares_tool("delete-everything"));
+    }
+
+    #[test]
+    fn a_plugin_that_provides_nothing_declares_nothing() {
+        assert!(!Provides::default().declares_tool("anything"));
+    }
+
+    #[test]
+    fn reads_a_manifest_that_provides_tools_and_calls_a_server() {
+        // The two halves of ADR-0022 in one manifest: what it asks for, which
+        // is a capability, and what it adds, which is not.
+        let source = r#"{
+            "id": "com.example.agent",
+            "name": "Agent",
+            "version": "0.1.0",
+            "minAppVersion": "0.2.0",
+            "author": "Someone",
+            "description": "An example.",
+            "capabilities": [
+                { "kind": "mcp-client", "servers": ["reference-checker"] }
+            ],
+            "provides": {
+                "tools": [
+                    { "name": "check", "descriptionKey": "agent-tool-check" }
+                ]
+            }
+        }"#;
+        let manifest: Manifest = serde_json::from_str(source).expect("it parses");
+        assert_eq!(manifest.capabilities.len(), 1);
+        assert_eq!(manifest.capabilities[0].id(), "mcp:client");
+        assert!(manifest.provides.declares_tool("check"));
+    }
+
+    #[test]
+    fn a_manifest_without_provides_still_parses() {
+        // Every manifest written before the field existed.
+        let source = r#"{
+            "id": "com.example.plugin",
+            "name": "Example",
+            "version": "0.1.0",
+            "minAppVersion": "0.1.0",
+            "author": "Someone",
+            "description": "An example."
+        }"#;
+        let manifest: Manifest = serde_json::from_str(source).expect("it parses");
+        assert!(manifest.provides.tools.is_empty());
     }
 }

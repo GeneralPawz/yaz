@@ -184,6 +184,21 @@ export async function readProjectBytes(
   return new Uint8Array(bytes);
 }
 
+/** Write a project-relative file as bytes, creating its folders. */
+export async function writeProjectBytes(
+  root: string,
+  relativePath: string,
+  contents: Uint8Array,
+): Promise<void> {
+  return invoke("write_project_bytes", {
+    root,
+    relativePath,
+    // Tauri's IPC carries JSON, so the bytes cross as numbers. Fine for the
+    // images this exists for; a video of any length would want a stream.
+    contents: Array.from(contents),
+  });
+}
+
 export async function readArtefact(path: string): Promise<Uint8Array> {
   const bytes = await invoke<number[]>("read_artefact", { path });
   return new Uint8Array(bytes);

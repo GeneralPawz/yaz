@@ -32,6 +32,7 @@
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@testing-library/svelte": "^5.4.2",
     "jsdom": "^30.0.1",
+    "modern-screenshot": "^4.7.0",
     "svelte": "^5.16.0",
     "svelte-check": "^4.1.1",
     "typescript": "^6.0.0",

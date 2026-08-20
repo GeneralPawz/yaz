@@ -33,6 +33,12 @@ export default defineConfig({
       "@codemirror/language": fileURLToPath(
         new URL("./node_modules/@codemirror/language", import.meta.url),
       ),
+      // Lent to the Learn plugin, which renders the DOM to a canvas. Loaded
+      // by a dynamic import inside it, so it costs nothing until a capture is
+      // actually taken.
+      "modern-screenshot": fileURLToPath(
+        new URL("./node_modules/modern-screenshot", import.meta.url),
+      ),
     },
     // One copy of the editor's state and view, or a plugin's language and the
     // editor's would be talking to different instances of CodeMirror.

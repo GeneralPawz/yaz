@@ -8,8 +8,9 @@ Each of these is **its own repository**, present here as a git submodule
 | `zotero` | [texyaz/yaz-plugin-zotero](https://github.com/texyaz/yaz-plugin-zotero) | Cite from Zotero, quote highlighted passages |
 | `obsidian` | [texyaz/yaz-plugin-obsidian](https://github.com/texyaz/yaz-plugin-obsidian) | Bring a vault note in, translated to LaTeX |
 | `formats` | [texyaz/yaz-plugin-formats](https://github.com/texyaz/yaz-plugin-formats) | Markdown, TOML, YAML and BibTeX highlighting |
+| `learn` | [texyaz/yaz-learn](https://github.com/texyaz/yaz-learn) | Capture the application, for documenting it |
 
-All three ship enabled in a new installation. They are what the application is
+The first three ship enabled in a new installation. They are what the application is
 *for*, and an editor that arrives unable to do any of it until the user goes
 looking for a plugin list is an editor that arrives broken.
 

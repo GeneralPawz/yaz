@@ -46,6 +46,24 @@ pub enum Capability {
         binaries: Vec<String>,
     },
 
+    /// Call declared MCP servers.
+    ///
+    /// Reaching an MCP server is reaching outside the process, to something
+    /// the user did not necessarily set up — so it is a permission, and it
+    /// names the servers rather than granting "MCP". A capability that grants
+    /// any server is not a capability, for the same reason [`Capability::Net`]
+    /// refuses a wildcard host ([ADR-0022]).
+    ///
+    /// Note what this is *not*: contributing a tool to yaz's own MCP server is
+    /// a declaration and not a capability, because a contributed tool can do
+    /// nothing the plugin could not already do. See `Manifest::provides`.
+    ///
+    /// [ADR-0022]: https://github.com/texyaz/yaz/blob/main/docs/adr/0022-mcp-and-tool-declaration.md
+    McpClient {
+        /// Servers the plugin may call, by their configured name.
+        servers: Vec<String>,
+    },
+
     /// Access the Zotero bridge.
     Zotero,
 
@@ -71,6 +89,7 @@ impl Capability {
             Capability::FsWrite { .. } => "fs:write",
             Capability::Net { .. } => "net",
             Capability::Process { .. } => "process",
+            Capability::McpClient { .. } => "mcp:client",
             Capability::Zotero => "zotero",
             Capability::Obsidian => "obsidian",
             Capability::Clipboard => "clipboard",

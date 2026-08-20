@@ -321,6 +321,25 @@ pub fn read_project_bytes(root: String, relative_path: String) -> Result<Vec<u8>
         .map_err(|error| CommandError::new("error-fs-io", format!("{path}: {error}")))
 }
 
+/// Write a project-relative file as bytes.
+///
+/// For the things that are not text: an image a plugin captured, a figure it
+/// generated. Scoped to the project root exactly as the text write is, because
+/// "which file may this touch" is not a question the webview gets to answer
+/// ([ADR-0006]).
+///
+/// [ADR-0006]: https://github.com/texyaz/yaz/blob/main/docs/adr/0006-plugin-runtime-and-capabilities.md
+#[tauri::command]
+pub fn write_project_bytes(root: String, relative_path: String, contents: Vec<u8>) -> Result<()> {
+    let path = resolve_in_root(Utf8Path::new(&root), &relative_path)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| CommandError::new("error-fs-io", format!("{parent}: {error}")))?;
+    }
+    std::fs::write(&path, contents)
+        .map_err(|error| CommandError::new("error-fs-io", format!("{path}: {error}")))
+}
+
 /// Write a project-relative file.
 #[tauri::command]
 pub fn write_file(root: String, relative_path: String, contents: String) -> Result<()> {
