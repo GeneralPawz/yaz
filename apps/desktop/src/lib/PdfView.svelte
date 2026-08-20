@@ -31,6 +31,14 @@
     /** Raw PDF bytes, or null when nothing has been compiled yet. */
     data: Uint8Array | null;
     /**
+     * Which file is being shown, when it is not the compile's own output.
+     *
+     * Named so the reader can tell: the same pane showing last term's version
+     * of a document and showing this morning's compile of it are two very
+     * different things, and they look identical.
+     */
+    name?: string | null;
+    /**
      * A page was clicked.
      *
      * `x` and `y` are PDF points from the top left of that page — the
@@ -42,7 +50,7 @@
     onpages?: ((pages: number) => void) | undefined;
   }
 
-  let { data, onclickpoint, onpages }: Props = $props();
+  let { data, name = null, onclickpoint, onpages }: Props = $props();
 
   let container: HTMLDivElement;
   let renderError = $state<string | null>(null);
@@ -138,6 +146,16 @@
 </script>
 
 <div class="pdf">
+  <!--
+    Named when it is not the compile's own output.
+
+    The same pane showing last term's version of a document and showing this
+    morning's compile of it look identical, and only one of them is what the
+    author is about to submit — so the one that is not says which it is.
+  -->
+  {#if name}
+    <p class="opened">{t("pdf-showing", { file: name })}</p>
+  {/if}
   {#if renderError}
     <p class="notice error">{renderError}</p>
   {:else if !data}
@@ -171,6 +189,17 @@
     block-size: auto;
     box-shadow: 0 2px 12px var(--yaz-pdf-page-shadow);
     background: var(--yaz-bg-primary);
+  }
+
+  .opened {
+    margin: 0 0 var(--yaz-space-3);
+    padding: var(--yaz-space-2) var(--yaz-space-4);
+    background: var(--yaz-bg-secondary);
+    border-block-end: 1px solid var(--yaz-border);
+    color: var(--yaz-text-secondary);
+    font-family: var(--yaz-font-ui);
+    font-size: var(--yaz-font-size-sm);
+    text-align: center;
   }
 
   .notice {

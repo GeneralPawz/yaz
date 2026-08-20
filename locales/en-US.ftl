@@ -92,6 +92,7 @@ editor-loading = Opening…
 ## PDF
 
 pdf-empty = Compile to see your document here.
+pdf-showing = Showing { $file } — not the compiled output
 
 ## Settings
 

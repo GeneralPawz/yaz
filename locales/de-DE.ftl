@@ -93,6 +93,7 @@ editor-loading = Wird geöffnet…
 ## PDF
 
 pdf-empty = Übersetzen Sie das Dokument, um es hier zu sehen.
+pdf-showing = { $file } wird angezeigt – nicht das übersetzte Dokument
 
 ## Einstellungen
 

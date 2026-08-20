@@ -165,6 +165,25 @@ export async function locateInSource(
   });
 }
 
+/**
+ * Read a project-relative file as bytes.
+ *
+ * For the things that are not text — a PDF the author wants to look at. Scoped
+ * to the project in the Rust process, which is where the boundary is
+ * (ADR-0006): composing a path here and handing it to an unscoped reader would
+ * put the check in the webview, where it is not a check.
+ */
+export async function readProjectBytes(
+  root: string,
+  relativePath: string,
+): Promise<Uint8Array> {
+  const bytes = await invoke<number[]>("read_project_bytes", {
+    root,
+    relativePath,
+  });
+  return new Uint8Array(bytes);
+}
+
 export async function readArtefact(path: string): Promise<Uint8Array> {
   const bytes = await invoke<number[]>("read_artefact", { path });
   return new Uint8Array(bytes);

@@ -96,6 +96,15 @@
   let busy = $state(false);
   let result = $state<ipc.CompileResult | null>(null);
   let pdfData = $state<Uint8Array | null>(null);
+  /**
+   * Which PDF is on screen, when it is not the one yaz compiled.
+   *
+   * Null means the compile's own output, which is the usual case and the only
+   * one inverse search works for — a PDF from somewhere else has no SyncTeX
+   * database, so there is nothing to jump back to. Anything else is a file the
+   * author opened from the list: a reference, a figure, last month's version.
+   */
+  let pdfFile = $state<string | null>(null);
   /** How many pages the compiled PDF has, for the status bar. */
   let pdfPages = $state<number | null>(null);
   let vimMode = $state(false);
@@ -1684,6 +1693,7 @@
     docText = "";
     result = null;
     pdfData = null;
+    pdfFile = null;
     void ipc.pluginSetProject(null);
   }
 
@@ -1893,8 +1903,37 @@
     return null;
   }
 
+  /** Whether a path names a PDF, which the viewer shows rather than the editor. */
+  function isPdf(path: string): boolean {
+    return path.toLowerCase().endsWith(".pdf");
+  }
+
+  /**
+   * Show a PDF from the project in the viewer.
+   *
+   * Any PDF, not only the compile's output: a figure, a standard, last term's
+   * version of the same document. The editor is not opened for it, because a
+   * PDF is not source and showing its bytes as text helps nobody.
+   */
+  async function openPdf(relativePath: string) {
+    if (!project) return;
+    failure = null;
+    try {
+      pdfData = await ipc.readProjectBytes(project.root, relativePath);
+      pdfFile = relativePath;
+      pdfPages = null;
+      updateLayout(layoutTree.focusTab(layout, "pdf"));
+    } catch (error) {
+      failure = String(error);
+    }
+  }
+
   async function openFile(relativePath: string) {
     if (!project) return;
+    if (isPdf(relativePath)) {
+      await openPdf(relativePath);
+      return;
+    }
     void ensureEditorLoaded();
 
     if (joined) {
@@ -1968,6 +2007,9 @@
       // A PDF can exist even when the compile reported errors, so this is keyed
       // off the artefact rather than off `succeeded`.
       pdfData = outcome.pdfPath ? await ipc.readArtefact(outcome.pdfPath) : null;
+      // Back to the compile's own output, which is the one inverse search can
+      // follow — whatever was being read before.
+      pdfFile = null;
     } catch (error) {
       failure = String(error);
     } finally {
@@ -2019,7 +2061,12 @@
       <p class="empty">{t("workspace-no-file-open")}</p>
     {/if}
   {:else if tab === "pdf"}
-    <PdfView data={pdfData} onclickpoint={jumpToSource} onpages={(n) => (pdfPages = n)} />
+    <PdfView
+      data={pdfData}
+      name={pdfFile}
+      onclickpoint={pdfFile === null ? jumpToSource : undefined}
+      onpages={(n) => (pdfPages = n)}
+    />
   {:else if tab === "outline"}
     <Outline
       doc={docText}

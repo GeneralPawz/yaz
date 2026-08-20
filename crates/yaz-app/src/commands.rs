@@ -307,6 +307,20 @@ pub fn read_file(root: String, relative_path: String) -> Result<String> {
         .map_err(|error| CommandError::new("error-fs-undecodable", format!("{path}: {error}")))
 }
 
+/// Read a project-relative file as bytes.
+///
+/// For the things that are not text: a PDF the author wants to look at, an
+/// image a figure includes. Scoped to the project root like every other
+/// project read, because the alternative — composing a path in the webview and
+/// handing it to an unscoped reader — would put the boundary in the wrong
+/// process (ADR-0006).
+#[tauri::command]
+pub fn read_project_bytes(root: String, relative_path: String) -> Result<Vec<u8>> {
+    let path = resolve_in_root(Utf8Path::new(&root), &relative_path)?;
+    std::fs::read(&path)
+        .map_err(|error| CommandError::new("error-fs-io", format!("{path}: {error}")))
+}
+
 /// Write a project-relative file.
 #[tauri::command]
 pub fn write_file(root: String, relative_path: String, contents: String) -> Result<()> {
