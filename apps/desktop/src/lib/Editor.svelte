@@ -20,7 +20,6 @@
     closeBracketsKeymap,
   } from "@codemirror/autocomplete";
   import {
-    StreamLanguage,
     syntaxHighlighting,
     HighlightStyle,
     bracketMatching,
@@ -28,9 +27,9 @@
     foldKeymap,
     indentOnInput,
   } from "@codemirror/language";
-  import { stex } from "@codemirror/legacy-modes/mode/stex";
   import { tags } from "@lezer/highlight";
   import { vim } from "@replit/codemirror-vim";
+  import type { Extension } from "@codemirror/state";
   import type { EditorApi } from "@yaz/api";
   import {
     richText,
@@ -75,6 +74,15 @@
     rich: boolean;
     /** How the gutter numbers lines, if at all. */
     numbering: LineNumbering;
+    /**
+     * Which language to highlight the buffer as.
+     *
+     * `null` is a real answer and the floor everything else stands on: line
+     * numbers, wrapping, Vim and search, with no opinion about the text. A
+     * file of an unknown format gets it, and so does one whose format the user
+     * has switched off.
+     */
+    language?: Extension | null;
     /**
      * Set the text on a sheet of paper rather than filling the pane.
      *
@@ -201,6 +209,7 @@
     vimMode,
     rich,
     numbering,
+    language = null,
     pageView,
     page,
     zoom,
@@ -280,6 +289,7 @@
   const keyCompartment = new Compartment();
   const wrapCompartment = new Compartment();
   const pageCompartment = new Compartment();
+  const languageCompartment = new Compartment();
 
   /*
    * Colours come from the theme token contract, never literals — ADR-0010 makes
@@ -350,10 +360,15 @@
       autocompletion(),
       highlightSelectionMatches(),
       EditorState.allowMultipleSelections.of(true),
+      // The language arrives later and from a compartment: which one it is
+      // depends on the file, and loading every language the editor knows at
+      // startup to be ready for a file nobody has opened is the opposite of
+      // what the lazy loading is for.
+      //
       // TODO(phase-4): replace the legacy stex mode with a Lezer LaTeX grammar.
       // Visual mode needs a real syntax tree to hang decorations off, and a
       // StreamLanguage does not give us one (ADR-0004).
-      StreamLanguage.define(stex),
+      languageCompartment.of([]),
       // Rich text is decorations over this same buffer, never a second
       // document (ADR-0004).
       richText(),
@@ -497,6 +512,15 @@
     // An effect rather than a reconfigure: switching view must not rebuild the
     // editor, or the caret and the undo history go with it.
     view?.dispatch({ effects: setRichText.of(rich) });
+  });
+
+  // A compartment, for the reason every other one here is: switching the
+  // language must not rebuild the document, or the caret and the undo history
+  // go with it.
+  $effect(() => {
+    view?.dispatch({
+      effects: languageCompartment.reconfigure(language ?? []),
+    });
   });
 
   $effect(() => {

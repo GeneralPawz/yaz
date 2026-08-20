@@ -77,6 +77,8 @@ fn main() {
             appearance::save_theme,
             appearance::get_key_preferences,
             appearance::set_key_preferences,
+            appearance::get_format_preferences,
+            appearance::set_format_preferences,
             vcs_commands::vcs_backends,
             vcs_commands::vcs_status,
             vcs_commands::vcs_enable,

@@ -294,7 +294,7 @@ workspace-tab-history = Verlauf
 
 ## Formatierte Ansicht und Gliederung
 
-menu-view-rich-text = Formatierte Ansicht
+menu-view-rich-text = Vorschau
 workspace-tab-outline = Gliederung
 outline-empty = Noch keine Überschriften. Fügen Sie ein \section ein, um die Gliederung zu sehen.
 outline-untitled = Abschnitt ohne Titel
@@ -308,10 +308,10 @@ editor-wrapper-hide = Das LaTeX um den Text verbergen
 
 ## Ansichten und Zeilennummern
 
-view-mode-rich = Formatierte Ansicht
+view-mode-rich = Vorschau
 view-mode-source = Quelltext
 view-mode-show-rich = Das Dokument so zeigen, wie es gelesen wird
-view-mode-show-source = Den LaTeX-Quelltext zeigen
+view-mode-show-source = Den Quelltext zeigen
 menu-view-line-numbers = Zeilennummern
 menu-view-line-numbers-off = Keine
 menu-view-line-numbers-absolute = Absolut
@@ -568,3 +568,15 @@ glossary-unknown = { $key } ist im Glossar nicht definiert.
 heading-label = Bezeichnet mit { $label }
 figure-caption-figure = Abbildung { $number }
 figure-caption-table = Tabelle { $number }
+
+## Textformate
+
+settings-section-formats = Formate
+settings-group-formats = Textformate
+settings-formats-help = Jede Textdatei öffnet sich mit Zeilennummern, Umbruch, Vim und Suche. Ein Format ergänzt Hervorhebung und eigene Hilfen; wird eines abgeschaltet, bleibt der einfache Editor – nicht nichts.
+format-latex = LaTeX
+format-markdown = Markdown
+format-toml = TOML
+format-yaml = YAML
+format-bibtex = BibTeX
+format-text = Nur Text

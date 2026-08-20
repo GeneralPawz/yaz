@@ -19,7 +19,7 @@
 use camino::{Utf8Path, Utf8PathBuf};
 use serde::{Deserialize, Serialize};
 use yaz_core::Error;
-use yaz_core::settings::{ColourMode, KeyPreferences, Settings};
+use yaz_core::settings::{ColourMode, FormatPreferences, KeyPreferences, Settings};
 
 use crate::commands::{CommandError, Result};
 
@@ -284,5 +284,20 @@ pub fn set_key_preferences(preferences: KeyPreferences) -> Result<()> {
     let directory = config_dir()?;
     let mut settings = Settings::load(&directory);
     settings.keys = preferences;
+    Ok(settings.save(&directory)?)
+}
+
+/// Which text formats have their own support switched off.
+#[tauri::command]
+pub fn get_format_preferences() -> Result<FormatPreferences> {
+    Ok(Settings::load(&config_dir()?).formats)
+}
+
+/// Store which text formats are switched off.
+#[tauri::command]
+pub fn set_format_preferences(preferences: FormatPreferences) -> Result<()> {
+    let directory = config_dir()?;
+    let mut settings = Settings::load(&directory);
+    settings.formats = preferences;
     Ok(settings.save(&directory)?)
 }

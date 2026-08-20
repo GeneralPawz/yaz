@@ -51,6 +51,24 @@ pub struct Settings {
     /// What the user changed about the keyboard.
     #[serde(default)]
     pub keys: KeyPreferences,
+
+    /// Which optional text formats have their own support switched on.
+    #[serde(default)]
+    pub formats: FormatPreferences,
+}
+
+/// Text formats whose support the user switched off.
+///
+/// Only the ones switched *off*, and for the same reason the keyboard stores
+/// only what changed: a format added in a later version has to arrive switched
+/// on for someone who already has a settings file, and a stored list of what is
+/// on could never do that.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FormatPreferences {
+    /// Format identifiers — `markdown`, `toml`, `yaml`, `bibtex` — that are off.
+    #[serde(default)]
+    pub disabled: Vec<String>,
 }
 
 /// Changes to the shipped keyboard shortcuts.
@@ -80,6 +98,9 @@ impl Default for Settings {
             check_for_updates: false,
             recent_projects: Vec::new(),
             keys: KeyPreferences::default(),
+            // Empty means every format's own support is on, which is what a
+            // format added in a later version has to arrive as.
+            formats: FormatPreferences::default(),
         }
     }
 }

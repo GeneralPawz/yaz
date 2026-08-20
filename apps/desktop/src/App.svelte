@@ -1,5 +1,6 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
+  import type { Extension } from "@codemirror/state";
   import type { EditorApi } from "@yaz/api";
   import type { Menu } from "./lib/MenuBar.svelte";
   import Ribbon, {
@@ -53,6 +54,13 @@
   import type { LineNumbering } from "./lib/editor/lineNumbers";
   import { orderTabs } from "./lib/ribbonOrder";
   import FileTree from "./lib/files/FileTree.svelte";
+  import {
+    OPTIONAL_FORMATS,
+    formatOf,
+    isEnabled,
+    languageFor,
+  } from "./lib/formats/registry";
+  import type { FormatId, FormatPreferences } from "./lib/formats/registry";
   import {
     ALL_VISIBLE,
     buildTree,
@@ -330,6 +338,65 @@
    * have customised others.
    */
   let keyPreferences = $state<KeyPreferences>(DEFAULT_PREFERENCES);
+
+  /**
+   * Which text formats have their own support switched on.
+   *
+   * Absent means on, so a format added in a later version arrives on for
+   * someone who has already been here — the same reason the keyboard stores
+   * only what changed.
+   */
+  let formatPreferences = $state<FormatPreferences>({});
+
+  /**
+   * What kind of file is open, and the language to highlight it as.
+   *
+   * The language is loaded when a file of that kind is first opened, so a
+   * session that never opens a `.yaml` never loads the YAML mode. `null` is the
+   * floor — line numbers, wrapping, Vim, search — and is what an unknown format
+   * and a switched-off one both get.
+   */
+  /*
+   * Preview is LaTeX's, for now.
+   *
+   * Its decorations are LaTeX constructs, and drawing them over a YAML file
+   * would be a view of something the file is not. The View entry is disabled
+   * rather than left to do nothing, because a switch that looks live and is
+   * not is worse than one that is plainly off.
+   */
+  const currentFormat = $derived<FormatId>(
+    joined ? "latex" : formatOf(currentFile ?? ""),
+  );
+  let language = $state<Extension | null>(null);
+
+  $effect(() => {
+    const wanted = currentFormat;
+    const preferences = formatPreferences;
+    let cancelled = false;
+
+    void languageFor(wanted, preferences).then((loaded) => {
+      // The file may have changed while the chunk was in flight, and applying
+      // a language to the wrong document is worse than applying none.
+      if (!cancelled) language = loaded;
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  /** Switch a format's own support on or off. */
+  async function chooseFormat(id: FormatId, enabled: boolean) {
+    formatPreferences = { ...formatPreferences, [id]: enabled };
+    const disabled = OPTIONAL_FORMATS.filter(
+      (format) => !isEnabled(format.id, formatPreferences),
+    ).map((format) => format.id);
+    try {
+      await ipc.setFormatPreferences({ disabled });
+    } catch (error) {
+      failure = String(error);
+    }
+  }
   const shortcuts = $derived(resolveShortcuts(keyPreferences));
   const keyConflicts = $derived(conflicts(shortcuts));
 
@@ -1026,7 +1093,10 @@
           labelKey: "menu-view-rich-text",
           icon: "text" as const,
           group: "group-views",
-          checked: richText,
+          checked: richText && currentFormat === "latex",
+          // Only LaTeX has a preview so far, and a switch that appears to do
+          // something and does not is worse than one that is plainly off.
+          disabled: currentFormat !== "latex",
           action: () => {
             richText = !richText;
           },
@@ -1472,6 +1542,25 @@
    */
   const settingsSections = $derived<Section[]>([
     {
+      id: "formats",
+      labelKey: "settings-section-formats",
+      glyph: "¶",
+      groups: [
+        {
+          titleKey: "settings-group-formats",
+          fields: [
+            { kind: "note" as const, labelKey: "settings-formats-help" },
+            ...OPTIONAL_FORMATS.map((entry) => ({
+              kind: "toggle" as const,
+              labelKey: entry.labelKey,
+              value: isEnabled(entry.id, formatPreferences),
+              onchange: (value: boolean) => void chooseFormat(entry.id, value),
+            })),
+          ],
+        },
+      ],
+    },
+    {
       id: "general",
       labelKey: "settings-section-general",
       glyph: "⚙",
@@ -1767,6 +1856,16 @@
     // A small TOML read, so it can happen at startup without being felt - and
     // the File menu needs it populated the first time it is opened.
     void loadRecent();
+    void ipc
+      .getFormatPreferences()
+      .then(({ disabled }) => {
+        formatPreferences = Object.fromEntries(
+          disabled.map((id) => [id, false]),
+        );
+      })
+      .catch(() => {
+        /* Every format on is the right answer when the file cannot be read. */
+      });
 
     void runtime
       .start({ [ZOTERO_PLUGIN_ID]: ZoteroPlugin })
@@ -2147,13 +2246,14 @@
           if (joined) recordJoinedChanges(changes);
         }}
         onSave={save}
-        rich={richText}
+        rich={richText && currentFormat === "latex"}
         {numbering}
         {shortcuts}
         {pageView}
         page={paperSize}
         {zoom}
         {wrap}
+        {language}
         {comments}
         {lineBreaks}
         {machinery}

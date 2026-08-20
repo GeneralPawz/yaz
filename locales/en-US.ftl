@@ -293,7 +293,7 @@ workspace-tab-history = History
 
 ## Rich text and outline
 
-menu-view-rich-text = Rich text
+menu-view-rich-text = Preview
 workspace-tab-outline = Outline
 outline-empty = No headings yet. Add a \section to see the document's structure.
 outline-untitled = Untitled section
@@ -307,10 +307,10 @@ editor-wrapper-hide = Hide the LaTeX around the text
 
 ## Views and line numbering
 
-view-mode-rich = Rich text
+view-mode-rich = Preview
 view-mode-source = Source
 view-mode-show-rich = Show the document as it will read
-view-mode-show-source = Show the LaTeX source
+view-mode-show-source = Show the source
 menu-view-line-numbers = Line numbers
 menu-view-line-numbers-off = None
 menu-view-line-numbers-absolute = Absolute
@@ -567,3 +567,15 @@ glossary-unknown = { $key } is not defined in the glossary.
 heading-label = Labelled { $label }
 figure-caption-figure = Figure { $number }
 figure-caption-table = Table { $number }
+
+## Text formats
+
+settings-section-formats = Formats
+settings-group-formats = Text formats
+settings-formats-help = Every text file opens with line numbers, wrapping, Vim and search. A format adds highlighting and its own conveniences on top; switching one off leaves the plain editor rather than nothing.
+format-latex = LaTeX
+format-markdown = Markdown
+format-toml = TOML
+format-yaml = YAML
+format-bibtex = BibTeX
+format-text = Plain text

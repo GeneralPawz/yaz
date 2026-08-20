@@ -530,6 +530,21 @@ export interface KeyPreferencesDto {
   overrides: Record<string, string>;
 }
 
+/** Which optional text formats have their own support switched off. */
+export interface FormatPreferencesDto {
+  disabled: string[];
+}
+
+export async function getFormatPreferences(): Promise<FormatPreferencesDto> {
+  return invoke<FormatPreferencesDto>("get_format_preferences");
+}
+
+export async function setFormatPreferences(
+  preferences: FormatPreferencesDto,
+): Promise<void> {
+  return invoke("set_format_preferences", { preferences });
+}
+
 export async function getKeyPreferences(): Promise<KeyPreferencesDto> {
   return invoke<KeyPreferencesDto>("get_key_preferences");
 }
