@@ -58,7 +58,6 @@ import {
 } from "@codemirror/state";
 import type {
   Extension,
-  Range,
   StateEffectType,
   Text,
   Transaction,
@@ -67,6 +66,11 @@ import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import type { DecorationSet } from "@codemirror/view";
 
 import { t } from "../i18n";
+import { Covered, replace, touched } from "./pass";
+import { semanticMarkup, semanticTheme } from "./semanticView";
+import type { Meaning } from "./semanticView";
+import { labelledMarker } from "./semantics";
+import type { Pass } from "./pass";
 import { escapeHtml, inlineHtml } from "./inline";
 import { renderMath, renderMathEnvironment } from "./math";
 import { renderTable, tooComplexToDraw } from "./tabular";
@@ -174,9 +178,6 @@ export const wrapperCollapsed = StateField.define<boolean>({
     return value;
   },
 });
-
-/** Nothing at all, used to hide markup. */
-const hidden = Decoration.replace({});
 
 /**
  * Rendered content standing in for a range of source.
@@ -358,6 +359,34 @@ class PageBreakWidget extends WidgetType {
 }
 
 /**
+ * The number in front of a heading.
+ *
+ * Counted from the document rather than read from a build, so it is right
+ * whenever the counters have not been meddled with and is the same number
+ * every `\ref` to that heading shows. Drawn in the heading's own size and
+ * weight, because it is part of the heading and not an annotation on it.
+ */
+class NumberWidget extends WidgetType {
+  constructor(readonly number: string) {
+    super();
+  }
+
+  override eq(other: NumberWidget): boolean {
+    return other.number === this.number;
+  }
+
+  override toDOM(): HTMLElement {
+    const node = document.createElement("span");
+    node.className = "cm-yaz-heading-number";
+    node.textContent = `${this.number}${NO_BREAK_SPACE}${NO_BREAK_SPACE}`;
+    return node;
+  }
+}
+
+/** Between a heading's number and its words, so they never come apart. */
+const NO_BREAK_SPACE = "\u00a0";
+
+/**
  * The ornament that marks where the text begins and where it ends.
  *
  * A fleuron rather than a labelled button. What is folded away is not content
@@ -422,90 +451,6 @@ class BoundaryWidget extends WidgetType {
 }
 
 /**
- * Ranges already stood in for by a widget.
- *
- * Two replacements may not overlap, and a formula inside a table cell has
- * already been drawn by the table. Anything replacing source inside one of
- * these is dropped; marks are not, because a mark over replaced text simply
- * does not show.
- */
-class Covered {
-  /**
-   * Claimed ranges, sorted by start and never overlapping.
-   *
-   * Both properties are held by {@link claim} being the only way in: a range
-   * that would overlap is refused rather than stored. That is what lets a
-   * lookup be a binary search over two neighbours instead of a walk through
-   * everything claimed so far — which on a long document is thousands of
-   * ranges, asked thousands of times, on the keystroke path.
-   */
-  private readonly spans: { from: number; to: number }[] = [];
-
-  /** Take a range, or report that something already holds part of it. */
-  claim(from: number, to: number): boolean {
-    if (from >= to) return false;
-    const at = this.firstFrom(from);
-    if (this.collides(at, from, to)) return false;
-    this.spans.splice(at, 0, { from, to });
-    return true;
-  }
-
-  /** Whether anything already holds part of this range. */
-  overlaps(from: number, to: number): boolean {
-    return from < to && this.collides(this.firstFrom(from), from, to);
-  }
-
-  /** Index of the first claimed range starting at or after `from`. */
-  private firstFrom(from: number): number {
-    let low = 0;
-    let high = this.spans.length;
-    while (low < high) {
-      const middle = (low + high) >> 1;
-      if (this.spans[middle]!.from < from) low = middle + 1;
-      else high = middle;
-    }
-    return low;
-  }
-
-  /** Whether the range meets the claim before `at` or the one at it. */
-  private collides(at: number, from: number, to: number): boolean {
-    const before = this.spans[at - 1];
-    if (before && before.to > from) return true;
-    const after = this.spans[at];
-    return Boolean(after && after.from < to);
-  }
-}
-
-/** Everything a build pass needs to hand around. */
-interface Pass {
-  state: EditorState;
-  text: string;
-  ranges: Range<Decoration>[];
-  covered: Covered;
-}
-
-/** Whether the selection touches a range, in which case its markup is shown. */
-function touched(state: EditorState, from: number, to: number): boolean {
-  return state.selection.ranges.some(
-    (range) => range.from <= to && range.to >= from,
-  );
-}
-
-/** Replace a range with nothing or a widget, unless something already has. */
-function replace(
-  pass: Pass,
-  from: number,
-  to: number,
-  widget?: WidgetType,
-): boolean {
-  if (!pass.covered.claim(from, to)) return false;
-  pass.ranges.push(
-    (widget ? Decoration.replace({ widget }) : hidden).range(from, to),
-  );
-  return true;
-}
-
-/**
  * Build the decorations for the whole document.
  *
  * Deliberately over the whole document rather than the visible ranges. A
@@ -539,9 +484,12 @@ function build(state: EditorState): DecorationSet {
   generated(pass);
   tables(pass);
   mathematics(pass);
-  lists(pass);
+  // Before the lists, which need to know when one sets its own markers, and
+  // before the headings, which show the label they carry.
+  const meaning = semanticMarkup(pass);
+  lists(pass, meaning);
   quotes(pass);
-  inlineMarkup(pass);
+  inlineMarkup(pass, meaning);
 
   // Sorting is CodeMirror's, which knows how line, mark and replace decorations
   // order against each other at the same position.
@@ -878,7 +826,7 @@ function mathematics(pass: Pass): void {
  * budget for the whole keystroke. Both sequences are already in document
  * order, so one pass with a stack answers it for all of them.
  */
-function lists(pass: Pass): void {
+function lists(pass: Pass, meaning: Meaning): void {
   const found = environments(pass.text, LIST_ENVIRONMENTS);
   if (found.length === 0) return;
 
@@ -913,10 +861,17 @@ function lists(pass: Pass): void {
     const position = counts.get(list) ?? 0;
     counts.set(list, position + 1);
 
+    // A list that sets its own marker gets it: `label=lph*)` is the author
+    // saying what the list should read as, and drawing a bullet instead would
+    // be the editor overruling the document.
+    const own = meaning.listMarkers.get(list.from);
     const label =
       marker.labelFrom !== null && marker.labelTo !== null
         ? inlineHtml(pass.text.slice(marker.labelFrom, marker.labelTo))
-        : escapeHtml(itemLabel(list.name, depth, position));
+        : escapeHtml(
+            (own && labelledMarker(own.label, own.start + position)) ??
+              itemLabel(list.name, depth, position),
+          );
 
     if (touched(pass.state, marker.from, marker.to)) {
       pass.covered.claim(marker.from, marker.to);
@@ -1048,20 +1003,35 @@ function quotes(pass: Pass): void {
  * contains a formula would be worse than either. Only the ranges that *hide*
  * markup have to respect what is already claimed.
  */
-function inlineMarkup(pass: Pass): void {
+function inlineMarkup(pass: Pass, meaning: Meaning): void {
   for (const heading of headings(pass.text)) {
     const level = Math.min(heading.level, 6);
+    const label = meaning.labelled.get(heading.from);
+    const number = meaning.numbers.get(heading.from);
+
     if (heading.titleTo > heading.titleFrom) {
       pass.ranges.push(
-        Decoration.mark({ class: `cm-yaz-heading cm-yaz-h${level}` }).range(
-          heading.titleFrom,
-          heading.titleTo,
-        ),
+        Decoration.mark({
+          class: `cm-yaz-heading cm-yaz-h${level}`,
+          // The label is folded into the heading rather than shown beside it,
+          // so this is the only place it is still legible — which is what a
+          // hover is for, and what someone writing a `\ref` needs.
+          ...(label
+            ? { attributes: { title: t("heading-label", { label }) } }
+            : {}),
+        }).range(heading.titleFrom, heading.titleTo),
       );
     }
     if (!touched(pass.state, heading.from, heading.to)) {
-      // Hide `\section{` and the closing brace, leaving the words.
-      replace(pass, heading.from, heading.titleFrom);
+      // Hide `\section{` and the closing brace, leaving the words — and put the
+      // number LaTeX would print in front of it, which is what a reader of the
+      // finished document sees and what every `\ref` to it will say.
+      replace(
+        pass,
+        heading.from,
+        heading.titleFrom,
+        number ? new NumberWidget(number) : undefined,
+      );
       replace(pass, heading.titleTo, heading.to);
     }
   }
@@ -1284,6 +1254,7 @@ export function richText(): Extension {
     decorations,
     cursorStaysOutOfTheFold,
     theme,
+    semanticTheme,
   ];
 }
 
@@ -1374,6 +1345,12 @@ const theme = EditorView.baseTheme({
   },
   ".cm-yaz-heading": {
     fontWeight: "700",
+  },
+  // Part of the heading, so it inherits the heading's size and colour rather
+  // than being set apart as an annotation.
+  ".cm-yaz-heading-number": {
+    fontWeight: "inherit",
+    color: "inherit",
   },
   // One colour token per level, each defaulting to the body colour — so a
   // theme that says nothing gets headings that are merely larger, and one that

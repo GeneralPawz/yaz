@@ -638,3 +638,118 @@ describe("the front and back matter, opened", () => {
     );
   });
 });
+
+describe("commands that stand for something else", () => {
+  const doc = [
+    "\\" + "documentclass{report}",
+    "\\" + "usepackage[ngerman]{babel}",
+    "\\" + "begin{document}",
+    "\\" + "newglossaryentry{BIM}{name={BIM}, description={Eine Methode}}",
+    "\\" + "chapter{Grundlagen}" + "\\" + "label{ch:grund}",
+    "Ein Satz zum Anhalten des Cursors.",
+    "\\" + "section{Methodik}",
+    "Wie in " +
+      "\\" +
+      "ref{ch:grund} gezeigt, ist " +
+      "\\" +
+      "gls{BIM} z." +
+      "\\" +
+      ",B. eine Methode.",
+    "\\" +
+      "noindent " +
+      "\\" +
+      "enquote{Ein Zitat} " +
+      "\\" +
+      "parencite{meister2021}",
+    "\\" + "begin{itemize}[nosep]",
+    "\\" + "item Eins",
+    "\\" + "end{itemize}",
+    "\\" + "end{document}",
+  ].join("\n");
+
+  /** Mounted with the caret parked in ordinary prose. */
+  function reading(): EditorView {
+    const view = mount(doc);
+    caret(view, doc.indexOf("Ein Satz") + 4);
+    return view;
+  }
+
+  it("draws a glossary entry as the word it stands for", () => {
+    // 561 of these in the thesis this was built against, which is why it is
+    // the first thing worth getting right.
+    const shown = visible(reading());
+    expect(shown).not.toContain("\\" + "gls{BIM}");
+    expect(shown).toContain("BIM");
+  });
+
+  it("draws a reference as the number it will print", () => {
+    const shown = visible(reading());
+    expect(shown).not.toContain("\\" + "ref{ch:grund}");
+    expect(shown).toContain("Wie in 1 gezeigt");
+  });
+
+  it("numbers the headings the way LaTeX will", () => {
+    expect(visible(reading())).toContain("1.1");
+  });
+
+  it("folds a label into the heading it labels", () => {
+    // Nothing of it is left on screen; the heading carries it on hover.
+    const view = reading();
+    expect(visible(view)).not.toContain("ch:grund");
+    const heading = view.contentDOM.querySelector(".cm-yaz-heading");
+    expect(heading?.getAttribute("title")).toContain("ch:grund");
+  });
+
+  it("quotes with the marks the document's language uses", () => {
+    // csquotes takes these from babel, so a German document gets German marks
+    // without anyone saying so twice.
+    const shown = visible(reading());
+    expect(shown).toContain("\u201eEin Zitat\u201c");
+    expect(shown).not.toContain("\\" + "enquote");
+  });
+
+  it("draws a citation as a citation", () => {
+    const shown = visible(reading());
+    expect(shown).not.toContain("\\" + "parencite");
+    expect(shown).toContain("[meister2021]");
+  });
+
+  it("marks a reference the document does not define", () => {
+    // The failure worth designing against: a reference that looks fine and
+    // prints `??`.
+    const view = reading();
+    expect(view.contentDOM.querySelector(".cm-yaz-unresolved")).not.toBeNull();
+  });
+
+  it("sets a thin space as a space", () => {
+    const shown = visible(reading());
+    expect(shown).not.toContain("z." + "\\" + ",B.");
+    expect(shown).toContain("z.");
+  });
+
+  it("hides what only changes the setting", () => {
+    expect(visible(reading())).not.toContain("noindent");
+  });
+
+  it("hides a list's layout options", () => {
+    // `[nosep]` is an instruction to the typesetter, not something to read.
+    expect(visible(reading())).not.toContain("nosep");
+  });
+
+  it("leaves the buffer exactly as it was", () => {
+    expect(reading().state.doc.toString()).toBe(doc);
+  });
+
+  it("gives the source back when the caret arrives", () => {
+    const view = mount(doc);
+    caret(view, doc.indexOf("\\" + "gls{BIM}") + 2);
+    expect(visible(view)).toContain("\\" + "gls{BIM}");
+  });
+
+  it("does none of it in source view", () => {
+    const shown = visible(mount(doc, false));
+    expect(shown).toContain("\\" + "gls{BIM}");
+    expect(shown).toContain("\\" + "ref{ch:grund}");
+    expect(shown).toContain("nosep");
+  });
+});

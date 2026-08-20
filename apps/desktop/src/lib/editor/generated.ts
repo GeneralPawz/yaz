@@ -23,13 +23,8 @@
  * stitching is — it is checkable without a browser.
  */
 
-import {
-  commentRanges,
-  environments,
-  headings,
-  matchBrace,
-  plainText,
-} from "./structure";
+import { environments, headings, matchBrace, plainText } from "./structure";
+import { Kind, tokensIn } from "./tokens";
 
 /** Which generated list a command stands for. */
 export type ListingKind =
@@ -54,6 +49,14 @@ export interface Entry {
   level: number;
   /** Where in the buffer the thing itself is, so the line can be clicked. */
   at: number;
+  /**
+   * What names this entry elsewhere in the document, where anything does.
+   *
+   * A glossary entry is reached by its key rather than by its name — `\gls{BIM}`
+   * names the key — so the key travels with the entry. Null for a listing whose
+   * lines are not named, which is every listing but the glossary.
+   */
+  key: string | null;
 }
 
 /**
@@ -115,50 +118,19 @@ const MACHINERY = new Set([
  * keystroke — so the name is read once and looked up, rather than each of a
  * dozen candidates being tried against every backslash in the document.
  *
- * `first` is the cheapest filter there is: a caller that only cares about
- * commands beginning with `n` never pays to slice out `documentclass`.
- *
- * Character codes rather than characters throughout. `text[i]` allocates a
- * one-character string per character of the document, and a regular expression
- * to ask whether it is a letter allocates a match object per character on top
- * of that — measured over a joined thesis, the two together cost more than
- * everything else in this file put together.
+ * The document is not walked here. `tokens.ts` walks it once for the whole
+ * decoration pass and this reads the result — which is the difference between
+ * a scanner whose cost follows the number of characters in a document and one
+ * whose cost follows the number of commands in it.
  */
 function eachCommand(
   text: string,
-  first: ReadonlySet<number>,
   visit: (name: string, at: number, after: number) => void,
 ): void {
-  const comments = commentRanges(text);
-  let comment = 0;
-
-  for (let index = 0; index < text.length; index += 1) {
-    if (text.charCodeAt(index) !== BACKSLASH) continue;
-    if (!first.has(text.charCodeAt(index + 1))) continue;
-
-    while (comment < comments.length && comments[comment]!.to <= index) {
-      comment += 1;
-    }
-    const range = comments[comment];
-    if (range && index >= range.from && index < range.to) continue;
-
-    let end = index + 1;
-    while (end < text.length && isLetter(text.charCodeAt(end))) end += 1;
-    visit(text.slice(index + 1, end), index, end);
-    index = end - 1;
+  for (const token of tokensIn(text)) {
+    if (token.kind !== Kind.Command) continue;
+    visit(token.name, token.at, token.after);
   }
-}
-
-const BACKSLASH = 92;
-
-/** ASCII only, which is what a LaTeX command name is. */
-function isLetter(code: number): boolean {
-  return (code >= 97 && code <= 122) || (code >= 65 && code <= 90);
-}
-
-/** The character codes of a set of initials, for the filter above. */
-function initials(letters: string): ReadonlySet<number> {
-  return new Set([...letters].map((letter) => letter.charCodeAt(0)));
 }
 
 /** Skip an optional `[...]` and any number of `{...}` arguments. */
@@ -185,9 +157,6 @@ export interface Generated {
   machinery: { from: number; to: number }[];
 }
 
-/** The first letters every command below starts with. */
-const INITIALS = initials("tlpbcnmga");
-
 /**
  * All three, from one walk of the text.
  *
@@ -197,7 +166,7 @@ const INITIALS = initials("tlpbcnmga");
 export function generatedIn(text: string): Generated {
   const found: Generated = { listings: [], breaks: [], machinery: [] };
 
-  eachCommand(text, INITIALS, (name, at, after) => {
+  eachCommand(text, (name, at, after) => {
     const listing = LISTING_KINDS.get(name);
     if (listing) {
       // `\bibliography{refs}` names its file; the rest take at most an option.
@@ -260,6 +229,7 @@ export function contentsEntries(text: string): Entry[] {
       detail: null,
       level: heading.level,
       at: heading.titleFrom,
+      key: null,
     }));
 }
 
@@ -295,6 +265,7 @@ export function captionEntries(
         detail: null,
         level: 0,
         at: cursor,
+        key: null,
       });
       continue;
     }
@@ -312,6 +283,7 @@ export function captionEntries(
       detail: null,
       level: 0,
       at: cursor + 1,
+      key: null,
     });
   }
 
@@ -359,7 +331,7 @@ function field(fields: string, name: string): string | null {
 export function glossaryEntries(text: string): Entry[] {
   const found: Entry[] = [];
 
-  eachCommand(text, GLOSSARY_INITIAL, (name, _at, after) => {
+  eachCommand(text, (name, _at, after) => {
     if (name === "newacronym") {
       const start = text[after] === "[" ? pastArguments(text, after, 0) : after;
       const key = matchBrace(text, start);
@@ -373,6 +345,7 @@ export function glossaryEntries(text: string): Entry[] {
         detail: plainText(text.slice(short + 1, long - 1)),
         level: 0,
         at: key + 1,
+        key: text.slice(after + 1, key - 1).trim(),
       });
       return;
     }
@@ -392,14 +365,12 @@ export function glossaryEntries(text: string): Entry[] {
       detail: description === null ? null : plainText(description),
       level: 0,
       at: key + 1,
+      key: text.slice(after + 1, key - 1).trim(),
     });
   });
 
   return found;
 }
-
-/** Both spellings start with `n`, which is all the filter needs. */
-const GLOSSARY_INITIAL = initials("n");
 
 /** What a listing of each kind is built from. */
 export function entriesFor(kind: ListingKind, text: string): Entry[] {

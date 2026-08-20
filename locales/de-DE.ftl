@@ -546,3 +546,15 @@ pagebreak-clearpage = Seitenumbruch
 pagebreak-cleardoublepage = Seitenumbruch, auf eine rechte Seite
 pagebreak-newpage = Seitenumbruch
 pagebreak-pagebreak = Seitenumbruch
+
+## Verweise, Zitate und Glossareinträge, als das dargestellt, was sie bedeuten
+
+reference-kind-heading = Abschnitt
+reference-kind-figure = Abbildung
+reference-kind-table = Tabelle
+reference-kind-equation = Gleichung
+reference-kind-unknown = Verweis
+reference-undefined = In diesem Dokument ist nichts mit { $key } bezeichnet.
+citation-unknown = { $key } steht nicht in der eingelesenen Literaturliste.
+glossary-unknown = { $key } ist im Glossar nicht definiert.
+heading-label = Bezeichnet mit { $label }

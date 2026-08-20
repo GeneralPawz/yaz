@@ -1,0 +1,522 @@
+/**
+ * Drawing what the commands mean.
+ *
+ * [`semantics.ts`](./semantics.ts) works out what each one stands for; this
+ * puts it on screen. The split is the same one the rest of the editor keeps:
+ * the arithmetic is a pure function over the text and is tested as one, and
+ * only the drawing needs a browser.
+ *
+ * # Nothing here invents a number
+ *
+ * A `\ref` shows the number this editor counted, and a `\cite` shows what the
+ * bibliography says. Where the document does not define the target — a label
+ * that is not there, a key that is not in the `.bib` — the reference is drawn
+ * as *unresolved* rather than as something plausible. A reference that looks
+ * fine and points nowhere is the failure worth designing against: it survives
+ * proofreading and shows up as `??` in the printed thesis.
+ */
+
+import { EditorSelection, Facet } from "@codemirror/state";
+import { EditorView, WidgetType } from "@codemirror/view";
+
+import { t } from "../i18n";
+import { glossaryEntries } from "./generated";
+import { drawable, replace } from "./pass";
+import type { Pass } from "./pass";
+import {
+  SEMANTIC_COMMANDS,
+  labelledMarker,
+  listOptions,
+  quotationMarks,
+  sectionNumbers,
+  semantics,
+  silentCommands,
+  spacings,
+  targets,
+} from "./semantics";
+import type { Occurrence, Target } from "./semantics";
+import { braceCommands, environments, headings } from "./structure";
+import type { Heading } from "./structure";
+
+/** What the bibliography says about one entry. */
+export interface BibEntry {
+  key: string;
+  /** What to draw in the text, e.g. `Meister 2021`. */
+  label: string;
+  /** What to show on hover: the title, and whatever else is worth knowing. */
+  detail: string;
+}
+
+/**
+ * The project's bibliography, supplied by the shell.
+ *
+ * A facet rather than something read from the buffer, because a `.bib` is a
+ * different file — and in the default single-file mode it is not even the file
+ * that is open. Empty is a perfectly good value: a citation then draws its key,
+ * which is what the author typed and is still better than `\parencite{...}`.
+ */
+export const bibliography = Facet.define<
+  ReadonlyMap<string, BibEntry>,
+  ReadonlyMap<string, BibEntry>
+>({
+  combine: (values) => values[0] ?? new Map(),
+});
+
+/** What to do when a citation is clicked, since its entry is in another file. */
+export const followCitation = Facet.define<
+  (key: string) => void,
+  ((key: string) => void) | null
+>({
+  combine: (values) => values[0] ?? null,
+});
+
+/**
+ * A reference drawn as what it refers to.
+ *
+ * The number where there is one, the title where there is not, and the key
+ * itself where the document defines neither — marked as unresolved, because a
+ * reference that looks right and points nowhere is worse than one that says it
+ * is broken.
+ */
+class ReferenceWidget extends WidgetType {
+  constructor(
+    readonly command: string,
+    readonly key: string,
+    readonly target: Target | undefined,
+  ) {
+    super();
+  }
+
+  override eq(other: ReferenceWidget): boolean {
+    return (
+      other.key === this.key &&
+      other.command === this.command &&
+      other.target?.number === this.target?.number &&
+      other.target?.title === this.target?.title
+    );
+  }
+
+  /** What LaTeX would print here, as near as the buffer can say. */
+  private text(): string {
+    if (!this.target) return this.key;
+    if (this.command === "nameref") return this.target.title || this.key;
+    if (this.target.number) {
+      // `\autoref` and `\cref` print the kind before the number, which is the
+      // whole reason anyone uses them.
+      const named = this.command === "autoref" || this.command.endsWith("cref");
+      return named
+        ? `${t(`reference-kind-${this.target.kind}`)} ${this.target.number}`
+        : this.target.number;
+    }
+    return this.target.title || this.key;
+  }
+
+  override toDOM(view: EditorView): HTMLElement {
+    const node = document.createElement("span");
+    node.className = this.target
+      ? "cm-yaz-reference"
+      : "cm-yaz-reference cm-yaz-unresolved";
+    node.textContent = this.text();
+    node.title = this.target
+      ? describe(this.target)
+      : t("reference-undefined", { key: this.key });
+
+    node.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      const at = this.target?.at;
+      if (at === undefined) {
+        // Nowhere to go, so the next best thing is the source of the reference
+        // itself — which is what the author has to fix.
+        view.dispatch({
+          selection: EditorSelection.cursor(view.posAtDOM(node)),
+        });
+      } else {
+        view.dispatch({
+          selection: EditorSelection.cursor(
+            Math.min(at, view.state.doc.length),
+          ),
+          scrollIntoView: true,
+        });
+      }
+      view.focus();
+    });
+    return node;
+  }
+
+  override ignoreEvent(): boolean {
+    return false;
+  }
+}
+
+/** How a target reads in a tooltip. */
+function describe(target: Target): string {
+  const kind = t(`reference-kind-${target.kind}`);
+  const number = target.number ? ` ${target.number}` : "";
+  return target.title
+    ? `${kind}${number}: ${target.title}`
+    : `${kind}${number}`;
+}
+
+/** A citation, drawn as the bibliography's short form. */
+class CitationWidget extends WidgetType {
+  constructor(
+    readonly command: string,
+    readonly keys: string[],
+    readonly entries: (BibEntry | undefined)[],
+    readonly follow: ((key: string) => void) | null,
+  ) {
+    super();
+  }
+
+  override eq(other: CitationWidget): boolean {
+    return (
+      other.command === this.command &&
+      other.keys.join() === this.keys.join() &&
+      other.entries.map((entry) => entry?.label).join() ===
+        this.entries.map((entry) => entry?.label).join()
+    );
+  }
+
+  override toDOM(): HTMLElement {
+    const node = document.createElement("span");
+    const resolved = this.entries.some(Boolean);
+    node.className = resolved
+      ? "cm-yaz-citation"
+      : "cm-yaz-citation cm-yaz-unresolved";
+
+    const shown = this.keys.map(
+      (key, index) => this.entries[index]?.label ?? key,
+    );
+    // `\parencite` prints its own brackets and `\textcite` does not — the
+    // difference is the whole reason a document uses both.
+    const bare = this.command === "textcite" || this.command === "citet";
+    node.textContent = bare ? shown.join("; ") : `[${shown.join("; ")}]`;
+
+    node.title = this.entries
+      .map((entry, index) =>
+        entry
+          ? entry.detail
+          : t("citation-unknown", { key: this.keys[index] ?? "" }),
+      )
+      .join("\n");
+
+    const follow = this.follow;
+    const first = this.keys[0];
+    if (follow && first) {
+      node.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        follow(first);
+      });
+    }
+    return node;
+  }
+
+  override ignoreEvent(): boolean {
+    return false;
+  }
+}
+
+/** A glossary reference, drawn as the word it stands for. */
+class GlossaryWidget extends WidgetType {
+  constructor(
+    readonly command: string,
+    readonly key: string,
+    readonly shown: string,
+    readonly detail: string | null,
+    readonly at: number | null,
+  ) {
+    super();
+  }
+
+  override eq(other: GlossaryWidget): boolean {
+    return other.shown === this.shown && other.detail === this.detail;
+  }
+
+  override toDOM(view: EditorView): HTMLElement {
+    const node = document.createElement("span");
+    node.className = this.detail
+      ? "cm-yaz-glossary"
+      : "cm-yaz-glossary cm-yaz-unresolved";
+    node.textContent = this.shown;
+    node.title = this.detail ?? t("glossary-unknown", { key: this.key });
+
+    node.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      if (this.at !== null) {
+        view.dispatch({
+          selection: EditorSelection.cursor(
+            Math.min(this.at, view.state.doc.length),
+          ),
+          scrollIntoView: true,
+        });
+      }
+      view.focus();
+    });
+    return node;
+  }
+
+  override ignoreEvent(): boolean {
+    return false;
+  }
+}
+
+/** A fixed piece of text standing in for markup — a quotation mark, a space. */
+class TextWidget extends WidgetType {
+  constructor(
+    readonly content: string,
+    readonly className: string,
+  ) {
+    super();
+  }
+
+  override eq(other: TextWidget): boolean {
+    return other.content === this.content && other.className === this.className;
+  }
+
+  override toDOM(): HTMLElement {
+    const node = document.createElement("span");
+    node.className = this.className;
+    node.textContent = this.content;
+    return node;
+  }
+}
+
+/** What the semantic pass worked out, for the passes that run after it. */
+export interface Meaning {
+  /** The label each heading carries, by the heading's start offset. */
+  labelled: Map<number, string>;
+  /** The number each heading takes, by the heading's start offset. */
+  numbers: Map<number, string>;
+  /** Every label in the document, so a later pass can describe one. */
+  targets: Map<string, Target>;
+  /** Marker overrides for lists that set their own, by the list's start. */
+  listMarkers: Map<number, { label: string; start: number }>;
+}
+
+/** How a glossary command changes the word it prints. */
+function glossaryForm(command: string, name: string, detail: string): string {
+  const plural = command === "glspl" || command === "Glspl";
+  const capital = command.startsWith("G");
+  const long = command === "acrlong" || command === "glsdesc";
+
+  let word = long && detail ? detail : name;
+  if (plural) word = /s$/i.test(word) ? word : `${word}s`;
+  if (capital && word) word = word[0]!.toUpperCase() + word.slice(1);
+  if (command === "acrfull" && detail) word = `${detail} (${name})`;
+  return word;
+}
+
+/**
+ * Draw everything that stands for something else.
+ *
+ * Returns what the later passes need, rather than storing it: the heading pass
+ * wants to know which label a heading carries, and computing the semantics
+ * twice would be a second walk of the document per keystroke.
+ */
+export function semanticMarkup(pass: Pass): Meaning {
+  const found = semantics(
+    pass.text,
+    braceCommands(pass.text, SEMANTIC_COMMANDS),
+  );
+  const structure = headings(pass.text);
+  const floats = environments(pass.text, [
+    "figure",
+    "figure*",
+    "table",
+    "table*",
+    "longtable",
+    "sidewaystable",
+  ]);
+  const targeted = targets(
+    pass.text,
+    structure,
+    found.labels,
+    floats,
+    found.captions,
+  );
+
+  const meaning: Meaning = {
+    labelled: labelsByHeading(structure, found.labels),
+    numbers: sectionNumbers(structure),
+    targets: targeted,
+    listMarkers: new Map(),
+  };
+
+  const entries = new Map(
+    glossaryEntries(pass.text)
+      .filter((entry) => entry.key !== null)
+      .map((entry) => [entry.key!, entry]),
+  );
+  const books = pass.state.facet(bibliography);
+  const follow = pass.state.facet(followCitation);
+  const marks = quotationMarks(pass.text);
+
+  // A label is folded into whatever it labels — the heading shows it on hover
+  // — so nothing of it is left on screen.
+  for (const label of found.labels) {
+    if (drawable(pass, label.from, label.to))
+      replace(pass, label.from, label.to);
+  }
+
+  for (const reference of found.references) {
+    if (!drawable(pass, reference.from, reference.to)) continue;
+    replace(
+      pass,
+      reference.from,
+      reference.to,
+      new ReferenceWidget(
+        reference.command,
+        reference.key,
+        targeted.get(reference.key),
+      ),
+    );
+  }
+
+  for (const citation of found.citations) {
+    if (!drawable(pass, citation.from, citation.to)) continue;
+    // `\parencite{a,b}` is one citation of two works, which is how a document
+    // cites two sources for one claim.
+    const keys = citation.key
+      .split(",")
+      .map((key) => key.trim())
+      .filter(Boolean);
+    replace(
+      pass,
+      citation.from,
+      citation.to,
+      new CitationWidget(
+        citation.command,
+        keys,
+        keys.map((key) => books.get(key)),
+        follow,
+      ),
+    );
+  }
+
+  for (const use of found.glossary) {
+    if (!drawable(pass, use.from, use.to)) continue;
+    const entry = entries.get(use.key);
+    replace(
+      pass,
+      use.from,
+      use.to,
+      new GlossaryWidget(
+        use.command,
+        use.key,
+        entry
+          ? glossaryForm(use.command, entry.label, entry.detail ?? "")
+          : use.key,
+        entry?.detail ?? null,
+        entry?.at ?? null,
+      ),
+    );
+  }
+
+  // The quotation marks the document's language uses, in place of the command.
+  for (const quotation of found.quotations) {
+    if (!drawable(pass, quotation.from, quotation.to)) continue;
+    replace(
+      pass,
+      quotation.from,
+      quotation.argFrom,
+      new TextWidget(marks.open, "cm-yaz-quote-mark"),
+    );
+    replace(
+      pass,
+      quotation.argTo,
+      quotation.to,
+      new TextWidget(marks.close, "cm-yaz-quote-mark"),
+    );
+  }
+
+  for (const space of spacings(pass.text)) {
+    if (!drawable(pass, space.from, space.to)) continue;
+    replace(
+      pass,
+      space.from,
+      space.to,
+      new TextWidget(space.character, "cm-yaz-space"),
+    );
+  }
+
+  for (const silent of silentCommands(pass.text)) {
+    if (drawable(pass, silent.from, silent.to)) {
+      replace(pass, silent.from, silent.to);
+    }
+  }
+
+  // A list's options are layout instructions, so none of them is on screen —
+  // except the two that change what the reader sees, which are handed on.
+  for (const list of environments(pass.text, [
+    "itemize",
+    "enumerate",
+    "description",
+  ])) {
+    const options = listOptions(pass.text, list.bodyFrom);
+    if (!options) continue;
+    if (options.label) {
+      meaning.listMarkers.set(list.from, {
+        label: options.label,
+        start: options.start ?? 1,
+      });
+    }
+    if (drawable(pass, options.from, options.to)) {
+      replace(pass, options.from, options.to);
+    }
+  }
+
+  return meaning;
+}
+
+/** Re-exported so `richText` can draw a marker without importing semantics. */
+export { labelledMarker };
+
+/**
+ * Which label each heading carries.
+ *
+ * A `\label` belongs to the heading above it, and only when nothing else comes
+ * between — a label further down the section names the section too, but showing
+ * it on the heading would suggest it sits there.
+ */
+function labelsByHeading(
+  structure: readonly Heading[],
+  labels: readonly Occurrence[],
+): Map<number, string> {
+  const found = new Map<number, string>();
+
+  for (const heading of structure) {
+    const label = labels.find(
+      (candidate) =>
+        candidate.from >= heading.to && candidate.from <= heading.to + 2,
+    );
+    if (label) found.set(heading.from, label.key);
+  }
+
+  return found;
+}
+
+/** Everything the semantic view draws, styled. */
+export const semanticTheme = EditorView.baseTheme({
+  ".cm-yaz-reference, .cm-yaz-citation": {
+    color: "var(--yaz-syntax-reference)",
+    cursor: "pointer",
+    borderRadius: "var(--yaz-radius-sm)",
+  },
+  ".cm-yaz-reference:hover, .cm-yaz-citation:hover, .cm-yaz-glossary:hover": {
+    background: "var(--yaz-bg-hover)",
+  },
+  ".cm-yaz-glossary": {
+    cursor: "help",
+    borderBlockEnd: "1px dotted var(--yaz-text-muted)",
+  },
+  // Unresolved is drawn, not hidden. A reference that points nowhere is a
+  // defect the author has to see before the compile tells them in `??`.
+  ".cm-yaz-unresolved": {
+    color: "var(--yaz-syntax-error)",
+    textDecoration: "underline",
+    textDecorationStyle: "wavy",
+    textUnderlineOffset: "0.2em",
+  },
+  ".cm-yaz-quote-mark": { color: "var(--yaz-text-secondary)" },
+  ".cm-yaz-space": { whiteSpace: "pre" },
+});

@@ -19,6 +19,12 @@
  * building the thing that replaces itself.
  */
 
+import { Kind, commentRanges, tokensIn, within } from "./tokens";
+
+// Re-exported because a dozen callers ask this module for the comments, and
+// where the walk that finds them happens to live is not their business.
+export { commentRanges };
+
 /** Sectioning commands, outermost first. The index is the level. */
 const SECTION_COMMANDS = [
   "part",
@@ -79,71 +85,6 @@ export function matchBrace(text: string, open: number): number | null {
 }
 
 /**
- * Offsets that fall inside a comment.
- *
- * A `%` starts a comment unless escaped, and it runs to the end of the line.
- * Without this, a commented-out `\section` appears in the outline — which is
- * exactly the sort of thing people comment out.
- */
-export function commentRanges(text: string): { from: number; to: number }[] {
-  if (text === memoisedText) return memoisedComments;
-
-  const ranges: { from: number; to: number }[] = [];
-  for (let index = 0; index < text.length; index += 1) {
-    const character = text[index];
-    if (character === "\\") {
-      index += 1;
-      continue;
-    }
-    if (character === "%") {
-      const end = text.indexOf("\n", index);
-      ranges.push({ from: index, to: end === -1 ? text.length : end });
-      index = end === -1 ? text.length : end;
-    }
-  }
-
-  memoisedText = text;
-  memoisedComments = ranges;
-  return ranges;
-}
-
-/**
- * The last answer, because everything here asks the same question first.
- *
- * A single decoration pass runs six scanners over one string, and each of them
- * needs to know where the comments are. Without this the document is walked
- * six extra times per keystroke, which is the budget ADR-0015 sets for the
- * whole keystroke. One entry is enough: the callers within a pass are handed
- * the same string, so the comparison is a pointer check.
- */
-let memoisedText: string | null = null;
-let memoisedComments: { from: number; to: number }[] = [];
-
-/**
- * Whether an offset falls inside any of the ranges.
- *
- * A binary search rather than a scan. The ranges come out of
- * {@link commentRanges} in order, and this is asked once per backslash in the
- * document — a linear answer to a linear question is quadratic overall, and a
- * heavily commented draft is exactly where that would show.
- */
-function within(
-  ranges: { from: number; to: number }[],
-  offset: number,
-): boolean {
-  let low = 0;
-  let high = ranges.length - 1;
-  while (low <= high) {
-    const middle = (low + high) >> 1;
-    const range = ranges[middle]!;
-    if (offset < range.from) high = middle - 1;
-    else if (offset >= range.to) low = middle + 1;
-    else return true;
-  }
-  return false;
-}
-
-/**
  * Every heading in the source, in document order.
  *
  * Handles the starred form and the optional short-title argument, both of which
@@ -153,28 +94,21 @@ function within(
 export function headings(text: string): Heading[] {
   if (text === memoisedHeadingsText) return memoisedHeadings;
 
-  const comments = commentRanges(text);
   const found: Heading[] = [];
+  // The index read each name to where its letters stopped, so `subsubsection`
+  // can never be read as `subsection` with three characters left over, and
+  // `\sectionname` is simply a different name.
+  const levels = new Map<string, number>(
+    SECTION_COMMANDS.map((command, level) => [command, level]),
+  );
 
-  // Longest first, so `subsubsection` is not matched as `subsection`.
-  const byLength = SECTION_COMMANDS.map((command, level) => ({
-    command,
-    level,
-  })).sort((a, b) => b.command.length - a.command.length);
+  for (const token of tokensIn(text)) {
+    if (token.kind !== Kind.Command) continue;
+    const level = levels.get(token.name);
+    if (level === undefined) continue;
 
-  for (let index = 0; index < text.length; index += 1) {
-    if (text[index] !== "\\") continue;
-    if (within(comments, index)) continue;
-
-    const match = byLength.find((candidate) =>
-      text.startsWith(candidate.command, index + 1),
-    );
-    if (!match) continue;
-
-    let cursor = index + 1 + match.command.length;
-    // `\sectionname` is a different command, not a section.
-    if (/[a-zA-Z]/.test(text[cursor] ?? "")) continue;
-
+    const index = token.at;
+    let cursor = token.after;
     const starred = text[cursor] === "*";
     if (starred) cursor += 1;
 
@@ -192,8 +126,8 @@ export function headings(text: string): Heading[] {
     if (end === null) continue;
 
     found.push({
-      level: match.level,
-      command: match.command,
+      level,
+      command: token.name,
       title: text.slice(cursor + 1, end - 1),
       from: index,
       to: end,
@@ -201,7 +135,6 @@ export function headings(text: string): Heading[] {
       titleTo: end - 1,
       starred,
     });
-    index = end - 1;
   }
 
   memoisedHeadingsText = text;
@@ -296,34 +229,29 @@ export function braceCommands(
   text: string,
   names: readonly string[],
 ): BraceCommand[] {
-  const comments = commentRanges(text);
-  const byLength = [...names].sort((a, b) => b.length - a.length);
+  const wanted = new Set(names);
   const found: BraceCommand[] = [];
 
-  for (let index = 0; index < text.length; index += 1) {
-    if (text[index] !== "\\") continue;
-    if (within(comments, index)) continue;
+  for (const token of tokensIn(text)) {
+    if (token.kind !== Kind.Command) continue;
+    if (!wanted.has(token.name)) continue;
+    // `\textbfx` is not `\textbf`: the index read the name to where the letters
+    // stopped, so a longer command can never be read as a shorter one with
+    // text after it.
+    if (text[token.after] !== "{") continue;
 
-    const command = byLength.find((name) => text.startsWith(name, index + 1));
-    if (!command) continue;
-
-    const after = index + 1 + command.length;
-    // `\textbfx` is not `\textbf`.
-    if (/[a-zA-Z]/.test(text[after] ?? "")) continue;
-    if (text[after] !== "{") continue;
-
-    const end = matchBrace(text, after);
+    const end = matchBrace(text, token.after);
     if (end === null) continue;
 
     found.push({
-      command,
-      from: index,
+      command: token.name,
+      from: token.at,
       to: end,
-      argFrom: after + 1,
+      argFrom: token.after + 1,
       argTo: end - 1,
     });
-    // Deliberately not skipping past `end`: a nested command inside the
-    // argument must be found too.
+    // A nested command inside the argument is in the index too, and is found on
+    // its own account — which is what the rich-text view needs.
   }
 
   return found;
@@ -624,18 +552,15 @@ export interface ItemMarker {
  * working that out here would mean finding the environments twice.
  */
 export function itemMarkers(text: string): ItemMarker[] {
-  const comments = commentRanges(text);
   const found: ItemMarker[] = [];
 
-  for (let index = 0; index < text.length; index += 1) {
-    if (text[index] !== "\\") continue;
-    if (within(comments, index)) continue;
-    if (!text.startsWith("item", index + 1)) continue;
+  for (const token of tokensIn(text)) {
+    // `\itemsep` is a length and not an item, which the index settles by
+    // reading the whole name.
+    if (token.kind !== Kind.Command || token.name !== "item") continue;
 
-    let cursor = index + 1 + "item".length;
-    // `\itemsep` is a length, not an item.
-    if (/[a-zA-Z]/.test(text[cursor] ?? "")) continue;
-
+    const index = token.at;
+    let cursor = token.after;
     let labelFrom: number | null = null;
     let labelTo: number | null = null;
     if (text[cursor] === "[") {
@@ -651,7 +576,6 @@ export function itemMarkers(text: string): ItemMarker[] {
     while (text[cursor] === " " || text[cursor] === "\t") cursor += 1;
 
     found.push({ from: index, to: cursor, labelFrom, labelTo });
-    index = cursor - 1;
   }
 
   return found;

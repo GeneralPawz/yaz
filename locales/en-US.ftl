@@ -545,3 +545,15 @@ pagebreak-clearpage = Page break
 pagebreak-cleardoublepage = Page break, to a right-hand page
 pagebreak-newpage = Page break
 pagebreak-pagebreak = Page break
+
+## References, citations and glossary entries, drawn as what they mean
+
+reference-kind-heading = Section
+reference-kind-figure = Figure
+reference-kind-table = Table
+reference-kind-equation = Equation
+reference-kind-unknown = Reference
+reference-undefined = Nothing in this document is labelled { $key }.
+citation-unknown = { $key } is not in the bibliography that has been read.
+glossary-unknown = { $key } is not defined in the glossary.
+heading-label = Labelled { $label }
