@@ -34,6 +34,15 @@ export interface Properties {
   language: string;
   /** The paper size as `geometry` names it, e.g. `a4paper`. */
   paper: string;
+  /**
+   * Which way round the paper is.
+   *
+   * Portrait unless the document says otherwise, which is LaTeX's default and
+   * every paper's. A whole document set landscape is unusual and a single
+   * turned page is not — the second is the `landscape` environment and lives
+   * in the text, not here.
+   */
+  orientation: "portrait" | "landscape";
 }
 
 /** An edit to apply. */
@@ -66,6 +75,9 @@ export const PAPER_DIMENSIONS: Record<
 
 /** What a document that says nothing is. */
 export const DEFAULT_PAPER = "a4paper";
+
+/** Which way round the paper can be, in the order the ribbon lists them. */
+export const ORIENTATIONS = ["portrait", "landscape"] as const;
 
 /** Languages offered, as babel names them. */
 export const LANGUAGES = [
@@ -128,12 +140,19 @@ export function readProperties(text: string): Properties {
       .filter(Boolean)
       .at(-1) ?? "";
 
+  const landscape =
+    geometry?.options
+      .split(",")
+      .map((entry) => entry.trim())
+      .includes("landscape") ?? false;
+
   return {
     title: plainText(commandValue(text, "title")),
     author: plainText(commandValue(text, "author")),
     date: commandValue(text, "date"),
     language,
     paper,
+    orientation: landscape ? "landscape" : "portrait",
   };
 }
 
@@ -234,6 +253,16 @@ export function setProperty(
   value: string,
 ): Edit | null {
   switch (key) {
+    case "orientation":
+      // Portrait is the absence of the option rather than an option of its own,
+      // which is how `geometry` reads it — writing `portrait` explicitly would
+      // be a document saying something it does not need to say.
+      return setPackageOption(
+        text,
+        "geometry",
+        value === "landscape" ? "landscape" : "",
+        (option) => option === "landscape",
+      );
     case "title":
       return setCommand(text, "title", value);
     case "author":

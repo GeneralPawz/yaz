@@ -43,6 +43,12 @@
   import { includeLinks } from "./editor/includeLinks";
   import { lineNumbering } from "./editor/lineNumbers";
   import type { LineNumbering } from "./editor/lineNumbers";
+  import {
+    linesPerLandscapePage,
+    linesPerPage,
+    paginated,
+    pagination,
+  } from "./editor/pagination";
   import { editorKeymap } from "./keys/editorKeys";
   import type { ResolvedShortcut } from "./keys/registry";
 
@@ -234,6 +240,7 @@
   const numberCompartment = new Compartment();
   const keyCompartment = new Compartment();
   const wrapCompartment = new Compartment();
+  const pageCompartment = new Compartment();
 
   /*
    * Colours come from the theme token contract, never literals — ADR-0010 makes
@@ -326,6 +333,12 @@
         // where it is listed and rebindable rather than quietly gone.
         ...completionKeymap.filter((binding) => binding.key !== "Mod-Space"),
         ...searchKeymap,
+      ]),
+      pagination(),
+      pageCompartment.of([
+        paginated.of(false),
+        linesPerPage.of(0),
+        linesPerLandscapePage.of(0),
       ]),
       // Both are inert until they are given something: stitched mode refuses
       // nothing without a segment map, and a document with no `\\include` in it
@@ -468,6 +481,49 @@
     });
   });
 
+  /**
+   * A CSS millimetre, in pixels. Fixed by the specification, not by the screen.
+   */
+  const PIXELS_PER_MM = 96 / 25.4;
+
+  /**
+   * How many lines fit on a sheet, and whether to draw sheets at all.
+   *
+   * `defaultLineHeight` is a measurement, but a stable one: it depends on the
+   * font and the zoom and not on what has been scrolled into view, so a page
+   * break derived from it does not move while the reader scrolls — which is
+   * the whole reason the break positions are counted rather than measured.
+   *
+   * The zoom cancels. The sheet is drawn at `height x zoom` and the line is
+   * drawn at `line-height x zoom`, so their ratio — which is all this is — is
+   * the same at every magnification.
+   */
+  $effect(() => {
+    const instance = view;
+    if (!instance) return;
+
+    const lineHeight = instance.defaultLineHeight * (100 / zoom);
+    const fits = (millimetres: number) =>
+      pageView && lineHeight > 0
+        ? Math.max(
+            1,
+            Math.floor(((millimetres - 2 * PAGE_MARGIN_MM) * PIXELS_PER_MM) / lineHeight),
+          )
+        : 0;
+
+    instance.dispatch({
+      effects: pageCompartment.reconfigure([
+        paginated.of(pageView),
+        linesPerPage.of(fits(page.height)),
+        // A turned sheet is as tall as the paper is wide, so it holds fewer.
+        linesPerLandscapePage.of(fits(page.width)),
+      ]),
+    });
+  });
+
+  /** What a page leaves around its text. Kept in step with the stylesheet. */
+  const PAGE_MARGIN_MM = 25;
+
   // Rebinding a shortcut in settings takes effect where the caret is, without
   // the document being rebuilt underneath it.
   $effect(() => {
@@ -558,19 +614,21 @@
     justify-content: center;
   }
 
+  /* The content box is the width of the paper and nothing else: the paper
+     itself is drawn per line, because that is the only way one continuous
+     document can be shown as a stack of separate sheets.
+
+     The margin is a custom property rather than a literal because three other
+     things have to undo exactly it — the front-matter band, the fill below a
+     short page, and the line count that decides where a sheet ends — and
+     numbers that must agree should be one number. */
   .editor.paged :global(.cm-content) {
     inline-size: calc(var(--yaz-page-width) * var(--yaz-zoom, 1));
     max-inline-size: calc(var(--yaz-page-width) * var(--yaz-zoom, 1));
-    min-block-size: calc(var(--yaz-page-height) * var(--yaz-zoom, 1));
     box-sizing: border-box;
-    /* A typical one-inch margin, so the measure on screen is close to the
-       measure on paper. A custom property rather than a literal, because the
-       front-matter band has to undo exactly this much to reach the page edge
-       and two numbers that must agree should be one number. */
-    padding: var(--yaz-page-margin) var(--yaz-page-margin);
+    padding: 0;
     margin-block: var(--yaz-space-4);
-    background: var(--yaz-bg-primary);
-    box-shadow: 0 2px 12px var(--yaz-pdf-page-shadow);
+    background: transparent;
   }
 
   .editor.paged :global(.cm-gutters) {

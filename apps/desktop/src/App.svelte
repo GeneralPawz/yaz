@@ -14,6 +14,7 @@
   import {
     DEFAULT_PAPER,
     LANGUAGES,
+    ORIENTATIONS,
     PAPER_DIMENSIONS,
     PAPER_SIZES,
     isJustified,
@@ -252,9 +253,18 @@
    * hand and one who uses the ribbon are editing the same thing.
    */
   const properties = $derived<Properties>(readProperties(docText));
-  const paperSize = $derived(
-    PAPER_DIMENSIONS[properties.paper] ?? PAPER_DIMENSIONS[DEFAULT_PAPER]!,
-  );
+  /**
+   * The sheet's proportions, turned if the whole document is.
+   *
+   * A document set landscape has landscape paper, so the two numbers swap
+   * here rather than every consumer of them having to remember to ask.
+   */
+  const paperSize = $derived.by(() => {
+    const size = PAPER_DIMENSIONS[properties.paper] ?? PAPER_DIMENSIONS[DEFAULT_PAPER]!;
+    return properties.orientation === "landscape"
+      ? { width: size.height, height: size.width }
+      : size;
+  });
   const wordCount = $derived(countWords(docText));
   /** Whether paragraphs are set justified, as the document asks. */
   const justified = $derived(isJustified(docText));
@@ -1230,6 +1240,18 @@
                 label: t(`paper-${size}`),
               })),
               onchange: (value: string) => changeProperty("paper", value),
+            },
+            {
+              kind: "select" as const,
+              labelKey: "ribbon-orientation",
+              icon: "columns" as const,
+              value: properties.orientation,
+              options: ORIENTATIONS.map((orientation) => ({
+                value: orientation,
+                label: t(`orientation-${orientation}`),
+              })),
+              onchange: (value: string) =>
+                changeProperty("orientation", value),
             },
           ],
         },

@@ -39,7 +39,16 @@ describe("readProperties", () => {
       date: "",
       language: "ngerman",
       paper: "a4paper",
+      orientation: "portrait",
     });
+  });
+
+  it("reads the orientation, which is portrait unless it is said", () => {
+    // Portrait is the absence of the option rather than an option of its own,
+    // which is how `geometry` reads it.
+    expect(readProperties("\\usepackage[a4paper]{geometry}").orientation).toBe(
+      "portrait",
+    );
   });
 
   it("assumes A4 when the document says nothing", () => {
