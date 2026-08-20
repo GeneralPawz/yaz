@@ -14,7 +14,12 @@ import { EditorSelection, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
-import { richText, setRichText, setWrapperCollapsed } from "./richText";
+import {
+  richText,
+  setRichText,
+  setShowComments,
+  setWrapperCollapsed,
+} from "./richText";
 
 beforeAll(() => {
   // CodeMirror measures its own layout; jsdom implements neither of these.
@@ -751,5 +756,51 @@ describe("commands that stand for something else", () => {
     expect(shown).toContain("\\" + "gls{BIM}");
     expect(shown).toContain("\\" + "ref{ch:grund}");
     expect(shown).toContain("nosep");
+  });
+});
+
+describe("the author's comments", () => {
+  const doc = [
+    "\\begin{document}",
+    "% Diese Zeile ist eine Anmerkung.",
+    "Ein Satz. % und eine Anmerkung dahinter",
+    "\\end{document}",
+  ].join("\n");
+
+  it("shows them, because the author wrote them", () => {
+    const view = mount(doc);
+    caret(view, doc.indexOf("Ein Satz") + 4);
+    expect(visible(view)).toContain("Anmerkung");
+  });
+
+  it("hides them when asked", () => {
+    const view = mount(doc);
+    view.dispatch({ effects: setShowComments.of(false) });
+    caret(view, doc.indexOf("Ein Satz") + 4);
+    expect(visible(view)).not.toContain("Anmerkung");
+    expect(visible(view)).toContain("Ein Satz");
+  });
+
+  it("closes the gap where a whole line was one", () => {
+    // Otherwise a heavily commented document becomes a document full of holes.
+    const view = mount(doc);
+    view.dispatch({ effects: setShowComments.of(false) });
+    caret(view, doc.indexOf("Ein Satz") + 4);
+    expect(visible(view)).not.toContain("\n\n");
+  });
+
+  it("does not delete anything", () => {
+    // Hidden is not gone: ADR-0004 again.
+    const view = mount(doc);
+    view.dispatch({ effects: setShowComments.of(false) });
+    expect(view.state.doc.toString()).toBe(doc);
+  });
+
+  it("brings them back", () => {
+    const view = mount(doc);
+    view.dispatch({ effects: setShowComments.of(false) });
+    view.dispatch({ effects: setShowComments.of(true) });
+    caret(view, doc.indexOf("Ein Satz") + 4);
+    expect(visible(view)).toContain("Anmerkung");
   });
 });

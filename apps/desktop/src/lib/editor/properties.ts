@@ -137,6 +137,26 @@ export function readProperties(text: string): Properties {
   };
 }
 
+/**
+ * Whether the document sets its paragraphs justified.
+ *
+ * LaTeX justifies by default, so the question is only whether the document
+ * turns it off — which `\raggedright`, the `flushleft` environment and
+ * `ragged2e`'s document-wide option all do. Read rather than chosen, because a
+ * paragraph shown flush on both edges when it will print ragged has the wrong
+ * shape on screen, and shape is most of what a page view is for.
+ */
+export function isJustified(text: string): boolean {
+  // `ragged2e` with the `document` option turns justification off for the
+  // whole document, which is the one form that is not a command in the text.
+  const package_ = new RegExp(
+    String.raw`\\usepackage\s*\[[^\]]*\bdocument\b[^\]]*\]\s*\{ragged2e\}`,
+  );
+  if (package_.test(text)) return false;
+
+  return !new RegExp(String.raw`\\(raggedright|RaggedRight)\b`).test(text);
+}
+
 /** Where the preamble ends — everything is inserted before this. */
 function preambleEnd(text: string): number {
   const [document] = environments(text, ["document"]);

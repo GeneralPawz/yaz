@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { readProperties, setProperty } from "./properties";
+import { isJustified, readProperties, setProperty } from "./properties";
 import type { Edit } from "./properties";
 
 /** Apply an edit. */
@@ -120,5 +120,27 @@ describe("setProperty", () => {
     const without =
       "\\documentclass{article}\n\\begin{document}\n\\end{document}";
     expect(setProperty(without, "title", "")).toBeNull();
+  });
+});
+
+describe("isJustified", () => {
+  it("is true for a document that says nothing", () => {
+    // LaTeX justifies by default, so silence means justified.
+    expect(isJustified("\\documentclass{article}")).toBe(true);
+  });
+
+  it("is false when the document turns it off", () => {
+    expect(isJustified("\\documentclass{article}\n\\raggedright")).toBe(false);
+  });
+
+  it("is false for ragged2e set document-wide", () => {
+    // The one form that is an option rather than a command in the text.
+    expect(isJustified("\\usepackage[document]{ragged2e}")).toBe(false);
+  });
+
+  it("is true for ragged2e without the option", () => {
+    // Loading the package only makes its commands available; it changes
+    // nothing on its own.
+    expect(isJustified("\\usepackage{ragged2e}")).toBe(true);
   });
 });

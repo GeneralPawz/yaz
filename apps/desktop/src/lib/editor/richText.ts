@@ -66,7 +66,7 @@ import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import type { DecorationSet } from "@codemirror/view";
 
 import { t } from "../i18n";
-import { Covered, replace, touched } from "./pass";
+import { Covered, drawable, replace, touched } from "./pass";
 import { semanticMarkup, semanticTheme } from "./semanticView";
 import type { Meaning } from "./semanticView";
 import { labelledMarker } from "./semantics";
@@ -78,6 +78,7 @@ import { entriesFor, generatedIn, hasGenerated } from "./generated";
 import type { BreakKind, Entry, ListingKind } from "./generated";
 import {
   braceCommands,
+  commentRanges,
   environments,
   headings,
   itemMarkers,
@@ -153,6 +154,30 @@ export const richTextEnabled = StateField.define<boolean>({
   update(value, transaction) {
     for (const effect of transaction.effects) {
       if (effect.is(setRichText)) return effect.value;
+    }
+    return value;
+  },
+});
+
+/** Show or hide the author's comments. */
+export const setShowComments = StateEffect.define<boolean>();
+
+/**
+ * Whether the comments in the source are on screen.
+ *
+ * On, because a comment is something the author wrote and rich text is a view
+ * of what they wrote. Off is for reading: a document commented as heavily as a
+ * thesis under review has more `%` in it than prose, and none of it is going
+ * into the PDF.
+ *
+ * Hidden is not deleted. The characters stay in the buffer, exactly as the
+ * markup around a heading does (ADR-0004).
+ */
+export const showComments = StateField.define<boolean>({
+  create: () => true,
+  update(value, transaction) {
+    for (const effect of transaction.effects) {
+      if (effect.is(setShowComments)) return effect.value;
     }
     return value;
   },
@@ -481,6 +506,7 @@ function build(state: EditorState): DecorationSet {
   };
 
   boundaries(pass);
+  comments(pass);
   generated(pass);
   tables(pass);
   mathematics(pass);
@@ -727,6 +753,26 @@ function band(
         class: `cm-yaz-matter cm-yaz-matter-${place}`,
       }).range(doc.line(number).from),
     );
+  }
+}
+
+/**
+ * The author's comments, when they are not wanted on screen.
+ *
+ * A comment that is a whole line takes its line break with it, so switching
+ * them off closes the gap rather than leaving a blank line where each one was
+ * — which would be a document full of holes.
+ *
+ * Claimed before anything else looks at the text, so a construct that was
+ * commented out is never half-drawn.
+ */
+function comments(pass: Pass): void {
+  if (pass.state.field(showComments, false) !== false) return;
+
+  for (const comment of commentRanges(pass.text)) {
+    if (!drawable(pass, comment.from, comment.to)) continue;
+    const whole = lineHide(pass.state, comment.from, comment.to);
+    replace(pass, whole?.from ?? comment.from, whole?.to ?? comment.to);
   }
 }
 
@@ -1150,7 +1196,10 @@ const decorations = StateField.define<DecorationSet>({
     // Selection changes matter as much as edits: moving the caret into a
     // construct is what reveals its markup.
     const toggled = transaction.effects.some(
-      (effect) => effect.is(setRichText) || effect.is(setWrapperCollapsed),
+      (effect) =>
+        effect.is(setRichText) ||
+        effect.is(setWrapperCollapsed) ||
+        effect.is(setShowComments),
     );
     if (
       transaction.docChanged ||
@@ -1251,6 +1300,7 @@ export function richText(): Extension {
   return [
     richTextEnabled,
     wrapperCollapsed,
+    showComments,
     decorations,
     cursorStaysOutOfTheFold,
     theme,

@@ -26,5 +26,19 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     include: ["src/**/*.test.ts"],
+    /*
+     * Raised from the 5 s default, and not because any test is slow.
+     *
+     * Vitest charges a file's module transform and import to whichever test
+     * runs first in it. The editor's graph is CodeMirror, the Vim keymap,
+     * KaTeX and a dozen decoration passes, which takes several seconds to
+     * transform cold — so with the files running in parallel the *first* test
+     * in each of them would fail on a machine that was busy, while the same
+     * file passed on its own. That is a timer measuring the wrong thing.
+     *
+     * What the keystroke budget actually costs is measured deliberately, by
+     * `keystroke.test.ts`, against a ratio rather than a clock.
+     */
+    testTimeout: 30000,
   },
 });

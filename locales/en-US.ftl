@@ -473,6 +473,8 @@ status-page-view = Page
 status-language-unset = No language set
 
 menu-view-wrap = Wrap long lines
+menu-view-comments = Comments
+menu-view-paper = White paper
 
 ## Ribbon command groups
 

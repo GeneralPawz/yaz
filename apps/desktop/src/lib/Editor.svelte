@@ -32,7 +32,12 @@
   import { tags } from "@lezer/highlight";
   import { vim } from "@replit/codemirror-vim";
   import type { EditorApi } from "@yaz/api";
-  import { richText, richTextEnabled, setRichText } from "./editor/richText";
+  import {
+    richText,
+    richTextEnabled,
+    setRichText,
+    setShowComments,
+  } from "./editor/richText";
   import { changesIn, setSegments, stitched } from "./editor/stitched";
   import type { Change, Segment } from "./editor/stitch";
   import { includeLinks } from "./editor/includeLinks";
@@ -74,6 +79,30 @@
     page: { width: number; height: number };
     /** How large the text is drawn, as a percentage. */
     zoom: number;
+    /**
+     * Whether the author's comments are on screen.
+     *
+     * Hiding them is a reading aid, not an edit: the characters stay in the
+     * buffer and come back the moment the switch moves.
+     */
+    comments?: boolean;
+    /**
+     * Whether the page is drawn as white paper whatever the interface is.
+     *
+     * Someone proofreading wants paper; someone writing at midnight wants the
+     * dark they set the rest of the application to. The two are different
+     * questions, so this is a separate switch and not a consequence of the
+     * colour mode.
+     */
+    paperLight?: boolean;
+    /**
+     * Whether paragraphs are set justified, as LaTeX sets them by default.
+     *
+     * Read from the document rather than chosen here: a document that says
+     * `\raggedright` means it, and a paragraph shown flush on both edges when it
+     * will print ragged is a paragraph whose shape on screen is a lie.
+     */
+    justified?: boolean;
     /**
      * Whether a line too long for the pane comes back round.
      *
@@ -144,6 +173,9 @@
     page,
     zoom,
     wrap,
+    comments = true,
+    paperLight = false,
+    justified = true,
     shortcuts,
     segments = null,
     onRefused,
@@ -413,6 +445,10 @@
   });
 
   $effect(() => {
+    view?.dispatch({ effects: setShowComments.of(comments) });
+  });
+
+  $effect(() => {
     view?.dispatch({
       effects: vimCompartment.reconfigure(vimMode ? vim() : []),
     });
@@ -449,6 +485,8 @@
 <div
   class="editor"
   class:paged={pageView}
+  class:paper={paperLight}
+  class:justified
   style:--yaz-page-width="{page.width}mm"
   style:--yaz-page-height="{page.height}mm"
   style:--yaz-zoom={zoom / 100}
@@ -469,6 +507,37 @@
      document wants larger text on a full-width pane too. */
   .editor :global(.cm-content) {
     font-size: calc(var(--yaz-font-size-base) * var(--yaz-zoom, 1));
+  }
+
+  /* Justified, which is what LaTeX does unless the document says otherwise.
+     `text-wrap: pretty` keeps the last line of a paragraph from being a single
+     short word, which is the one thing hyphenless justification gets worst. */
+  .editor.justified :global(.cm-content) {
+    text-align: justify;
+    text-wrap: pretty;
+    hyphens: auto;
+  }
+
+  /* White paper under a dark interface.
+
+     The tokens are overridden rather than the colours set directly, so
+     everything drawn inside the page — headings, rules, the bands, a rendered
+     table — follows without each of them needing to know about this switch
+     (ADR-0010). */
+  .editor.paper :global(.cm-editor) {
+    --yaz-editor-bg: #ffffff;
+    --yaz-editor-text: #1a1a1a;
+    --yaz-bg-primary: #ffffff;
+    --yaz-bg-secondary: #f4f4f5;
+    --yaz-bg-tertiary: #e9e9ec;
+    --yaz-bg-hover: #e4e4e7;
+    --yaz-text-primary: #1a1a1a;
+    --yaz-text-secondary: #3f3f46;
+    --yaz-text-muted: #71717a;
+    --yaz-border: #d4d4d8;
+    --yaz-editor-active-line: #f4f4f5;
+    --yaz-editor-gutter-bg: #fafafa;
+    --yaz-editor-gutter-text: #a1a1aa;
   }
 
   /* The page. A sheet of the declared size, centred on the surround, with the

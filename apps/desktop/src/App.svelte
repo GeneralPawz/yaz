@@ -16,6 +16,7 @@
     LANGUAGES,
     PAPER_DIMENSIONS,
     PAPER_SIZES,
+    isJustified,
     readProperties,
     setProperty,
   } from "./lib/editor/properties";
@@ -211,6 +212,22 @@
   let zoom = $state(100);
   /** Whether a line too long for the pane comes back round. */
   let wrap = $state(true);
+  /**
+   * Whether the author's comments are on screen.
+   *
+   * On, because a comment is something the author wrote. Off is for reading a
+   * document that has been commented as heavily as one under review, where
+   * there is more `%` than prose and none of it reaches the PDF.
+   */
+  let comments = $state(true);
+  /**
+   * Whether the page is white paper whatever the interface is.
+   *
+   * A separate question from the colour mode, and not a consequence of it:
+   * someone proofreading wants paper, and the same person writing at midnight
+   * wants the dark they chose for everything else.
+   */
+  let paperLight = $state(false);
   /** Whether the ribbon's body shows, and which way it runs. */
   let ribbonOpen = $state(true);
   let ribbonVertical = $state(false);
@@ -239,6 +256,8 @@
     PAPER_DIMENSIONS[properties.paper] ?? PAPER_DIMENSIONS[DEFAULT_PAPER]!,
   );
   const wordCount = $derived(countWords(docText));
+  /** Whether paragraphs are set justified, as the document asks. */
+  const justified = $derived(isJustified(docText));
   /**
    * The date as one of the three things `\date{}` can mean.
    *
@@ -920,6 +939,24 @@
               ? t("joined-unexpanded", { missing: joinedMissing.join(", ") })
               : undefined,
           action: toggleJoined,
+        },
+        {
+          labelKey: "menu-view-comments",
+          icon: "text" as const,
+          group: "group-editing",
+          checked: comments,
+          action: () => {
+            comments = !comments;
+          },
+        },
+        {
+          labelKey: "menu-view-paper",
+          icon: "sun" as const,
+          group: "group-views",
+          checked: paperLight,
+          action: () => {
+            paperLight = !paperLight;
+          },
         },
         {
           labelKey: "menu-view-rich-text",
@@ -1945,6 +1982,9 @@
         page={paperSize}
         {zoom}
         {wrap}
+        {comments}
+        {paperLight}
+        {justified}
         onCursor={(offset) => (cursor = offset)}
         onReady={(api) => {
           editorApi = api;

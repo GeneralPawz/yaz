@@ -45,6 +45,7 @@ export type IconName =
   | "wrap"
   | "columns"
   | "layers"
+  | "sun"
   | "person"
   | "calendar"
   | "heading"
@@ -88,6 +89,8 @@ export const ICONS: Record<IconName, string> = {
   columns: "M2.5 2.5h4v11h-4zM9.5 2.5h4v11h-4z",
   // Sheets stacked into one, which is what joining a document's files is.
   layers: "M8 2l5.5 3L8 8 2.5 5zM2.5 8L8 11l5.5-3M2.5 11L8 14l5.5-3",
+  // Light on the paper, which is what the switch changes.
+  sun: "M8 5.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5zM8 1.5v1.5M8 13v1.5M1.5 8h1.5M13 8h1.5M3.4 3.4l1 1M11.6 11.6l1 1M12.6 3.4l-1 1M4.4 11.6l-1 1",
   person: "M8 3.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5zM3 14a5 5 0 0110 0",
   calendar: "M2.5 4h11v9.5h-11zM2.5 6.5h11M5.5 2.5v3M10.5 2.5v3",
   /** A large A over a small one. */

@@ -474,6 +474,8 @@ status-page-view = Seite
 status-language-unset = Keine Sprache gesetzt
 
 menu-view-wrap = Lange Zeilen umbrechen
+menu-view-comments = Kommentare
+menu-view-paper = Weißes Papier
 
 ## Befehlsgruppen im Menüband
 
