@@ -1,5 +1,7 @@
 # <img src="crates/yaz-app/icons/128x128.png" width="28" align="top" alt=""> yaz
 
+**[Documentation](https://generalpawz.github.io/yaz/)**
+
 [![CI](https://img.shields.io/github/actions/workflow/status/GeneralPawz/yaz/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/GeneralPawz/yaz/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/GeneralPawz/yaz?style=flat-square&logo=github&label=release)](https://github.com/GeneralPawz/yaz/releases/latest)
 [![Docs](https://img.shields.io/badge/docs-generalpawz.github.io%2Fyaz-blue?style=flat-square)](https://generalpawz.github.io/yaz/)
