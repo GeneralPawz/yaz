@@ -88,6 +88,12 @@ That rule was written the other way round first, and the tests caught it.
   reorders them from stitched mode; a document's structure is the author's, and
   an editor that quietly restructured a thesis because a paragraph was dragged
   would be unusable at exactly the moment it mattered.
+- **A file is expanded once, wherever it is first included.** A second
+  `\include` of the same file would put two copies of its text in the buffer,
+  and an edit to one copy would leave the other stale with nothing saying so —
+  the map cannot answer which copy a file's text belongs to, because both are
+  it. The second command stays in the buffer, where it is clickable and visibly
+  is what it is.
 - A file that cannot be read — missing, or outside the project — is left as its
   `\include` line, undecorated. A document that silently loses a chapter because
   a path was wrong is worse than one that shows a line the author can see is
@@ -135,6 +141,21 @@ an argument for keeping those budgets honest rather than against the feature.
 someone switches it on. The mitigation is that the mapping is a pure function of
 (text, segment map, changes) and is tested as one, rather than being observable
 only by driving the editor.
+
+**The map is moved, not rebuilt.** Re-stitching after every keystroke would be
+correct and would put the whole document on the keystroke path, which
+[0015](0015-performance-budgets.md) does not allow. Instead a change lengthens
+the segment it lands in and shifts everything after it — two shifts, because a
+segment's offset *within its file* moves only by the changes before it in that
+same file. The property test for it is that moving the map and re-stitching
+agree, checked edit by edit against a real thesis rather than a fixture.
+
+**The map lives in the editor, not in the shell.** An edit has to be judged
+before it applies, and a map held outside CodeMirror arrives a frame late —
+which is after the character is already in the wrong file. So the map is a
+`StateField`, a transaction filter reads it as it was *before* a change to
+decide whether to allow it, and the shell keeps its own copy only to know which
+file to write to.
 
 ## Alternatives considered
 

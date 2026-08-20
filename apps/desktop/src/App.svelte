@@ -28,6 +28,15 @@
   import Outline from "./lib/Outline.svelte";
   import type { Heading } from "./lib/editor/structure";
   import { LINE_NUMBERING } from "./lib/editor/lineNumbers";
+  import {
+    applyToFiles,
+    filesIn,
+    mapChanges,
+    mapSegments,
+    resolveInclude,
+    stitch,
+  } from "./lib/editor/stitch";
+  import type { Change, Segment } from "./lib/editor/stitch";
   import { KeyDispatcher } from "./lib/keys/dispatcher";
   import {
     DEFAULT_PREFERENCES,
@@ -142,6 +151,60 @@
     if (!next.delete(path)) next.add(path);
     openFolders = next;
   }
+  /**
+   * Whether the document's files are edited as one.
+   *
+   * Off is what ADR-0004 describes and what most projects want: one buffer
+   * holding one file, byte for byte. On, the buffer holds the entry document
+   * with every `\include` expanded in place and each edit is written back to
+   * the file it came from
+   * ([ADR-0020](https://generalpawz.github.io/yaz/adr/0020-stitched-multi-file-editing)).
+   */
+  let joined = $state(false);
+  /**
+   * The text of every file the joined buffer drew from, as it stands now.
+   *
+   * Held in full rather than re-read on save, because these are the files
+   * *after* the edits that have not been saved yet — the buffer is the only
+   * other place that text exists, and it no longer knows which file it is in.
+   */
+  let joinedFiles = $state<Map<string, string>>(new Map());
+  /**
+   * The map as it was stitched, which is what the editor is handed.
+   *
+   * Deliberately *not* updated as the user types. The editor moves its own copy
+   * with every change, and feeding a new map back per keystroke would put a
+   * second transaction on the keystroke path to tell it what it already knows.
+   */
+  let joinedSegments = $state<Segment[] | null>(null);
+  /**
+   * The same map, moved as the editor moves its own.
+   *
+   * The shell needs its own copy because it writes the edits to the files, and
+   * a change arrives in the coordinates the buffer has *now* — measured against
+   * the map as first stitched, the second keystroke onwards would be written at
+   * the wrong offset and, past a seam, into the wrong file.
+   *
+   * Not `$state`: nothing on screen is derived from it, and making it reactive
+   * would feed it back into the editor as a prop on every character.
+   */
+  let liveSegments: Segment[] | null = null;
+  /** The files edited since the last save, which is what a save writes. */
+  let joinedDirty = $state<Set<string>>(new Set());
+  /** Included files that could not be read, left in the buffer as commands. */
+  let joinedMissing = $state<string[]>([]);
+
+  /**
+   * What the editor treats as "a different document".
+   *
+   * Joining is a different document even though the file has not changed —
+   * a buffer of seven files is not the file it started from, and the editor
+   * has to replace the text rather than fold the change into what is there.
+   */
+  const editorDocId = $derived(
+    joined && project ? `joined:${project.entry}` : (currentFile ?? ""),
+  );
+
   /** Whether the editor sets the text on a page rather than filling the pane. */
   let pageView = $state(false);
   /** How large the text is drawn, as a percentage. */
@@ -483,7 +546,9 @@
       return;
     }
     // No editor open: the file is still the document, so edit the text and let
-    // the usual save path carry it.
+    // the usual save path carry it. Joined, there is no such thing — the text
+    // belongs to no one file, and only the editor's map says which.
+    if (joined) return;
     docText = docText.slice(0, edit.from) + edit.insert + docText.slice(edit.to);
     dirty = true;
   }
@@ -840,6 +905,21 @@
           action: () => {
             ribbonVertical = !ribbonVertical;
           },
+        },
+        {
+          labelKey: "menu-view-joined",
+          icon: "layers" as const,
+          group: "group-views",
+          checked: joined,
+          disabled: !project,
+          // An include that could not be read stays in the buffer as a command
+          // rather than disappearing, and this is where to find out why the
+          // document has one in it.
+          tooltip:
+            joinedMissing.length > 0
+              ? t("joined-unexpanded", { missing: joinedMissing.join(", ") })
+              : undefined,
+          action: toggleJoined,
         },
         {
           labelKey: "menu-view-rich-text",
@@ -1536,6 +1616,12 @@
   function closeProject() {
     project = null;
     currentFile = null;
+    joined = false;
+    joinedSegments = null;
+    liveSegments = null;
+    joinedFiles = new Map();
+    joinedDirty = new Set();
+    joinedMissing = [];
     docText = "";
     result = null;
     pdfData = null;
@@ -1629,9 +1715,149 @@
     }
   }
 
+  /**
+   * Read every source file in the project, so stitching can be synchronous.
+   *
+   * `stitch` walks the includes itself and asks for files as it needs them,
+   * which an `await` per file cannot answer. Reading them all first costs a few
+   * dozen small reads once per join, against making the whole expansion async
+   * and awaiting inside a recursion.
+   */
+  async function readSources(): Promise<Map<string, string>> {
+    const texts = new Map<string, string>();
+    if (!project) return texts;
+
+    for (const file of project.files) {
+      if (file.kind !== "tex" && file.kind !== "style") continue;
+      try {
+        texts.set(
+          file.relativePath,
+          await ipc.readFile(project.root, file.relativePath),
+        );
+      } catch {
+        // Left out, so the include stays visible as a command. A file that
+        // cannot be read is not an empty chapter.
+      }
+    }
+    return texts;
+  }
+
+  /** Join the document's files into one buffer. */
+  async function join() {
+    if (!project) return;
+    // Whatever is in the single-file buffer goes to disk first: the join reads
+    // from disk, and an unsaved paragraph would simply vanish from the text.
+    await save();
+
+    const texts = await readSources();
+    const result = stitch(project.entry, (path) => texts.get(path) ?? null);
+
+    joinedFiles = texts;
+    joinedSegments = result.segments;
+    liveSegments = result.segments;
+    joinedMissing = result.missing;
+    joinedDirty = new Set();
+    docText = result.text;
+    dirty = false;
+    joined = true;
+
+    const count = filesIn(result.segments).length;
+    showNotice(
+      result.missing.length > 0
+        ? t("joined-missing", { count, missing: result.missing.join(", ") })
+        : t("joined-entered", { count }),
+    );
+  }
+
+  /** Go back to editing one file at a time. */
+  async function unjoin() {
+    await save();
+    joined = false;
+    joinedSegments = null;
+    liveSegments = null;
+    joinedFiles = new Map();
+    joinedDirty = new Set();
+    joinedMissing = [];
+    if (project) await openFile(currentFile ?? project.entry);
+  }
+
+  function toggleJoined() {
+    void (joined ? unjoin() : join());
+  }
+
+  /**
+   * Send an edit to the file it belongs to.
+   *
+   * The editor has already refused anything that spans a seam, so a refusal
+   * here means the map and the buffer have drifted apart. Saying so is the only
+   * honest response: writing the change somewhere would write it to the wrong
+   * file, and dropping it silently would lose the author's text.
+   */
+  function recordJoinedChanges(changes: Change[]) {
+    if (!liveSegments || changes.length === 0) return;
+
+    const mapped = mapChanges(liveSegments, changes);
+    const moved = mapSegments(liveSegments, changes);
+    if (!("byFile" in mapped) || !moved) {
+      // The editor refuses an unwritable edit before it applies, so reaching
+      // here means the buffer and the map have drifted apart. Nothing further
+      // is written, because writing against a map that no longer describes the
+      // buffer is how a paragraph ends up in the wrong chapter.
+      liveSegments = null;
+      failure = t("joined-drifted");
+      return;
+    }
+
+    joinedFiles = applyToFiles(joinedFiles, mapped);
+    liveSegments = moved;
+    const touched = new Set(joinedDirty);
+    for (const file of mapped.byFile.keys()) touched.add(file);
+    joinedDirty = touched;
+  }
+
+  /** Open the file an `\\include` names, from a click on its path. */
+  async function openInclude(argument: string) {
+    if (!project) return;
+    // Relative to the file the command is in — which, joined, is whichever file
+    // the caret is in rather than the entry document.
+    const from = joined
+      ? (locateJoined(cursor)?.file ?? project.entry)
+      : (currentFile ?? project.entry);
+    await openFile(resolveInclude(argument, from));
+  }
+
+  /** Which file an offset in the joined buffer belongs to. */
+  function locateJoined(offset: number): { file: string } | null {
+    for (const segment of liveSegments ?? []) {
+      if (offset >= segment.from && offset <= segment.to) return segment;
+    }
+    return null;
+  }
+
   async function openFile(relativePath: string) {
     if (!project) return;
     void ensureEditorLoaded();
+
+    if (joined) {
+      // The file is already on screen; opening it means going to it. This is
+      // the whole point of the mode — the file list becomes a way of moving
+      // around one document rather than a way of swapping documents.
+      const segment = (liveSegments ?? []).find(
+        (candidate) => candidate.file === relativePath,
+      );
+      if (segment) {
+        currentFile = relativePath;
+        editorApi?.revealRange(segment.from, segment.from);
+        return;
+      }
+      // A file that is not part of the document — a `.bib`, a stray draft —
+      // cannot be shown inside it, so opening it leaves the joined view. Said
+      // out loud, because a mode that switches itself off silently is a mode
+      // nobody trusts.
+      showNotice(t("joined-left", { file: relativePath }));
+      await unjoin();
+    }
+
     try {
       docText = await ipc.readFile(project.root, relativePath);
       currentFile = relativePath;
@@ -1642,7 +1868,29 @@
   }
 
   async function save() {
-    if (!project || !currentFile || !dirty) return;
+    if (!project) return;
+
+    if (joined) {
+      // Per file, and reported per file: a save that half-succeeds leaves the
+      // document in a state no single file records, and "saving failed" without
+      // a name is not something anyone can act on.
+      for (const file of joinedDirty) {
+        const text = joinedFiles.get(file);
+        if (text === undefined) continue;
+        try {
+          await ipc.writeFile(project.root, file, text);
+        } catch (error) {
+          failure = t("joined-save-failed", { file, error: String(error) });
+          return;
+        }
+      }
+      joinedDirty = new Set();
+      dirty = false;
+      if (vcs?.enabled) await recordVersion();
+      return;
+    }
+
+    if (!currentFile || !dirty) return;
     await ipc.writeFile(project.root, currentFile, docText);
     dirty = false;
     // Recording is part of saving when it is switched on. A save with no edits
@@ -1679,11 +1927,15 @@
     {#if currentFile && EditorComponent}
       <EditorComponent
         doc={docText}
-        docId={currentFile}
+        docId={editorDocId}
         {vimMode}
-        onChange={(text) => {
+        segments={joinedSegments}
+        onRefused={() => showNotice(t("joined-refused"))}
+        onOpenInclude={(argument) => void openInclude(argument)}
+        onChange={(text, changes) => {
           docText = text;
           dirty = true;
+          if (joined) recordJoinedChanges(changes);
         }}
         onSave={save}
         rich={richText}

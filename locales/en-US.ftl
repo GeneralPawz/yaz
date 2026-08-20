@@ -515,3 +515,21 @@ files-dim-build = Dim build files
 files-expand = Open { $name }
 files-collapse = Close { $name }
 group-files = Files
+
+## Editing a document that lives in several files
+
+menu-view-joined = Joined document
+joined-entered =
+    Editing { $count } files as one document. Saving writes each of them.
+joined-missing =
+    Editing { $count } files as one document. These could not be read and are
+    shown as commands: { $missing }
+joined-refused =
+    That edit runs from one file into the next, so there is no one file to
+    write it to. Edit inside one of them.
+joined-left = { $file } is not part of the document, so the joined view is off.
+joined-save-failed = { $file } could not be saved: { $error }
+joined-unexpanded = Not shown, could not be read: { $missing }
+joined-drifted =
+    The joined document no longer matches its files, so edits are not
+    being written. Switch the joined view off to go back to one file.

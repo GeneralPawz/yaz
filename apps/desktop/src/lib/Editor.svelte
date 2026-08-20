@@ -33,6 +33,9 @@
   import { vim } from "@replit/codemirror-vim";
   import type { EditorApi } from "@yaz/api";
   import { richText, richTextEnabled, setRichText } from "./editor/richText";
+  import { changesIn, setSegments, stitched } from "./editor/stitched";
+  import type { Change, Segment } from "./editor/stitch";
+  import { includeLinks } from "./editor/includeLinks";
   import { lineNumbering } from "./editor/lineNumbers";
   import type { LineNumbering } from "./editor/lineNumbers";
   import { editorKeymap } from "./keys/editorKeys";
@@ -43,7 +46,15 @@
     doc: string;
     /** Which file this buffer belongs to; used to decide replace-vs-update. */
     docId: string;
-    onChange: (text: string) => void;
+    /**
+     * The buffer changed.
+     *
+     * The text and the changes both. The text is what everything reading the
+     * document wants; the changes are what writing back to several files needs,
+     * since an edit can only be sent to a file if it is known as an edit and not
+     * as a new version of half a megabyte of text.
+     */
+    onChange: (text: string, changes: Change[]) => void;
     onSave: () => void;
     vimMode: boolean;
     /** Render LaTeX as styled text. Decorations over the same buffer. */
@@ -84,6 +95,30 @@
      * come from.
      */
     shortcuts: ResolvedShortcut[];
+    /**
+     * Which file each stretch of the buffer belongs to, or null for one file.
+     *
+     * Handed over whole, when the shell stitches the document. It is
+     * deliberately *not* fed back on every keystroke: the editor moves the map
+     * itself as the text changes, because an edit has to be judged before it
+     * applies and a map that arrives a frame later arrives after the damage
+     * ([ADR-0020](https://generalpawz.github.io/yaz/adr/0020-stitched-multi-file-editing)).
+     */
+    segments?: Segment[] | null;
+    /**
+     * An edit was refused because it spanned a seam.
+     *
+     * Nothing happened to the document, so this is the only sign the keystroke
+     * was heard at all — which is why it is reported rather than dropped.
+     */
+    onRefused?: (() => void) | undefined;
+    /**
+     * A file name in an `\\include` was clicked, as written in the source.
+     *
+     * Passed on unresolved: the path is relative to the file that contains it,
+     * and the editor does not know which file that is.
+     */
+    onOpenInclude?: ((argument: string) => void) | undefined;
     /** Caret moved, as an offset into the source. */
     onCursor?: ((offset: number) => void) | undefined;
     /**
@@ -110,9 +145,15 @@
     zoom,
     wrap,
     shortcuts,
+    segments = null,
+    onRefused,
+    onOpenInclude,
     onCursor,
     onReady,
   }: Props = $props();
+
+  /** The map currently installed, so a re-stitch can be told from a keystroke. */
+  let loadedSegments: Segment[] | null = null;
 
   /**
    * The buffer as `@yaz/api` describes it.
@@ -254,8 +295,15 @@
         ...completionKeymap.filter((binding) => binding.key !== "Mod-Space"),
         ...searchKeymap,
       ]),
+      // Both are inert until they are given something: stitched mode refuses
+      // nothing without a segment map, and a document with no `\\include` in it
+      // has no links to draw.
+      stitched(() => onRefused?.()),
+      includeLinks((argument) => onOpenInclude?.(argument)),
       EditorView.updateListener.of((update) => {
-        if (update.docChanged) onChange(update.state.doc.toString());
+        if (update.docChanged) {
+          onChange(update.state.doc.toString(), changesIn(update.changes));
+        }
         // The outline highlights the section the caret is in, so it needs the
         // position rather than the text.
         if (update.selectionSet || update.docChanged) {
@@ -308,14 +356,19 @@
         }),
     );
 
-    // Opening straight into rich text should not need a second frame.
+    // Opening straight into rich text should not need a second frame, and
+    // neither should opening straight into a stitched document.
     untrack(() => {
-      if (rich) instance.dispatch({ effects: setRichText.of(true) });
+      const effects = [];
+      if (rich) effects.push(setRichText.of(true));
+      if (segments) effects.push(setSegments.of([...segments]));
+      if (effects.length > 0) instance.dispatch({ effects });
     });
 
     view = instance;
     untrack(() => {
       loadedDocId = docId;
+      loadedSegments = segments;
       onReady?.(editorApi(instance));
     });
 
@@ -328,13 +381,29 @@
 
   // Replace the document only when the *file* changes. Reacting to `doc` alone
   // would fight the user's own typing, since onChange feeds it straight back.
+  //
+  // The segment map rides along in the same transaction rather than arriving in
+  // one of its own. Switching into stitched mode changes both at once, and a
+  // document replaced while the old map was still installed would be a document
+  // every offset of which pointed at the wrong file — briefly, but the refusal
+  // filter runs in exactly that window.
   $effect(() => {
-    if (!view || docId === loadedDocId) return;
+    const nextSegments = segments;
+    if (!view) return;
+    const newDocument = docId !== loadedDocId;
+    if (!newDocument && nextSegments === loadedSegments) return;
+
     view.dispatch({
-      changes: { from: 0, to: view.state.doc.length, insert: doc },
-      selection: { anchor: 0 },
+      ...(newDocument
+        ? {
+            changes: { from: 0, to: view.state.doc.length, insert: doc },
+            selection: { anchor: 0 },
+          }
+        : {}),
+      effects: setSegments.of(nextSegments ? [...nextSegments] : []),
     });
     loadedDocId = docId;
+    loadedSegments = nextSegments;
   });
 
   $effect(() => {

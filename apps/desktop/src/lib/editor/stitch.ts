@@ -148,6 +148,13 @@ export function stitch(root: string, read: ReadFile): Stitched {
   const missing: string[] = [];
   let text = "";
 
+  // A file is expanded once, wherever it is first included. A second
+  // `\include` of the same file would put two copies of it in the buffer, and
+  // an edit to one copy would silently leave the other stale — the mapping has
+  // no way to say which copy a file's text belongs to. The second command is
+  // left in place, where it stays clickable and visibly is what it is.
+  const expanded = new Set<string>();
+
   /** Expand one file into the output, recording where everything came from. */
   const expand = (
     file: string,
@@ -159,16 +166,17 @@ export function stitch(root: string, read: ReadFile): Stitched {
 
     for (const include of includesIn(source)) {
       const path = resolveInclude(include.argument, file);
-      const content = depth < MAX_DEPTH && !open.has(path) ? read(path) : null;
+      const expandable =
+        depth < MAX_DEPTH && !open.has(path) && !expanded.has(path);
+      const content = expandable ? read(path) : null;
 
       if (content === null) {
         // Left in place, command and all. Also the cycle case: a file that
         // includes itself is a mistake, and hanging is not a diagnosis of it.
-        if (depth < MAX_DEPTH && !open.has(path) && !missing.includes(path)) {
-          missing.push(path);
-        }
+        if (expandable && !missing.includes(path)) missing.push(path);
         continue;
       }
+      expanded.add(path);
 
       // Everything up to the command belongs to this file.
       segments.push({
@@ -337,12 +345,85 @@ function segmentFor(
   segments: readonly Segment[],
   change: Change,
 ): Segment | undefined {
-  let best: Segment | undefined;
-  for (const segment of segments) {
-    if (change.from < segment.from || change.to > segment.to) continue;
-    if (!best || segment.depth > best.depth) best = segment;
-  }
+  const index = indexFor(segments, change);
+  return index === -1 ? undefined : segments[index];
+}
+
+/** The same, by position in the map, which is what moving the map needs. */
+function indexFor(segments: readonly Segment[], change: Change): number {
+  let best = -1;
+  segments.forEach((segment, index) => {
+    if (change.from < segment.from || change.to > segment.to) return;
+    if (best === -1 || segment.depth > segments[best]!.depth) best = index;
+  });
   return best;
+}
+
+/**
+ * Whether a change could be written to exactly one file.
+ *
+ * What the editor asks before letting an edit through, rather than after.
+ */
+export function isWritable(
+  segments: readonly Segment[],
+  change: Change,
+): boolean {
+  return indexFor(segments, change) !== -1;
+}
+
+/**
+ * The segment map after a set of changes, without re-reading anything.
+ *
+ * Re-stitching after every keystroke would be correct and would also put the
+ * whole document on the keystroke path, which ADR-0015 does not allow. The map
+ * can be moved instead: a change inside a segment lengthens that segment by its
+ * delta, and everything after it shifts by the same amount.
+ *
+ * Two shifts are needed rather than one. Buffer offsets shift by every change
+ * before them; a segment's offset *within its file* shifts only by the changes
+ * before it **in that same file** — the chapters expanded in between are not in
+ * the root file and do not move anything in it.
+ *
+ * `changes` are in the buffer's coordinates before any of them applied, which
+ * is how CodeMirror reports them. Returns `null` if any change spans a seam,
+ * which is the caller's cue that it should have been refused.
+ */
+export function mapSegments(
+  segments: readonly Segment[],
+  changes: readonly Change[],
+): Segment[] | null {
+  const owned = new Map<number, number>();
+
+  for (const change of changes) {
+    const index = indexFor(segments, change);
+    if (index === -1) return null;
+    const delta = change.insert.length - (change.to - change.from);
+    owned.set(index, (owned.get(index) ?? 0) + delta);
+  }
+
+  const moved: Segment[] = [];
+  let shift = 0;
+  const inFile = new Map<string, number>();
+
+  segments.forEach((segment, index) => {
+    const own = owned.get(index) ?? 0;
+    const before = inFile.get(segment.file) ?? 0;
+    moved.push({
+      ...segment,
+      from: segment.from + shift,
+      to: segment.to + shift + own,
+      // `before` and not `before + own`: the change is inside this segment,
+      // which is after the offset its start names.
+      fileFrom: segment.fileFrom + before,
+    });
+    shift += own;
+    inFile.set(segment.file, before + own);
+  });
+
+  // A segment emptied by a deletion is kept, at zero width. Dropping it would
+  // leave the file it belonged to with nowhere in the buffer to type back into,
+  // and the map has to stay total either way.
+  return moved;
 }
 
 /** Whether a change lies inside the document at all, seams notwithstanding. */

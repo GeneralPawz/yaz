@@ -16,8 +16,10 @@ import { describe, expect, it } from "vitest";
 import {
   applyToFiles,
   filesIn,
+  isWritable,
   locate,
   mapChanges,
+  mapSegments,
   resolveInclude,
   stitch,
 } from "./stitch";
@@ -158,6 +160,22 @@ describe("stitch", () => {
     expect(looped.text).toBe("AB\\include{main}");
   });
 
+  it("expands a file once, however often it is included", () => {
+    // Two copies in the buffer would be two places to edit one file, and an
+    // edit to either would leave the other stale with nothing saying so.
+    const twice = stitch(
+      "main.tex",
+      project({
+        "main.tex": "\\include{one}\n\\include{one}\n",
+        "one.tex": "CHAPTER\n",
+      }),
+    );
+    expect(twice.text.match(/CHAPTER/g)).toHaveLength(1);
+    // And the second command stays visible, which is what it is.
+    expect(twice.text).toContain("\\include{one}");
+    expect(twice.missing).toEqual([]);
+  });
+
   it("copes with a root that does not exist", () => {
     const nothing = stitch("gone.tex", project({}));
     expect(nothing.text).toBe("");
@@ -288,6 +306,119 @@ describe("applyToFiles", () => {
       ]),
     };
     expect(applyToFiles(files, mapped).get("a.tex")).toBe("ONE two THREE");
+  });
+});
+
+describe("mapSegments", () => {
+  const { text, segments } = stitch("main.tex", project(thesis));
+
+  /** Where a needle sits in the stitched buffer. */
+  const at = (needle: string) => text.indexOf(needle);
+
+  /** Re-derive the map by stitching the edited files, which is the truth. */
+  function byRestitching(changes: Change[]) {
+    const mapped = mapChanges(segments, changes);
+    if (!("byFile" in mapped)) throw new Error("expected a mapping");
+    const written = applyToFiles(new Map(Object.entries(thesis)), mapped);
+    return stitch("main.tex", (path) => written.get(path) ?? null);
+  }
+
+  /** What the map is for: which file each offset belongs to, and where. */
+  const asLocations = (map: readonly Segment[] | null) =>
+    (map ?? [])
+      .filter((segment) => segment.to > segment.from)
+      .map(
+        (segment) =>
+          `${segment.file}:${segment.from}-${segment.to}@${segment.fileFrom}`,
+      );
+
+  it("agrees with re-stitching after an edit in a chapter", () => {
+    // The property that makes moving the map cheaper than rebuilding it safe.
+    const changes: Change[] = [
+      { from: at("Erstens"), to: at("Erstens"), insert: "Zuerst und " },
+    ];
+    expect(asLocations(mapSegments(segments, changes))).toEqual(
+      asLocations(byRestitching(changes).segments),
+    );
+  });
+
+  it("agrees with re-stitching after an edit in the root", () => {
+    // The case the two shifts exist for: text added to main.tex before the
+    // includes moves the root's later segment within main.tex, and moves the
+    // chapters only in the buffer.
+    const changes: Change[] = [
+      {
+        from: at("\\begin{document}"),
+        to: at("\\begin{document}"),
+        insert: "\\usepackage{amsmath}\n",
+      },
+    ];
+    expect(asLocations(mapSegments(segments, changes))).toEqual(
+      asLocations(byRestitching(changes).segments),
+    );
+  });
+
+  it("agrees with re-stitching after edits in several files at once", () => {
+    const changes: Change[] = [
+      { from: at("\\documentclass"), to: at("\\documentclass"), insert: "% " },
+      { from: at("Erstens"), to: at("Erstens") + 7, insert: "Als Erstes" },
+      { from: at("Zuletzt"), to: at("Zuletzt"), insert: "Und " },
+    ];
+    expect(asLocations(mapSegments(segments, changes))).toEqual(
+      asLocations(byRestitching(changes).segments),
+    );
+  });
+
+  it("keeps the map total", () => {
+    const moved = mapSegments(segments, [
+      { from: at("Zuletzt"), to: at("Zuletzt") + 8, insert: "" },
+    ]);
+    let cursor = 0;
+    for (const segment of moved ?? []) {
+      expect(segment.from).toBe(cursor);
+      cursor = segment.to;
+    }
+    expect(cursor).toBe(text.length - 8);
+  });
+
+  it("keeps an emptied chapter as somewhere to type", () => {
+    // Deleting a chapter's text does not delete the chapter, and the author who
+    // just cleared it is very likely about to write it again.
+    const length = "Erstens.\n".length;
+    const moved = mapSegments(segments, [
+      { from: at("Erstens"), to: at("Erstens") + length, insert: "" },
+    ]);
+    const emptied = moved?.find(
+      (s) => s.file === "sections/Vorbemerkungen.tex",
+    );
+    expect(emptied).toBeDefined();
+    expect(emptied?.to).toBe(emptied?.from);
+  });
+
+  it("refuses to move a map through an edit that spans a seam", () => {
+    expect(
+      mapSegments(segments, [
+        { from: at("Erstens") + 2, to: at("Zuletzt") + 2, insert: "x" },
+      ]),
+    ).toBeNull();
+  });
+});
+
+describe("isWritable", () => {
+  const { text, segments } = stitch("main.tex", project(thesis));
+
+  it("is what the editor asks before letting an edit through", () => {
+    const inside = text.indexOf("Erstens");
+    expect(
+      isWritable(segments, { from: inside, to: inside, insert: "x" }),
+    ).toBe(true);
+    expect(
+      isWritable(segments, {
+        from: inside + 2,
+        to: text.indexOf("Zuletzt") + 2,
+        insert: "x",
+      }),
+    ).toBe(false);
   });
 });
 

@@ -516,3 +516,24 @@ files-dim-build = Build-Dateien dämpfen
 files-expand = { $name } öffnen
 files-collapse = { $name } schließen
 group-files = Dateien
+
+## Ein Dokument bearbeiten, das aus mehreren Dateien besteht
+
+menu-view-joined = Verbundenes Dokument
+joined-entered =
+    { $count } Dateien werden als ein Dokument bearbeitet. Beim Speichern wird
+    jede davon geschrieben.
+joined-missing =
+    { $count } Dateien werden als ein Dokument bearbeitet. Diese konnten nicht
+    gelesen werden und stehen weiterhin als Befehl im Text: { $missing }
+joined-refused =
+    Diese Änderung reicht von einer Datei in die nächste – es gibt keine eine
+    Datei, in die sie gehört. Bitte innerhalb einer Datei bearbeiten.
+joined-left =
+    { $file } gehört nicht zum Dokument, die verbundene Ansicht ist daher aus.
+joined-save-failed = { $file } konnte nicht gespeichert werden: { $error }
+joined-unexpanded = Nicht eingefügt, nicht lesbar: { $missing }
+joined-drifted =
+    Das verbundene Dokument passt nicht mehr zu seinen Dateien, Änderungen
+    werden nicht geschrieben. Verbundene Ansicht ausschalten, um wieder
+    einzelne Dateien zu bearbeiten.
