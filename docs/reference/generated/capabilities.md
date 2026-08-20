@@ -23,6 +23,7 @@ read the open document. That is by design and is stated plainly in
 | `fs:write` | Change files at a specific location outside this project. | yes |
 | `net` | Connect to the internet, limited to the hosts it declares. | yes |
 | `process` | Run programs on your computer: the binaries it declares. | yes |
+| `mcp:client` | Talk to the tools you have connected: the servers it declares. | yes |
 | `zotero` | Read your Zotero library. | no |
 | `obsidian` | Read your Obsidian vault. | no |
 | `clipboard` | Read and change the clipboard. | no |

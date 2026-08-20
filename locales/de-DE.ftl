@@ -62,6 +62,7 @@ capability-fs-read-description = Dateien an einem bestimmten Ort außerhalb dies
 capability-fs-write-description = Dateien an einem bestimmten Ort außerhalb dieses Projekts ändern.
 capability-net-description = Ins Internet gehen, beschränkt auf { $hosts }.
 capability-process-description = Programme auf Ihrem Rechner ausführen: { $binaries }.
+capability-mcp-client-description = Mit den von Ihnen verbundenen Werkzeugen sprechen: { $servers }.
 capability-zotero-description = Ihre Zotero-Bibliothek lesen.
 capability-obsidian-description = Ihren Obsidian-Vault lesen.
 capability-clipboard-description = Die Zwischenablage lesen und ändern.
