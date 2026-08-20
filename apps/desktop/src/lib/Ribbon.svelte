@@ -28,6 +28,7 @@
   import { ICONS } from "./icons";
   import type { IconName } from "./icons";
   import type { MenuItem } from "./MenuBar.svelte";
+  import type { DateChoice } from "./editor/documentDate";
 
   /** One control in a group. */
   export type RibbonControl =
@@ -68,6 +69,16 @@
         value: string;
         options: { value: string; label: string }[];
         onchange: (value: string) => void;
+      }
+    | {
+        kind: "date";
+        labelKey: string;
+        icon?: IconName | undefined;
+        /** Which of the three kinds of date this is. */
+        choice: DateChoice;
+        /** The chosen day as the document's language writes it. */
+        formatted: string;
+        onchange: (choice: DateChoice) => void;
       };
 
   /** A labelled cluster of controls. */
@@ -83,8 +94,28 @@
     groups: RibbonGroup[];
   }
 
+  /**
+   * A button on the tab strip itself, at the far end.
+   *
+   * For the two or three things that belong to no tab because they are wanted
+   * from every one — compiling, and settings. Putting settings inside a tab
+   * means someone looking for it has to guess which, and the guess is wrong
+   * often enough that they stop looking.
+   */
+  export interface RibbonAction {
+    id: string;
+    labelKey: string;
+    icon: IconName;
+    disabled?: boolean | undefined;
+    onclick: () => void;
+    /** Shown on a right-click, when there is more than one way to do it. */
+    menu?: MenuItem[] | undefined;
+  }
+
   interface Props {
     tabs: RibbonTab[];
+    /** Buttons at the end of the tab strip, in order. */
+    actions?: RibbonAction[] | undefined;
     /** Which way it runs. */
     orientation: "horizontal" | "vertical";
     /** Whether the body shows. The tab strip always does. */
@@ -92,12 +123,14 @@
     ontoggle: () => void;
   }
 
-  let { tabs, orientation, expanded, ontoggle }: Props = $props();
+  let { tabs, actions = [], orientation, expanded, ontoggle }: Props = $props();
 
   let active = $state<string | null>(null);
   const current = $derived(tabs.find((tab) => tab.id === active) ?? tabs[0]);
   /** Which dropdown is open, by label. */
   let open = $state<string | null>(null);
+  /** Which tab-strip action has its right-click menu showing. */
+  let openAction = $state<string | null>(null);
 
   function choose(tab: RibbonTab) {
     // Clicking the tab you are on collapses the ribbon, which is how a ribbon
@@ -131,7 +164,12 @@
   </span>
 {/snippet}
 
-<svelte:window onclick={() => (open = null)} />
+<svelte:window
+  onclick={() => {
+    open = null;
+    openAction = null;
+  }}
+/>
 
 <section class="ribbon {orientation}" class:collapsed={!expanded}>
   <div class="tabs" role="tablist" aria-label={t("ribbon-title")}>
@@ -146,6 +184,61 @@
       >
         {t(tab.labelKey)}
       </button>
+    {/each}
+
+    <span class="tab-spacer"></span>
+
+    {#each actions as action (action.id)}
+      <div class="action-host">
+        <button
+          type="button"
+          class="strip-action"
+          disabled={action.disabled}
+          title={t(action.labelKey)}
+          aria-label={t(action.labelKey)}
+          onclick={action.onclick}
+          oncontextmenu={(event) => {
+            if (!action.menu?.length) return;
+            // The alternatives to the button's own job, where a right-click
+            // already means "the other ways to do this".
+            event.preventDefault();
+            event.stopPropagation();
+            openAction = openAction === action.id ? null : action.id;
+          }}
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d={ICONS[action.icon]} /></svg>
+        </button>
+
+        {#if openAction === action.id && action.menu?.length}
+          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+          <div
+            class="dropdown end"
+            role="menu"
+            tabindex="-1"
+            onclick={(event) => event.stopPropagation()}
+            onkeydown={(event) => {
+              if (event.key === "Escape") openAction = null;
+            }}
+          >
+            {#each action.menu as item (item.labelKey)}
+              <button
+                type="button"
+                class="item"
+                role="menuitem"
+                disabled={item.disabled}
+                onclick={() => {
+                  openAction = null;
+                  if (!item.disabled) void item.action?.();
+                }}
+              >
+                <span class="tick" aria-hidden="true">{item.checked ? "✓" : ""}</span>
+                {@render icon(item.icon)}
+                {item.literalLabel ? item.labelKey : t(item.labelKey)}
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
     {/each}
   </div>
 
@@ -226,6 +319,55 @@
                     onchange={(event) => control.onchange(event.currentTarget.value)}
                   />
                 </label>
+              {:else if control.kind === "date"}
+                <div class="field">
+                  {@render icon(control.icon)}
+                  <span class="caption">{t(control.labelKey)}</span>
+                  <select
+                    value={control.choice.kind}
+                    onchange={(event) => {
+                      const kind = event.currentTarget.value;
+                      if (kind === "on") {
+                        // Starting from today rather than from nothing: a date
+                        // picker opened on an empty value makes the author
+                        // find the current month before they can choose.
+                        control.onchange({
+                          kind: "on",
+                          iso:
+                            control.choice.kind === "on"
+                              ? control.choice.iso
+                              : new Date().toISOString().slice(0, 10),
+                        });
+                      } else if (kind === "today" || kind === "none") {
+                        control.onchange({ kind });
+                      }
+                    }}
+                  >
+                    <option value="today">{t("date-today")}</option>
+                    <option value="on">{t("date-on")}</option>
+                    <option value="none">{t("date-none")}</option>
+                    {#if control.choice.kind === "literal"}
+                      <!-- Something the author wrote that this does not model.
+                           Offered as itself so choosing another option is a
+                           deliberate act rather than an accident of the list
+                           having no entry for what is there. -->
+                      <option value="literal">{control.choice.text}</option>
+                    {/if}
+                  </select>
+
+                  {#if control.choice.kind === "on"}
+                    <input
+                      type="date"
+                      value={control.choice.iso}
+                      aria-label={t(control.labelKey)}
+                      onchange={(event) =>
+                        control.onchange({ kind: "on", iso: event.currentTarget.value })}
+                    />
+                    <!-- What the reader will see. LaTeX prints a fixed date
+                         verbatim, so the author has to be shown it. -->
+                    <span class="preview">{control.formatted}</span>
+                  {/if}
+                </div>
               {:else}
                 <label class="field">
                   {@render icon(control.icon)}
@@ -298,6 +440,53 @@
     color: var(--yaz-text-primary);
   }
 
+  /* Pushes the strip's own buttons to the far end, where the eye goes looking
+     for the things that belong to no tab. */
+  .tab-spacer {
+    flex: 1;
+  }
+
+  .action-host {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .strip-action {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 1.75rem;
+    block-size: 1.75rem;
+    margin-inline: 1px;
+    padding: 0;
+    background: none;
+    border: none;
+    border-radius: var(--yaz-radius-sm);
+    color: var(--yaz-text-muted);
+    cursor: pointer;
+  }
+
+  .strip-action svg {
+    inline-size: 0.9375rem;
+    block-size: 0.9375rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .strip-action:hover:not(:disabled) {
+    background: var(--yaz-bg-hover);
+    color: var(--yaz-text-primary);
+  }
+
+  .strip-action:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+
   .tab.active {
     color: var(--yaz-accent);
     border-block-end-color: var(--yaz-accent);
@@ -307,6 +496,11 @@
     border-block-end: none;
     border-inline-start: 2px solid transparent;
     text-align: start;
+  }
+
+  .ribbon.vertical .tab-spacer {
+    flex: 0;
+    block-size: var(--yaz-space-2);
   }
 
   .ribbon.vertical .tab.active {
@@ -461,6 +655,8 @@
     position: absolute;
     inset-block-start: 100%;
     inset-inline-start: 0;
+    /* An end-anchored menu, for a button at the end of the strip: opening
+       inward is the only direction with room. */
     z-index: 15;
     min-inline-size: 12rem;
     background: var(--yaz-bg-overlay);
@@ -468,6 +664,11 @@
     border-radius: var(--yaz-radius-md);
     box-shadow: var(--yaz-shadow-overlay);
     padding: var(--yaz-space-1) 0;
+  }
+
+  .dropdown.end {
+    inset-inline-start: auto;
+    inset-inline-end: 0;
   }
 
   .item {
@@ -511,6 +712,21 @@
   .caption {
     white-space: nowrap;
     min-inline-size: 3.5rem;
+  }
+
+  .preview {
+    color: var(--yaz-text-muted);
+    white-space: nowrap;
+  }
+
+  input[type="date"] {
+    font: inherit;
+    font-size: var(--yaz-font-size-sm);
+    color: var(--yaz-text-primary);
+    background: var(--yaz-bg-primary);
+    border: 1px solid var(--yaz-border);
+    border-radius: var(--yaz-radius-sm);
+    padding: 2px var(--yaz-space-2);
   }
 
   input[type="text"],

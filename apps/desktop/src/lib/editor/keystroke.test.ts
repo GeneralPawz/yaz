@@ -7,17 +7,26 @@
  * manuscript: working out which list each item and each line belonged to by
  * searching every list was cubic, and nothing said so until it was measured.
  *
- * The bound below is a tripwire, not the budget. It is far above what this
- * costs — around 11 ms for a hundred-page manuscript here, ~2 ms for a
- * paper-sized file — so that a slow CI machine does not fail it, while a
- * change that reintroduces a complexity class does.
+ * Two more have been caught this way since. Tracking which of thousands of
+ * ranges were already claimed by walking the list each time was quadratic, and
+ * cost 7 ms of the 18 it then took.
  *
- * Two have been caught this way since. Tracking which of thousands of ranges
- * were already claimed by walking the list each time was quadratic, and cost
- * 7 ms of the 18 it then took.
+ * # It measures the shape of the cost, not the cost
  *
- * The numbers are jsdom's, so they are indicative rather than the real thing;
- * a webview does the layout this does not.
+ * This asserted an absolute time until it failed on an unchanged codebase: the
+ * same commit measured 11 ms one day and 56 ms the next, because the machine
+ * was busier. A wall-clock bound on a developer's machine is not a property of
+ * the code, and a test that fails for a reason the author cannot act on is one
+ * they learn to re-run rather than read.
+ *
+ * So it compares two document sizes instead. The larger is about six times the
+ * smaller, so linear work costs about six times as much; the cubic bug this
+ * exists to catch cost far more than that, and would still. The ratio holds
+ * whatever else the machine is doing.
+ *
+ * The absolute figures are printed for information — they are jsdom's, so they
+ * are indicative rather than the real thing; a webview does the layout this
+ * does not.
  */
 
 import { EditorSelection, EditorState } from "@codemirror/state";
@@ -78,7 +87,11 @@ function costOfTyping(doc: string): number {
       ),
     });
 
-    const rounds = 50;
+    // Enough samples for a threefold signal and no more. Every round is a
+    // full decoration rebuild of the document, and a hundred of them on a
+    // busy machine outlast the runner's patience before they tell us anything
+    // the first twenty-five did not.
+    const rounds = 25;
     const started = performance.now();
     for (let round = 0; round < rounds; round += 1) {
       const head = view.state.selection.main.head;
@@ -97,13 +110,29 @@ describe("typing with rich text on", () => {
   it("stays linear in the size of the document", () => {
     const small = paper(40);
     const large = paper(250);
+    const sizeRatio = large.length / small.length;
 
-    const each = costOfTyping(large);
+    // Measured back to back, so both see the same machine. Measuring them at
+    // different moments would put the thing this test exists to exclude —
+    // how busy the computer is — back into the comparison.
+    const cheap = costOfTyping(small);
+    const dear = costOfTyping(large);
+    const costRatio = dear / cheap;
+
     console.log(
-      `${(large.length / 1024).toFixed(0)} KiB: ${each.toFixed(2)} ms per keystroke ` +
-        `(${(small.length / 1024).toFixed(0)} KiB: ${costOfTyping(small).toFixed(2)} ms)`,
+      `${(small.length / 1024).toFixed(0)} KiB: ${cheap.toFixed(2)} ms, ` +
+        `${(large.length / 1024).toFixed(0)} KiB: ${dear.toFixed(2)} ms — ` +
+        `${costRatio.toFixed(1)}× the cost for ${sizeRatio.toFixed(1)}× the document`,
     );
 
-    expect(each).toBeLessThan(100);
-  });
+    // Linear costs about `sizeRatio`. The bound is generous because a real
+    // document is not a scaled copy of a smaller one — the larger paper has
+    // more of everything, including the constant-ish costs — but it is far
+    // below the ~36× a quadratic would give and further still below the cubic
+    // this was written to catch.
+    expect(costRatio).toBeLessThan(sizeRatio * 2.5);
+    // Generous, and deliberately so: this measures fifty rebuilds of a
+    // hundred-page manuscript, which is slow work by design. The default five
+    // seconds is a bound on a unit test, and this is not one.
+  }, 60_000);
 });

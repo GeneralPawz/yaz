@@ -488,3 +488,18 @@ group-connections = Connections
 group-versions = Versions
 group-learn = Learn
 group-about = About
+
+## The reshaped ribbon
+
+ribbon-start = Start
+ribbon-connections = Connections
+connections-zotero-group = Zotero
+connections-obsidian-group = Obsidian
+
+date-today = The day it is compiled
+date-on = A particular day
+date-none = No date
+
+compile-clean = Compile from scratch
+compile-choose-engine = Compile with…
+compile-open-log = Open the log

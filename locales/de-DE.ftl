@@ -489,3 +489,18 @@ group-connections = Verbindungen
 group-versions = Versionen
 group-learn = Lernen
 group-about = Über
+
+## Das neu geordnete Menüband
+
+ribbon-start = Start
+ribbon-connections = Verbindungen
+connections-zotero-group = Zotero
+connections-obsidian-group = Obsidian
+
+date-today = Der Tag der Übersetzung
+date-on = Ein bestimmter Tag
+date-none = Kein Datum
+
+compile-clean = Von Grund auf übersetzen
+compile-choose-engine = Übersetzen mit…
+compile-open-log = Protokoll öffnen

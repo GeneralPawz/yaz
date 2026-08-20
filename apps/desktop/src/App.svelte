@@ -2,7 +2,11 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import type { EditorApi } from "@yaz/api";
   import type { Menu } from "./lib/MenuBar.svelte";
-  import Ribbon, { type RibbonControl, type RibbonTab } from "./lib/Ribbon.svelte";
+  import Ribbon, {
+    type RibbonAction,
+    type RibbonControl,
+    type RibbonTab,
+  } from "./lib/Ribbon.svelte";
   import TitleBar from "./lib/TitleBar.svelte";
   import StatusBar from "./lib/StatusBar.svelte";
   import { countWords } from "./lib/editor/wordCount";
@@ -15,6 +19,8 @@
     setProperty,
   } from "./lib/editor/properties";
   import type { Properties } from "./lib/editor/properties";
+  import { formatDate, readDate, writeDate } from "./lib/editor/documentDate";
+  import type { DateChoice } from "./lib/editor/documentDate";
   import Settings, { type Section } from "./lib/Settings.svelte";
   import type { Health } from "./lib/StatusLight.svelte";
   import History from "./lib/History.svelte";
@@ -119,6 +125,16 @@
     PAPER_DIMENSIONS[properties.paper] ?? PAPER_DIMENSIONS[DEFAULT_PAPER]!,
   );
   const wordCount = $derived(countWords(docText));
+  /**
+   * The date as one of the three things `\date{}` can mean.
+   *
+   * An absent `\date` is `\today` in LaTeX, and `readDate` says so — which is
+   * why the empty string the properties reader returns for "no command" has to
+   * be turned back into `null` here.
+   */
+  const documentDate = $derived<DateChoice>(
+    readDate(/\\date\s*\{/.test(docText) ? properties.date : null),
+  );
 
   /**
    * How the application looks and what language it speaks.
@@ -713,7 +729,7 @@
    */
   const menus = $derived<Menu[]>([
     {
-      labelKey: "menu-file",
+      labelKey: "ribbon-start",
       items: [
         { labelKey: "menu-file-open-folder",
           icon: "folder" as const,
@@ -735,21 +751,6 @@
               : [{ labelKey: "menu-file-no-recent", disabled: true }],
         },
         {
-          labelKey: "menu-file-save",
-          icon: "save" as const,
-          group: "group-document",
-          action: save,
-          disabled: !currentFile || !dirty,
-        },
-        {
-          labelKey: "menu-file-compile",
-          icon: "play" as const,
-          group: "group-document",
-          action: compile,
-          disabled: !project || busy,
-          separatorBefore: true,
-        },
-        {
           labelKey: "menu-file-close-project",
           icon: "close" as const,
           group: "group-project",
@@ -760,34 +761,26 @@
       ],
     },
     {
-      labelKey: "menu-edit",
-      items: [
-        { labelKey: "menu-edit-undo",
-          icon: "undo" as const,
-          group: "group-history", action: notImplemented, disabled: true },
-        { labelKey: "menu-edit-redo",
-          icon: "redo" as const,
-          group: "group-history", action: notImplemented, disabled: true },
-        {
-          labelKey: "menu-edit-find",
-          icon: "search" as const,
-          group: "group-find",
-          action: notImplemented,
-          disabled: true,
-          separatorBefore: true,
-        },
-        {
-          labelKey: "menu-edit-settings",
-          icon: "settings" as const,
-          group: "group-preferences",
-          action: () => openSettings("engine"),
-          separatorBefore: true,
-        },
-      ],
-    },
-    {
       labelKey: "menu-view",
       items: [
+        {
+          labelKey: "menu-view-page",
+          icon: "page" as const,
+          group: "group-views",
+          checked: pageView,
+          action: () => {
+            pageView = !pageView;
+          },
+        },
+        {
+          labelKey: "ribbon-vertical",
+          icon: "columns" as const,
+          group: "group-panes",
+          checked: ribbonVertical,
+          action: () => {
+            ribbonVertical = !ribbonVertical;
+          },
+        },
         {
           labelKey: "menu-view-rich-text",
           icon: "text" as const,
@@ -880,43 +873,38 @@
       ],
     },
     {
-      labelKey: "menu-tools",
+      // Connecting to the things a paper is built from is its own kind of work,
+      // and it was buried in a Tools menu that held nothing else worth opening.
+      // A tab of its own also gives each connection somewhere to grow: what is
+      // one button for Zotero today is a section tomorrow.
+      labelKey: "ribbon-connections",
       items: [
+        {
+          labelKey: zoteroStatus
+            ? "connections-reconnect-zotero"
+            : "connections-connect-zotero",
+          icon: "plug" as const,
+          group: "connections-zotero-group",
+          dot: health,
+          disabled: connectionsBusy,
+          action: connectZotero,
+        },
+        // What the Zotero plugin contributes. Its commands belong beside the
+        // connection they need rather than in a general-purpose menu — every
+        // one of them fails without it.
         ...commands.map((command) => ({
           labelKey: command.nameKey,
+          icon: "book" as const,
+          group: "connections-zotero-group",
           action: () => runCommand(command.id),
         })),
         {
-          labelKey: "vcs-commit-with-message",
-          icon: "branch" as const,
-          group: "group-versions",
-          disabled: !vcs?.enabled || !vcs.dirty || vcsBusy,
-          separatorBefore: commands.length > 0,
-          action: () => {
-            askingForMessage = true;
-          },
-        },
-        {
-          labelKey: "menu-tools-connections",
-          icon: "plug" as const,
-          group: "group-connections",
-          separatorBefore: commands.length > 0,
-          // A flyout rather than a dialog: connecting is one click, and the
-          // detail belongs next to the thing it describes.
-          items: [
-            {
-              labelKey: zoteroStatus ? "connections-reconnect-zotero" : "connections-connect-zotero",
-              dot: health,
-              disabled: connectionsBusy,
-              action: connectZotero,
-            },
-            {
-              labelKey: "connections-obsidian",
-              dot: "unknown" as const,
-              disabled: true,
-              action: notImplemented,
-            },
-          ],
+          labelKey: "connections-obsidian",
+          icon: "folder" as const,
+          group: "connections-obsidian-group",
+          dot: "unknown" as const,
+          disabled: true,
+          action: notImplemented,
         },
       ],
     },
@@ -1004,7 +992,8 @@
    * someone set a paper size or an author without knowing that those are a
    * package option and a preamble command, which is the whole point.
    */
-  const ribbonTabs = $derived<RibbonTab[]>([
+  const ribbonTabs = $derived<RibbonTab[]>(
+    order([
     ...menus.map((menu) => ({
       id: menu.labelKey,
       labelKey: menu.labelKey,
@@ -1027,26 +1016,6 @@
                 label: t(`paper-${size}`),
               })),
               onchange: (value: string) => changeProperty("paper", value),
-            },
-          ],
-        },
-        {
-          titleKey: "ribbon-view",
-          controls: [
-            {
-              kind: "action" as const,
-              labelKey: "menu-view-page",
-              icon: "page" as const,
-              prominent: true,
-              checked: pageView,
-              onclick: () => (pageView = !pageView),
-            },
-            {
-              kind: "action" as const,
-              labelKey: "ribbon-vertical",
-              icon: "columns" as const,
-              checked: ribbonVertical,
-              onclick: () => (ribbonVertical = !ribbonVertical),
             },
           ],
         },
@@ -1074,12 +1043,16 @@
               onchange: (value: string) => changeProperty("author", value),
             },
             {
-              kind: "text" as const,
+              kind: "date" as const,
               labelKey: "ribbon-doc-date",
               icon: "calendar" as const,
-              placeholderKey: "ribbon-doc-date-today",
-              value: properties.date,
-              onchange: (value: string) => changeProperty("date", value),
+              choice: documentDate,
+              formatted:
+                documentDate.kind === "on"
+                  ? formatDate(documentDate.iso, properties.language)
+                  : "",
+              onchange: (choice: DateChoice) =>
+                changeProperty("date", writeDate(choice)),
             },
           ],
         },
@@ -1138,16 +1111,70 @@
             },
             {
               kind: "action" as const,
-              labelKey: "connections-title",
-              icon: "plug" as const,
-              onclick: () => void connectZotero(),
+              labelKey: "vcs-commit-with-message",
+              icon: "clock" as const,
+              disabled: !vcs?.enabled || !vcs.dirty || vcsBusy,
+              onclick: () => {
+                askingForMessage = true;
+              },
             },
           ],
         },
       ],
     },
-  ]);
+    ]),
+  );
 
+/**
+   * The tab strip, in the order asked for.
+   *
+   * Sorted rather than arranged by hand: the tabs are built from several
+   * sources — the menus, and the three the ribbon declares itself — so a tab
+   * added to any of them would otherwise land wherever that source happened to
+   * be spliced in.
+   *
+   * Anything not named keeps the order it was built in, after the named ones.
+   */
+  const TAB_ORDER = ["menu-help", "menu-view", "ribbon-start"];
+
+  function order(tabs: RibbonTab[]): RibbonTab[] {
+    const rank = (tab: RibbonTab) => {
+      const at = TAB_ORDER.indexOf(tab.id);
+      return at === -1 ? TAB_ORDER.length : at;
+    };
+    return [...tabs].sort((a, b) => rank(a) - rank(b));
+  }
+
+  /**
+   * The buttons on the tab strip itself.
+   *
+   * Compiling and settings belong to no tab because they are wanted from every
+   * one. Settings inside a tab means someone looking for it has to guess
+   * which, and the guess is wrong often enough that they stop looking.
+   */
+  const ribbonActions = $derived<RibbonAction[]>([
+    {
+      id: "compile",
+      labelKey: "compile-run",
+      icon: "play" as const,
+      disabled: !project || busy,
+      onclick: () => void compile(),
+      // The other ways to compile, where a right-click already means exactly
+      // that. Stubs for now, and disabled rather than absent so the shape of
+      // what is coming is visible.
+      menu: [
+        { labelKey: "compile-clean", disabled: true, action: notImplemented },
+        { labelKey: "compile-choose-engine", disabled: true, action: notImplemented },
+        { labelKey: "compile-open-log", disabled: true, action: notImplemented },
+      ],
+    },
+    {
+      id: "settings",
+      labelKey: "menu-edit-settings",
+      icon: "settings" as const,
+      onclick: () => openSettings("appearance"),
+    },
+  ]);
 
   /**
    * What the title bar shows.
@@ -1659,6 +1686,7 @@
   {#if !ribbonVertical}
     <Ribbon
       tabs={ribbonTabs}
+      actions={ribbonActions}
       orientation="horizontal"
       expanded={ribbonOpen}
       ontoggle={() => (ribbonOpen = !ribbonOpen)}
@@ -1669,6 +1697,7 @@
     {#if ribbonVertical}
       <Ribbon
         tabs={ribbonTabs}
+        actions={ribbonActions}
         orientation="vertical"
         expanded={ribbonOpen}
         ontoggle={() => (ribbonOpen = !ribbonOpen)}
