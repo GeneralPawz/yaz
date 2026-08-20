@@ -2,6 +2,14 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-14
+- **Superseded in part by:** [0020](0020-stitched-multi-file-editing.md)
+
+> **Amended.** "The buffer content is the file content, byte for byte" holds in
+> the default mode and is replaced in the opt-in stitched mode of
+> [0020](0020-stitched-multi-file-editing.md), where the buffer is a stitching
+> of a document's files and every offset in it belongs to exactly one of them.
+> Everything else below — one instance, one keymap, decorations rather than a
+> second model — is unchanged and is what 0020 is built on.
 
 ## Context
 
