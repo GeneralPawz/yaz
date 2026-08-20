@@ -365,6 +365,35 @@ export function spacings(text: string): Spacing[] {
 /** What a tie draws as: a space the line will not break at. */
 const NO_BREAK = "\u00a0";
 
+/**
+ * The commands a template defines to carry the document's own metadata.
+ *
+ * A title page writes `\thetitle`, never the title: the preamble `\let`s it to
+ * `\@title`, and a template with a subtitle builds `\thesubtitle` out of a
+ * `\newcommand`. These are the handful every template defines, and resolving
+ * them is what makes a title page read as a title page.
+ */
+export const METADATA_COMMANDS = new Set([
+  "thetitle",
+  "theauthor",
+  "thedate",
+  "thesubtitle",
+  "thereviewer",
+]);
+
+/** Every use of one of them in the text. */
+export function metadataUses(text: string): Silent[] {
+  const found: Silent[] = [];
+
+  for (const token of tokensIn(text)) {
+    if (token.kind !== Kind.Command) continue;
+    if (!METADATA_COMMANDS.has(token.name)) continue;
+    found.push({ command: token.name, from: token.at, to: token.after });
+  }
+
+  return found;
+}
+
 /** A list's optional argument, which is styling rather than content. */
 export interface ListOptions {
   from: number;

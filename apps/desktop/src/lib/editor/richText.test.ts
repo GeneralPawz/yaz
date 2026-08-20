@@ -21,6 +21,8 @@ import {
   setWrapperCollapsed,
 } from "./richText";
 
+const B = String.fromCharCode(92);
+
 beforeAll(() => {
   // CodeMirror measures its own layout; jsdom implements neither of these.
   Range.prototype.getBoundingClientRect = () => new DOMRect();
@@ -802,5 +804,88 @@ describe("the author's comments", () => {
     view.dispatch({ effects: setShowComments.of(true) });
     caret(view, doc.indexOf("Ein Satz") + 4);
     expect(visible(view)).toContain("Anmerkung");
+  });
+});
+
+describe("a title page", () => {
+  // The shape of a real one: a template that carries its metadata in commands
+  // of its own, and sets it with size declarations and vertical space.
+  const doc = [
+    "BSLdocumentclass{report}",
+    "BSLtitle{Building Information Modeling}",
+    "BSLsubtitle{Endbericht}",
+    "BSLauthor{Friedrich Schrödter}",
+    "BSLbegin{document}",
+    "BSLbegin{titlepage}",
+    "BSLcentering",
+    "{BSLLarge Bauhaus-Universität WeimarBSLpar}",
+    "BSLvspace{1cm}",
+    "{BSLhugeBSLbfseries BSLthetitle BSLpar}",
+    "{BSLLargeBSLitshape BSLthesubtitle BSLpar}",
+    "BSLvfill",
+    "{BSLlarge BSLtheauthorBSLpar}",
+    "BSLend{titlepage}",
+    "Ein Satz danach.",
+    "BSLend{document}",
+  ]
+    .map((line) => line.split("BSL").join(B))
+    .join("\n");
+
+  function reading(): EditorView {
+    const view = mount(doc);
+    caret(view, doc.indexOf("Ein Satz") + 4);
+    return view;
+  }
+
+  it("shows the title the document declares, not the command for it", () => {
+    // The heart of it: a title page writes the command, never the title.
+    const shown = visible(reading()).split("BSL").join(B);
+    expect(shown).toContain("Building Information Modeling");
+    expect(shown).not.toContain("thetitle");
+  });
+
+  it("resolves the ones a template defines for itself", () => {
+    const shown = visible(reading());
+    expect(shown).toContain("Endbericht");
+    expect(shown).toContain("Friedrich Schrödter");
+  });
+
+  it("sets the title at the size the document asks for", () => {
+    const view = reading();
+    const sized = [...view.contentDOM.querySelectorAll(".cm-yaz-sized")];
+    expect(sized.length).toBeGreaterThan(0);
+    expect(
+      sized.some((node) => node.getAttribute("style")?.includes("2.07em")),
+    ).toBe(true);
+  });
+
+  it("centres what centering centres", () => {
+    const view = reading();
+    expect(
+      view.contentDOM.querySelector(".cm-yaz-align-center"),
+    ).not.toBeNull();
+  });
+
+  it("draws the space as space", () => {
+    const view = reading();
+    const spaces = [...view.contentDOM.querySelectorAll(".cm-yaz-vspace")];
+    expect(spaces.length).toBeGreaterThan(0);
+    expect(visible(view)).not.toContain("vspace");
+  });
+
+  it("hides the declarations themselves", () => {
+    const shown = visible(reading());
+    expect(shown).not.toContain("bfseries");
+    expect(shown).not.toContain("Large");
+  });
+
+  it("leaves the buffer exactly as it was", () => {
+    expect(reading().state.doc.toString()).toBe(doc);
+  });
+
+  it("does none of it in source view", () => {
+    const shown = visible(mount(doc, false));
+    expect(shown).toContain("thetitle");
+    expect(shown).toContain("vspace");
   });
 });

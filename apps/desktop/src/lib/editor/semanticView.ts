@@ -17,7 +17,7 @@
  */
 
 import { EditorSelection, Facet } from "@codemirror/state";
-import { EditorView, WidgetType } from "@codemirror/view";
+import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 
 import { t } from "../i18n";
 import { glossaryEntries } from "./generated";
@@ -27,6 +27,7 @@ import {
   SEMANTIC_COMMANDS,
   labelledMarker,
   listOptions,
+  metadataUses,
   quotationMarks,
   sectionNumbers,
   semantics,
@@ -36,6 +37,14 @@ import {
 } from "./semantics";
 import type { Occurrence, Target } from "./semantics";
 import { braceCommands, environments, headings } from "./structure";
+import {
+  ALIGNMENTS,
+  SHAPES,
+  SIZES,
+  declarations,
+  metadata,
+  verticalSpaces,
+} from "./typography";
 import type { Heading } from "./structure";
 
 /** What the bibliography says about one entry. */
@@ -281,6 +290,33 @@ class TextWidget extends WidgetType {
   }
 }
 
+/**
+ * A stretch of empty page the document asked for.
+ *
+ * `\vspace{1cm}` on a title page is a centimetre of paper, and drawing it as
+ * the words `\vspace{1cm}` is the difference between a title page and a list
+ * of instructions for making one.
+ */
+class SpaceWidget extends WidgetType {
+  constructor(readonly em: number | null) {
+    super();
+  }
+
+  override eq(other: SpaceWidget): boolean {
+    return other.em === this.em;
+  }
+
+  override toDOM(): HTMLElement {
+    const node = document.createElement("span");
+    node.className = "cm-yaz-vspace";
+    // `\vfill` takes whatever is left, which on screen is a generous fixed
+    // amount: the editor is not laying out a page and cannot know what is left.
+    node.style.blockSize = this.em === null ? "4em" : `${this.em}em`;
+    node.setAttribute("aria-hidden", "true");
+    return node;
+  }
+}
+
 /** What the semantic pass worked out, for the passes that run after it. */
 export interface Meaning {
   /** The label each heading carries, by the heading's start offset. */
@@ -429,6 +465,72 @@ export function semanticMarkup(pass: Pass): Meaning {
     );
   }
 
+  // What the document says about itself, in the place that writes `\thetitle`
+  // rather than the title. Resolved from the source each time, so editing
+  // `\title{...}` changes the title page in the same keystroke.
+  const declared = metadata(pass.text);
+
+  for (const use of metadataUses(pass.text)) {
+    const value = declared.get(use.command);
+    if (value === undefined || !drawable(pass, use.from, use.to)) continue;
+    replace(pass, use.from, use.to, new TextWidget(value, "cm-yaz-declared"));
+  }
+
+  // Declarations style the group they open and are then hidden. Sizes and
+  // shapes are marks, which is what lets several of them apply to one group.
+  for (const declaration of declarations(pass.text)) {
+    const size = SIZES[declaration.command];
+    const shape = SHAPES[declaration.command];
+    const alignment = ALIGNMENTS[declaration.command];
+
+    if (declaration.bodyTo > declaration.bodyFrom) {
+      if (size !== undefined) {
+        pass.ranges.push(
+          Decoration.mark({
+            class: "cm-yaz-sized",
+            attributes: { style: `font-size:${size}em` },
+          }).range(declaration.bodyFrom, declaration.bodyTo),
+        );
+      }
+      if (shape) {
+        pass.ranges.push(
+          Decoration.mark({ class: shape }).range(
+            declaration.bodyFrom,
+            declaration.bodyTo,
+          ),
+        );
+      }
+      if (alignment) {
+        // Alignment is a property of whole lines, so it is a line decoration
+        // on each of them rather than a mark across the middle of one.
+        const doc = pass.state.doc;
+        const last = doc.lineAt(
+          Math.min(declaration.bodyTo, doc.length),
+        ).number;
+        for (
+          let number = doc.lineAt(declaration.bodyFrom).number;
+          number <= last;
+          number += 1
+        ) {
+          pass.ranges.push(
+            Decoration.line({
+              class: `cm-yaz-align cm-yaz-align-${alignment}`,
+            }).range(doc.line(number).from),
+          );
+        }
+      }
+    }
+
+    if (drawable(pass, declaration.from, declaration.to)) {
+      replace(pass, declaration.from, declaration.to);
+    }
+  }
+
+  for (const space of verticalSpaces(pass.text)) {
+    if (!drawable(pass, space.from, space.to)) continue;
+    replace(pass, space.from, space.to, new SpaceWidget(space.em));
+  }
+
   for (const space of spacings(pass.text)) {
     if (!drawable(pass, space.from, space.to)) continue;
     replace(
@@ -518,5 +620,15 @@ export const semanticTheme = EditorView.baseTheme({
     textUnderlineOffset: "0.2em",
   },
   ".cm-yaz-quote-mark": { color: "var(--yaz-text-secondary)" },
+  // A declaration's size is inline style rather than a class: there are ten of
+  // them and the scale is the value, not a name.
+  ".cm-yaz-sized": { lineHeight: "1.2" },
+  ".cm-yaz-vspace": { display: "block" },
+  ".cm-yaz-align-center": { textAlign: "center" },
+  ".cm-yaz-align-start": { textAlign: "start" },
+  ".cm-yaz-align-end": { textAlign: "end" },
+  // What the document declares about itself, shown where it is written.
+  ".cm-yaz-declared": { color: "inherit" },
+  ".cm-yaz-sans": { fontFamily: "var(--yaz-font-sans)" },
   ".cm-yaz-space": { whiteSpace: "pre" },
 });
