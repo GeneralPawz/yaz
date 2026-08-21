@@ -85,6 +85,7 @@ import { fillMetadata, metadata } from "./typography";
 import { charactersPerLine, linesPerPage } from "./geometry";
 import { entriesFor, generatedIn, hasGenerated } from "./generated";
 import { readProperties } from "./properties";
+import { TableWidget, tableTabKeymap } from "./tableWidget";
 import type { BreakKind, Entry, ListingKind } from "./generated";
 import {
   commandsOfKind,
@@ -457,6 +458,88 @@ class SpaceWidget extends WidgetType implements Tall {
     node.setAttribute("aria-hidden", "true");
     return node;
   }
+}
+
+/**
+ * Commands that rule a table rather than fill one.
+ *
+ * Needed only to tell "there is another row here" from "the table closes
+ * here", which is the difference between a rail with the right number of
+ * controls and one with a control for a row nobody wrote.
+ */
+const ROW_RULES = new Set([
+  "hline",
+  "toprule",
+  "midrule",
+  "bottomrule",
+  "cline",
+  "cmidrule",
+  "specialrule",
+  "addlinespace",
+  "hdashline",
+]);
+
+/** How many columns a specification declares. */
+function countColumns(spec: string): number {
+  let count = 0;
+  for (let index = 0; index < spec.length; index += 1) {
+    const character = spec[index]!;
+    if (character === "{") {
+      // A width or a modifier: `p{3cm}`, `>{\raggedright}`.
+      let depth = 0;
+      for (; index < spec.length; index += 1) {
+        if (spec[index] === "{") depth += 1;
+        else if (spec[index] === "}") {
+          depth -= 1;
+          if (depth === 0) break;
+        }
+      }
+      continue;
+    }
+    if (/[a-zA-Z*]/.test(character)) count += 1;
+  }
+  return count;
+}
+
+/**
+ * How many rows a body has, by counting its `\` at brace depth zero.
+ *
+ * Counted rather than parsed: this runs on every keystroke and the rails only
+ * need to know how many segments to draw. Reading the whole grid here to
+ * arrive at the same number was measurably slower for no better answer.
+ */
+function countRows(text: string, from: number, to: number): number {
+  let rows = 0;
+  let depth = 0;
+  let written = false;
+
+  for (let index = from; index < to; index += 1) {
+    const character = text[index]!;
+    if (character === "{") depth += 1;
+    else if (character === "}") depth -= 1;
+    else if (character === "\\") {
+      if (text[index + 1] === "\\" && depth === 0) {
+        rows += 1;
+        written = false;
+        index += 1;
+        continue;
+      }
+      // A rule is not a row. A rule after the last row closes the table;
+      // counting it as content gave every table one row more than it has,
+      // and a rail with a control for a row nobody wrote.
+      const name = /^[a-zA-Z]+/.exec(text.slice(index + 1, index + 20))?.[0];
+      if (name && ROW_RULES.has(name)) {
+        index += name.length;
+        continue;
+      }
+      index += 1;
+      written = true;
+    } else if (!/\s/.test(character)) {
+      written = true;
+    }
+  }
+  // A last row written without a terminator still counts.
+  return written ? rows + 1 : rows;
 }
 
 /**
@@ -1108,7 +1191,18 @@ function tables(pass: Pass): void {
       pass,
       table.from,
       table.to,
-      new RenderedWidget(html, "cm-yaz-block cm-yaz-table-host"),
+      // How many rows and columns it has is worked out by the widget when it is
+      // built, not here. This runs on every keystroke and building the widget
+      // does not — reading the grid here cost 3 ms of the 16 on a document
+      // made largely of tables, for a number nothing needs until it is drawn.
+      // What is drawn and how many cells there are — no offsets. The widget
+      // finds where it ended up when a control is pressed, which is what stops
+      // a keystroke above a table rebuilding it just because it moved.
+      new TableWidget(
+        html,
+        countColumns(read.spec),
+        countRows(pass.text, read.bodyFrom, table.bodyTo),
+      ),
     );
   }
 }
@@ -1462,14 +1556,24 @@ function columnSpec(
   text: string,
   at: number,
   widthArguments: number,
-): { spec: string; bodyFrom: number } | null {
+): {
+  spec: string;
+  /** Where the specification's own text starts and ends, inside its braces. */
+  specFrom: number;
+  specTo: number;
+  bodyFrom: number;
+} | null {
   let cursor = at;
+  let specFrom = 0;
+  let specTo = 0;
   const group = (): string | null => {
     while (/\s/.test(text[cursor] ?? "")) cursor += 1;
     if (text[cursor] !== "{") return null;
     const end = matchBrace(text, cursor);
     if (end === null) return null;
     const inner = text.slice(cursor + 1, end - 1);
+    specFrom = cursor + 1;
+    specTo = end - 1;
     cursor = end;
     return inner;
   };
@@ -1486,7 +1590,7 @@ function columnSpec(
   }
   const spec = group();
   if (spec === null) return null;
-  return { spec, bodyFrom: cursor };
+  return { spec, specFrom, specTo, bodyFrom: cursor };
 }
 
 /**
@@ -1624,6 +1728,9 @@ export function richText(): Extension {
     showLineBreaks,
     showMachinery,
     rendered,
+    // Before the other keymaps, so Tab in a table means "next cell" rather
+    // than an indent. It refuses everywhere else, so nothing else changes.
+    tableTabKeymap(),
     cursorStaysOutOfTheFold,
     theme,
     semanticTheme,
@@ -1694,6 +1801,75 @@ const theme = EditorView.baseTheme({
    * own foot: the bottom margin of the paper, the shadow, and the gap that
    * separates it from the sheet below.
    */
+  /*
+   * The rails that change a table's shape.
+   *
+   * Out of the way until the pointer is over the table: an author reading a
+   * document should see a table, and an author working on one should have the
+   * handles within reach. Absolutely positioned so that they take no room —
+   * a rail in the flow would move the table every time it appeared.
+   */
+  ".cm-yaz-table-frame": {
+    position: "relative",
+  },
+  ".cm-yaz-table-rail": {
+    position: "absolute",
+    display: "flex",
+    opacity: "0",
+    transition: "opacity 120ms ease",
+    pointerEvents: "none",
+  },
+  ".cm-yaz-table-frame:hover .cm-yaz-table-rail, .cm-yaz-table-frame:focus-within .cm-yaz-table-rail":
+    {
+      opacity: "1",
+      pointerEvents: "auto",
+    },
+  ".cm-yaz-table-rail-columns": {
+    insetBlockStart: "-1.4em",
+    insetInlineStart: "0",
+    inlineSize: "100%",
+    flexDirection: "row",
+  },
+  ".cm-yaz-table-rail-rows": {
+    insetBlockStart: "0",
+    insetInlineEnd: "calc(100% + 0.3em)",
+    blockSize: "100%",
+    flexDirection: "column",
+  },
+  ".cm-yaz-table-segment": {
+    position: "relative",
+    flex: "1 1 0",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "0.15em",
+  },
+  ".cm-yaz-table-control": {
+    font: "inherit",
+    fontSize: "0.75em",
+    lineHeight: "1",
+    color: "var(--yaz-text-muted)",
+    background: "var(--yaz-bg-secondary)",
+    border: "1px solid var(--yaz-border)",
+    borderRadius: "var(--yaz-radius-sm)",
+    padding: "0 0.3em",
+    cursor: "pointer",
+  },
+  ".cm-yaz-table-control:hover": {
+    color: "var(--yaz-text-primary)",
+    background: "var(--yaz-bg-hover)",
+  },
+  /* The boundary this column shares with the next. */
+  ".cm-yaz-table-handle": {
+    position: "absolute",
+    insetInlineEnd: "-0.15em",
+    insetBlock: "0",
+    inlineSize: "0.3em",
+    cursor: "col-resize",
+  },
+  ".cm-yaz-table-handle:hover": {
+    background: "var(--yaz-accent)",
+  },
   ".cm-yaz-listing-sheet": {
     paddingBlockEnd: "var(--yaz-page-margin, 25mm)",
     marginBlockEnd: "var(--yaz-space-6)",

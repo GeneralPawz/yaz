@@ -636,3 +636,10 @@ mcp-token = Token
 mcp-token-help = The whole of the authentication. Treat it like a password.
 mcp-not-running = Not running
 mcp-tools = { $count } tools are reachable.
+
+# Changing a table's shape from the preview.
+table-column-add = Add a column after this one
+table-column-remove = Remove this column
+table-column-width = Drag to set this column's width
+table-row-add = Add a row below this one
+table-row-remove = Remove this row
