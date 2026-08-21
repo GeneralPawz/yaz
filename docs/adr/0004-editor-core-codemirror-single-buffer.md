@@ -2,6 +2,14 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-14
+- **Superseded in part by:** [0020](0020-stitched-multi-file-editing.md)
+
+> **Amended.** "The buffer content is the file content, byte for byte" holds in
+> the default mode and is replaced in the opt-in stitched mode of
+> [0020](0020-stitched-multi-file-editing.md), where the buffer is a stitching
+> of a document's files and every offset in it belongs to exactly one of them.
+> Everything else below — one instance, one keymap, decorations rather than a
+> second model — is unchanged and is what 0020 is built on.
 
 ## Context
 
@@ -105,6 +113,6 @@ text rendering is oriented towards monospaced code rather than the proportional
 typography visual mode needs.
 
 **Start single-buffer, adopt ProseMirror later if tables prove unworkable.**
-Considered and set aside as a *plan*, but noted as a genuine escape hatch: since
+Considered and set aside as a _plan_, but noted as a genuine escape hatch: since
 the buffer is the file, adding a document-model editor later is additive and
 does not invalidate the decoration work. If we ever take it, it needs a new ADR.

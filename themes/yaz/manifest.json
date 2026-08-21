@@ -1,0 +1,10 @@
+{
+  "id": "yaz",
+  "name": "yaz",
+  "version": "1.0.0",
+  "minAppVersion": "0.1.0",
+  "author": "yaz contributors",
+  "description": "The theme yaz ships with. Light and dark, from one file.",
+  "modes": ["light", "dark"],
+  "tokensVersion": 2
+}

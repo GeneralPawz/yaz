@@ -12,7 +12,7 @@ yaz must simultaneously satisfy requirements that pull in opposite directions:
   writes an extension, publishes a GitHub repository, and a user installs it —
   including installing from a local file.
 - A **serious text editor**: syntax highlighting, autocompletion, line numbers,
-  Vim, *and* a rich-text mode. Real manuscripts bring complex text: ligatures,
+  Vim, _and_ a rich-text mode. Real manuscripts bring complex text: ligatures,
   IME for CJK, bidirectional text for Arabic and Hebrew.
 - **Modest memory use**, on Linux and Windows, on x86_64 and ARM64.
 
@@ -76,14 +76,14 @@ access. Bulk data crosses rarely and in batches.
 **A pure-Rust GUI (egui, Iced, Slint, Dioxus native, GPUI).** Rejected on two
 independent grounds, either of which is disqualifying.
 
-*Plugins.* A third-party plugin wanting to draw UI would ship a native dynamic
+_Plugins._ A third-party plugin wanting to draw UI would ship a native dynamic
 library per OS × architecture, compiled against our exact compiler version and
 linked over an unstable Rust ABI. Realistically nobody ships those, and the
 ecosystem never forms. WebAssembly plugins solve isolation but not user
 interface: they cannot touch a Rust-native widget tree without us inventing and
 maintaining a complete widget-over-FFI protocol.
 
-*Text.* No Rust GUI toolkit has a text editing component near what this project
+_Text._ No Rust GUI toolkit has a text editing component near what this project
 needs. We would be writing a text editor engine — highlighting, folding,
 completion, bidi, IME, plus a WYSIWYG mode — as a prerequisite to writing the
 actual application.

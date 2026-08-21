@@ -39,3 +39,47 @@ body {
 ::selection {
   background: var(--yaz-bg-selection);
 }
+
+/*
+ * Scrollbars.
+ *
+ * The platform's own are built for a file manager: wide, opaque, with a track
+ * in the system's colours rather than the theme's. In a window that is
+ * otherwise one continuous surface they read as a seam, and there is one down
+ * the side of every pane.
+ *
+ * These are the `-webkit-` pseudo-elements rather than the standard
+ * `scrollbar-width` and `scrollbar-color`, and deliberately not both: setting
+ * either standard property makes Chromium ignore the pseudo-elements
+ * altogether, and the standard ones cannot round the thumb or inset it from
+ * the edge. Every webview this app runs in — WebView2, WebKit, WebKitGTK
+ * (ADR-0002) — supports the pseudo-elements, so this is the one place where
+ * the prefixed property is the better-supported one.
+ *
+ * The thumb stays visible at rest rather than fading in. It is subtle enough
+ * not to intrude, and where you are in a long document is worth knowing
+ * without having to move the mouse to find out.
+ */
+::-webkit-scrollbar {
+  inline-size: 10px;
+  block-size: 10px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--yaz-border);
+  /* Fully round, and inset by a transparent border so it floats over the
+     content rather than sitting in a channel. */
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--yaz-border-strong);
+  background-clip: padding-box;
+}

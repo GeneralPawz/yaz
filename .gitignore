@@ -1,5 +1,10 @@
 # Rust
 /target
+# Any alternate cargo target directory. A second one is needed when the usual
+# `target/` is locked by a running yaz — Windows will not let the linker replace
+# a running executable — and forgetting to ignore it commits four thousand build
+# artefacts.
+/target-*/
 **/target
 Cargo.lock.bak
 

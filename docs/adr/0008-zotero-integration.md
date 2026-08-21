@@ -29,12 +29,12 @@ only offline one and is the most fragile.
 sources, degrading rather than failing, and always telling the user which source
 is live.**
 
-| Priority | Source | Provides | Requires |
-| --- | --- | --- | --- |
-| 1 | Better BibTeX JSON-RPC | Live search, stable citation keys, CAYW picker, auto-export | Zotero running + BBT |
-| 2 | Zotero 7 local API | Live search, collections, attachments | Zotero running |
-| 3 | Watched `.bib` file | Full offline read, whatever was exported | An export exists |
-| 4 | `zotero.sqlite` (read-only copy) | Offline library read | Zotero data directory found |
+| Priority | Source                           | Provides                                                    | Requires                    |
+| -------- | -------------------------------- | ----------------------------------------------------------- | --------------------------- |
+| 1        | Better BibTeX JSON-RPC           | Live search, stable citation keys, CAYW picker, auto-export | Zotero running + BBT        |
+| 2        | Zotero 7 local API               | Live search, collections, attachments                       | Zotero running              |
+| 3        | Watched `.bib` file              | Full offline read, whatever was exported                    | An export exists            |
+| 4        | `zotero.sqlite` (read-only copy) | Offline library read                                        | Zotero data directory found |
 
 Behaviour:
 
@@ -60,6 +60,79 @@ Behaviour:
 Writing back to Zotero (creating items, syncing annotations) is explicitly out of
 scope for now. It carries a real risk of corrupting a user's library, and the
 read path delivers nearly all of the value.
+
+### Amendment: the copied database is the query path
+
+The priority table above orders the sources live-first, on the reasonable
+assumption that a live source beats a copy. **Measured against a real library,
+it does not, and the ordering is reversed for queries.**
+
+| Search                 |    Time | Covers                      |
+| ---------------------- | ------: | --------------------------- |
+| Zotero 7 local API     | 3458 ms | one request **per library** |
+| Copied `zotero.sqlite` |   16 ms | every library, one query    |
+
+Two findings, both only visible with a real library in front of it.
+
+**Zotero has no cross-library endpoint.** A query names exactly one library, so
+reaching a whole collection means asking each in turn — twelve on the machine
+this was developed against, and Zotero serves them one at a time, so issuing
+them concurrently measured no faster. A picker cannot spend three seconds per
+keystroke.
+
+**Half the library was invisible.** That machine holds 802 items in the personal
+library and 788 across eleven groups. The first implementation asked only
+`users/0`, so enabling the local API made the picker _lose_ the group items —
+while reporting a healthy live connection. That is precisely the silent
+degradation this ADR exists to prevent, arriving through the door marked "live
+source": the user turned on the feature that was supposed to be better, and got
+a quietly worse answer.
+
+So queries read the copy, which is fast and complete, and the live API answers a
+different and much cheaper question: **is Zotero running?** That is worth
+knowing, because it is what decides whether the copy can be trusted to be
+current — the copy is refreshed whenever the source file has changed, so a
+running Zotero means the data is current even though the _source_ is a file on
+disk. The interface reports both, because "reading a copy" and "the data is
+current" are separately true and separately useful.
+
+The multi-library API client is kept and corrected rather than deleted. The
+reasoning here is a measurement, not a law, and a Zotero that gains a
+cross-library endpoint would change the answer.
+
+Better BibTeX remains tier 1 and is unaffected: it owns citation keys, which is
+a single call rather than one per library.
+
+### Amendment: reading annotations
+
+The decision above covers search and citation keys but never mentions
+annotations, and the read path is incomplete without them. **Marked passages are
+read and offered as quotations.** This is an extension rather than a reversal:
+nothing is written back, so the paragraph above stands unchanged.
+
+The motivation is that a researcher's highlights _are_ their reading notes. A
+library of eleven thousand items and seven thousand highlights — the one this was
+developed against — has already had the work of selection done to it, and
+retyping a sentence out of a PDF to quote it is the step yaz exists to remove.
+
+Three things this forced, each of which is easy to get wrong quietly:
+
+- **Zotero anchors an annotation to an attachment, not to an item.** Asking "what
+  did I highlight in this paper" is a two-hop walk, and getting it wrong returns
+  an empty list rather than an error — the feature simply looks like it has
+  nothing to show.
+- **Not every mark is quotable.** Ink and image annotations cover a region and
+  carry no text. A note is the reader's _own_ words, so presenting it as a
+  quotation from the source would misattribute it. Only highlights and underlines
+  are offered.
+- **`-` is not a page number.** Zotero writes it for an attachment with no
+  pagination, and passing it through produces `\cite[-]{key}`, a citation
+  claiming the passage is on a page called "-".
+
+Quotations are inserted with `csquotes`' `\textquote` rather than literal
+quotation marks, so the marks follow the document's language: German wants
+„low-high“ and French wants « guillemets », and hardcoding `''` yields a
+document that is wrong in a way its author may not notice.
 
 ## Consequences
 

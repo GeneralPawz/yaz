@@ -88,3 +88,44 @@ internal markup, and we could never refactor a component.
 **A built-in visual theme editor.** Better for non-technical users. Rejected for
 now as significant UI work that the token contract does not preclude adding later
 — a theme editor would simply write a token file.
+
+## Amendment — 2026-08-18: a theme provides both modes, and a builder writes one
+
+Two things in the decision above turned out to be wrong in use.
+
+**"A theme declares whether it provides both modes; if it provides one, mode
+switching is disabled while it is active and the UI says why."** This makes
+installing a theme able to take a user's dark mode away, and there is no message
+that makes that acceptable. It also produced two bundled themes, `yaz-light` and
+`yaz-dark`, which are not two themes — they are one theme's two halves, and
+having them as separate entries meant "choose a theme" and "choose light or
+dark" were the same control wearing two hats.
+
+**A theme now provides light _and_ dark, always.** One `theme.css` with a block
+per mode, selected by `data-yaz-mode` on the root; `manifest.json` declares
+`"modes": ["light", "dark"]` and a manifest claiming fewer is refused at install
+rather than half-applied. Choosing a theme and choosing a mode are independent,
+and neither can remove the other. The bundled pair becomes one theme, `yaz`.
+
+`system` resolves against the platform before it reaches the document, so a
+stylesheet never has to express "whatever the operating system says" — which it
+could only do by duplicating every rule inside a media query, in every theme.
+
+**"A built-in visual theme editor … rejected for now as significant UI work."**
+Kept as an alternative for the wrong reason: the objection was cost, and the
+cost is what it is, but the argument for it is that the token contract is a
+vocabulary a stranger has to learn before they can change a colour. **A builder
+now ships**, editing a curated subset of the tokens with a live preview and
+exporting a real bundle — the same `manifest.json` and `theme.css` a
+hand-written theme has, editable by hand afterwards. It is the on-ramp to the
+format, not a replacement for it, which is why it writes files rather than
+storing settings.
+
+It edits opaque colours only. `<input type="color">` cannot express the
+translucent tokens — hover tints, the selection wash, the modal scrim — and
+rounding them to opaque visibly breaks the surfaces they sit on. Those stay
+available to anyone editing the file.
+
+Unchanged: the token contract is still the supported API, themes are still CSS,
+restyling internal selectors is still permitted and still unsupported, and the
+cascade position is still fixed between core and plugin styles.

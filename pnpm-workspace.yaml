@@ -1,9 +1,14 @@
 packages:
   - "apps/*"
   - "packages/*"
-  - "plugins/*"
   - "docs"
 
+# `plugins/*` is deliberately absent. Each one is its own repository, present
+# here as a submodule with its own package.json and its own dependencies
+# (ADR-0021) — making them workspace members would have pnpm resolve their
+# dependencies against this tree, which is exactly the privilege an external
+# author does not get.
+#
 # Keep the dependency graph honest: a package must declare what it imports.
 # See docs/adr/0017-repository-layout.md.
 linkWorkspacePackages: true

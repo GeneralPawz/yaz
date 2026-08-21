@@ -33,6 +33,8 @@ yaz-compile.workspace = true
 yaz-plugin.workspace = true
 yaz-zotero.workspace = true
 yaz-obsidian.workspace = true
+yaz-vcs.workspace = true
+yaz-mcp.workspace = true
 
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
@@ -44,7 +46,17 @@ serde_json.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 walkdir.workspace = true
+# The plugin host is async: Zotero probing must not block the command thread,
+# and the library is shared state behind an RwLock.
+tokio.workspace = true
+reqwest.workspace = true
 
 # yaz-app stays THIN: it wires the domain crates to Tauri commands and holds no
 # domain logic of its own (ADR-0017). Anything here that starts to look like a
 # decision about LaTeX, projects, or plugins belongs in a domain crate.
+
+[dev-dependencies]
+tempfile.workspace = true
+# Builds a Zotero fixture library, so the citation path is exercised end to end
+# rather than only in pieces.
+rusqlite = { workspace = true }

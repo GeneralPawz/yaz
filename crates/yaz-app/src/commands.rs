@@ -41,7 +41,17 @@ impl From<yaz_core::Error> for CommandError {
 }
 
 impl CommandError {
-    fn new(message_key: &str, detail: impl std::fmt::Display) -> Self {
+    /// The message key the frontend resolves against the active locale.
+    ///
+    /// Test-only: production code serialises the whole struct across IPC rather
+    /// than reading the key back, so a non-test accessor would be dead code and
+    /// CI denies warnings.
+    #[cfg(test)]
+    pub(crate) fn message_key(&self) -> &str {
+        &self.message_key
+    }
+
+    pub(crate) fn new(message_key: &str, detail: impl std::fmt::Display) -> Self {
         Self {
             message_key: message_key.to_owned(),
             detail: detail.to_string(),
@@ -49,7 +59,7 @@ impl CommandError {
     }
 }
 
-type Result<T> = std::result::Result<T, CommandError>;
+pub(crate) type Result<T> = std::result::Result<T, CommandError>;
 
 /// A file inside the open project.
 #[derive(Debug, Serialize)]
@@ -57,6 +67,102 @@ type Result<T> = std::result::Result<T, CommandError>;
 pub struct ProjectFile {
     relative_path: String,
     is_entry: bool,
+    /// What sort of file it is, for its icon and whether it is dimmed.
+    kind: FileKind,
+}
+
+/// What a file is, as far as a file list needs to care.
+///
+/// Coarse on purpose. The list draws one icon per kind and dims one of them,
+/// so a distinction that changes neither is a distinction that costs a variant
+/// and buys nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FileKind {
+    /// A LaTeX source.
+    Tex,
+    /// A bibliography.
+    Bib,
+    /// A class or package.
+    Style,
+    /// A compiled document.
+    Pdf,
+    Image,
+    /// Something a compile produced and a compile can produce again.
+    ///
+    /// One kind for the lot. There are thirty extensions here and nobody has
+    /// ever wanted to tell an `.fdb_latexmk` from an `.fls` in a file list —
+    /// what they want is for both to stop competing with the two files they
+    /// are actually working on.
+    Build,
+    Other,
+}
+
+/// Extensions a LaTeX run leaves behind.
+///
+/// The list is long because the toolchain is: glossaries, biblatex, beamer and
+/// `latexmk` each write their own. A missing entry is not a failure, only a
+/// file that stays as prominent as the source beside it.
+const BUILD_EXTENSIONS: &[&str] = &[
+    "acn",
+    "acr",
+    "alg",
+    "aux",
+    "auxlock",
+    "bbl",
+    "bcf",
+    "blg",
+    "dvi",
+    "fdb_latexmk",
+    "figlist",
+    "fls",
+    "glg",
+    "glo",
+    "gls",
+    "glsdefs",
+    "idx",
+    "ilg",
+    "ind",
+    "ist",
+    "lof",
+    "log",
+    "lot",
+    "nav",
+    "out",
+    "run",
+    "snm",
+    "synctex",
+    "toc",
+    "vrb",
+    "xdv",
+];
+
+/// Extensions that are pictures.
+const IMAGE_EXTENSIONS: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "svg", "eps", "tif", "tiff", "webp", "bmp",
+];
+
+impl FileKind {
+    /// Classify by name.
+    ///
+    /// By the final extension, with one exception: `main.synctex.gz` is a
+    /// build artefact whose extension is `gz`, and a compressed archive that
+    /// happens to be one is not something to show as a generic file.
+    fn of(name: &str) -> Self {
+        let lower = name.to_ascii_lowercase();
+        let stripped = lower.strip_suffix(".gz").unwrap_or(&lower);
+        let extension = stripped.rsplit_once('.').map(|(_, ext)| ext).unwrap_or("");
+
+        match extension {
+            "tex" => FileKind::Tex,
+            "bib" => FileKind::Bib,
+            "cls" | "sty" | "clo" | "def" => FileKind::Style,
+            "pdf" => FileKind::Pdf,
+            _ if IMAGE_EXTENSIONS.contains(&extension) => FileKind::Image,
+            _ if BUILD_EXTENSIONS.contains(&extension) => FileKind::Build,
+            _ => FileKind::Other,
+        }
+    }
 }
 
 /// The open project as the frontend sees it.
@@ -74,6 +180,9 @@ pub struct ProjectInfo {
 pub struct CompileResult {
     succeeded: bool,
     pdf_path: Option<String>,
+    /// The SyncTeX database, which is what makes a click in the PDF findable
+    /// in the source.
+    synctex_path: Option<String>,
     diagnostics: Vec<yaz_compile::diagnostics::Diagnostic>,
     engine_id: String,
     elapsed_ms: u128,
@@ -86,13 +195,13 @@ pub struct CompileResult {
 /// capability broker will inherit, and it is why the check cannot be a simple
 /// `starts_with` on the untouched input.
 fn resolve_in_root(root: &Utf8Path, relative: &str) -> Result<Utf8PathBuf> {
-    let root_canonical = dunce_canonicalize(root)?;
+    let root_canonical = canonical_root(root)?;
     let joined = root.join(relative);
 
     // A file being written may not exist yet, so canonicalise the parent and
     // re-attach the final component.
     let candidate = if joined.exists() {
-        dunce_canonicalize(&joined)?
+        canonical_root(&joined)?
     } else {
         let parent = joined
             .parent()
@@ -100,7 +209,7 @@ fn resolve_in_root(root: &Utf8Path, relative: &str) -> Result<Utf8PathBuf> {
         let file_name = joined.file_name().ok_or_else(|| {
             CommandError::new("error-fs-outside-root", "path has no final component")
         })?;
-        dunce_canonicalize(parent)?.join(file_name)
+        canonical_root(parent)?.join(file_name)
     };
 
     if !candidate.starts_with(&root_canonical) {
@@ -114,7 +223,7 @@ fn resolve_in_root(root: &Utf8Path, relative: &str) -> Result<Utf8PathBuf> {
 }
 
 /// Canonicalise, keeping the result UTF-8 and free of Windows `\\?\` prefixes.
-fn dunce_canonicalize(path: &Utf8Path) -> Result<Utf8PathBuf> {
+pub(crate) fn canonical_root(path: &Utf8Path) -> Result<Utf8PathBuf> {
     let canonical = std::fs::canonicalize(path)
         .map_err(|error| CommandError::new("error-fs-not-found", format!("{path}: {error}")))?;
     // Windows canonicalisation yields a `\\?\C:\…` extended-length path, which
@@ -127,25 +236,32 @@ fn dunce_canonicalize(path: &Utf8Path) -> Result<Utf8PathBuf> {
 /// Open a directory as a project and list its LaTeX sources.
 #[tauri::command]
 pub fn open_project(root: String) -> Result<ProjectInfo> {
-    let root = dunce_canonicalize(Utf8Path::new(&root))?;
+    let root = canonical_root(Utf8Path::new(&root))?;
 
+    // Everything, not only the sources.
+    //
+    // A real project has images the author wants to see, a `.bib` they open,
+    // and a compiled PDF they double-click. Showing four extensions and
+    // hiding the rest meant the file list disagreed with the folder, and the
+    // author had to keep a file manager open beside it.
+    //
+    // What is *shown* is then the interface's decision — dotfolders, build
+    // artefacts and unfamiliar formats each have a switch — and a decision
+    // like that belongs where it can be changed without a recompile.
     let mut files: Vec<String> = walkdir::WalkDir::new(root.as_std_path())
         .max_depth(8)
         .into_iter()
         .filter_entry(|entry| {
-            // Build output and VCS metadata are noise in a file list, and
-            // descending into them on a large project is slow for no benefit.
+            // `.git` and `node_modules` are excluded here rather than in the
+            // interface because they are not a preference: they hold tens of
+            // thousands of files, walking them is slow, and nobody has ever
+            // wanted to browse either from a LaTeX editor. Every other dotted
+            // folder is a real choice and is left to the switch.
             let name = entry.file_name().to_string_lossy();
-            !(name.starts_with('.') || name == "build" || name == "node_modules")
+            !(name == ".git" || name == "node_modules")
         })
         .filter_map(std::result::Result::ok)
         .filter(|entry| entry.file_type().is_file())
-        .filter(|entry| {
-            matches!(
-                entry.path().extension().and_then(|e| e.to_str()),
-                Some("tex" | "bib" | "cls" | "sty")
-            )
-        })
         .filter_map(|entry| {
             let path = Utf8PathBuf::from_path_buf(entry.into_path()).ok()?;
             let relative = path.strip_prefix(&root).ok()?;
@@ -165,6 +281,10 @@ pub fn open_project(root: String) -> Result<ProjectInfo> {
         .cloned()
         .unwrap_or_default();
 
+    // Recorded here rather than in the frontend: this is the one place
+    // that knows the open succeeded and knows the canonical root.
+    remember_project(&root);
+
     Ok(ProjectInfo {
         root: root.to_string(),
         entry: entry.clone(),
@@ -172,6 +292,7 @@ pub fn open_project(root: String) -> Result<ProjectInfo> {
             .into_iter()
             .map(|relative_path| ProjectFile {
                 is_entry: relative_path == entry,
+                kind: FileKind::of(&relative_path),
                 relative_path,
             })
             .collect(),
@@ -184,6 +305,39 @@ pub fn read_file(root: String, relative_path: String) -> Result<String> {
     let path = resolve_in_root(Utf8Path::new(&root), &relative_path)?;
     std::fs::read_to_string(&path)
         .map_err(|error| CommandError::new("error-fs-undecodable", format!("{path}: {error}")))
+}
+
+/// Read a project-relative file as bytes.
+///
+/// For the things that are not text: a PDF the author wants to look at, an
+/// image a figure includes. Scoped to the project root like every other
+/// project read, because the alternative — composing a path in the webview and
+/// handing it to an unscoped reader — would put the boundary in the wrong
+/// process (ADR-0006).
+#[tauri::command]
+pub fn read_project_bytes(root: String, relative_path: String) -> Result<Vec<u8>> {
+    let path = resolve_in_root(Utf8Path::new(&root), &relative_path)?;
+    std::fs::read(&path)
+        .map_err(|error| CommandError::new("error-fs-io", format!("{path}: {error}")))
+}
+
+/// Write a project-relative file as bytes.
+///
+/// For the things that are not text: an image a plugin captured, a figure it
+/// generated. Scoped to the project root exactly as the text write is, because
+/// "which file may this touch" is not a question the webview gets to answer
+/// ([ADR-0006]).
+///
+/// [ADR-0006]: https://github.com/texyaz/yaz/blob/main/docs/adr/0006-plugin-runtime-and-capabilities.md
+#[tauri::command]
+pub fn write_project_bytes(root: String, relative_path: String, contents: Vec<u8>) -> Result<()> {
+    let path = resolve_in_root(Utf8Path::new(&root), &relative_path)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| CommandError::new("error-fs-io", format!("{parent}: {error}")))?;
+    }
+    std::fs::write(&path, contents)
+        .map_err(|error| CommandError::new("error-fs-io", format!("{path}: {error}")))
 }
 
 /// Write a project-relative file.
@@ -200,7 +354,7 @@ pub fn write_file(root: String, relative_path: String, contents: String) -> Resu
 /// Compile the project's entry document.
 #[tauri::command]
 pub fn compile_project(root: String) -> Result<CompileResult> {
-    let root = dunce_canonicalize(Utf8Path::new(&root))?;
+    let root = canonical_root(Utf8Path::new(&root))?;
     let info = open_project(root.to_string())?;
 
     if info.entry.is_empty() {
@@ -237,6 +391,7 @@ pub fn compile_project(root: String) -> Result<CompileResult> {
     Ok(CompileResult {
         succeeded: output.succeeded,
         pdf_path: output.pdf.map(|p| p.to_string()),
+        synctex_path: output.synctex.map(|p| p.to_string()),
         diagnostics: output.diagnostics,
         engine_id: engine.id().to_owned(),
         elapsed_ms,
@@ -363,18 +518,75 @@ pub fn list_engines() -> Vec<EngineInfo> {
 /// Read the persisted per-project settings.
 #[tauri::command]
 pub fn get_project_settings(root: String) -> Result<ProjectSettingsDto> {
-    let root = dunce_canonicalize(Utf8Path::new(&root))?;
+    let root = canonical_root(Utf8Path::new(&root))?;
     let settings = ProjectSettings::load(&root)?;
     Ok(ProjectSettingsDto {
         engine_id: settings.engine.map(|e| e.to_id()),
         entry: settings.entry.map(|p| p.to_string()),
+        workspace: settings.workspace,
     })
+}
+
+/// Projects opened before, most recent first.
+///
+/// Entries whose folder has since gone are filtered out rather than offered:
+/// a menu item that always fails is worse than one that is absent.
+#[tauri::command]
+pub fn recent_projects() -> Vec<RecentProject> {
+    let Some(dir) = yaz_core::settings::config_dir() else {
+        return Vec::new();
+    };
+    yaz_core::settings::Settings::load(&dir)
+        .recent_projects
+        .into_iter()
+        .filter(|root| root.as_std_path().is_dir())
+        .map(|root| RecentProject {
+            name: root.file_name().unwrap_or(root.as_str()).to_owned(),
+            root: root.to_string(),
+        })
+        .collect()
+}
+
+/// A previously opened project, as the menu lists it.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentProject {
+    /// The folder name, which is what a menu should show.
+    name: String,
+    /// The full path, used to reopen and shown as a tooltip.
+    root: String,
+}
+
+/// Record a project as most recently opened.
+fn remember_project(root: &Utf8Path) {
+    let Some(dir) = yaz_core::settings::config_dir() else {
+        return;
+    };
+    let mut settings = yaz_core::settings::Settings::load(&dir);
+    settings.remember_project(root);
+    if let Err(error) = settings.save(&dir) {
+        // Losing the recent list is not worth failing an open over.
+        tracing::warn!(%error, "could not record the recently opened project");
+    }
+}
+
+/// Persist the pane arrangement for a project.
+///
+/// Written through the same settings file as the engine choice, so a project
+/// carries how it is worked on as well as how it is built.
+#[tauri::command]
+pub fn set_project_workspace(root: String, workspace: String) -> Result<()> {
+    let root = canonical_root(Utf8Path::new(&root))?;
+    let mut settings = ProjectSettings::load(&root)?;
+    settings.workspace = Some(workspace);
+    settings.save(&root)?;
+    Ok(())
 }
 
 /// Persist the engine choice for a project, writing `yaz.toml`.
 #[tauri::command]
 pub fn set_project_engine(root: String, engine_id: String) -> Result<()> {
-    let root = dunce_canonicalize(Utf8Path::new(&root))?;
+    let root = canonical_root(Utf8Path::new(&root))?;
 
     let choice = EngineChoice::from_id(&engine_id).ok_or_else(|| {
         CommandError::new(
@@ -395,6 +607,8 @@ pub fn set_project_engine(root: String, engine_id: String) -> Result<()> {
 pub struct ProjectSettingsDto {
     engine_id: Option<String>,
     entry: Option<String>,
+    /// The pane arrangement, opaque to this layer.
+    workspace: Option<String>,
 }
 
 #[cfg(test)]
@@ -497,4 +711,128 @@ pub fn read_artefact(path: String) -> Result<Vec<u8>> {
     let path = Utf8PathBuf::from(path);
     std::fs::read(&path)
         .map_err(|error| CommandError::new("error-fs-io", format!("{path}: {error}")))
+}
+
+/// Where in the source a point in the PDF came from.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceLocation {
+    /// Project-relative when the file is inside the project, absolute when it
+    /// is not — a `\input` from elsewhere, or a package.
+    path: String,
+    /// Whether `path` is relative to the project root.
+    in_project: bool,
+    /// One-based.
+    line: u32,
+}
+
+/// Inverse search: the source line behind a point in the compiled PDF.
+///
+/// `x` and `y` are PDF points from the top left of the page, which is what a
+/// viewer has after putting a click through its own transform. Returns nothing
+/// rather than an error when the database has no answer — a click on a blank
+/// page is an ordinary thing to do, not a failure.
+#[tauri::command]
+pub fn locate_in_source(
+    root: String,
+    synctex_path: String,
+    page: u32,
+    x: f64,
+    y: f64,
+) -> Result<Option<SourceLocation>> {
+    let path = Utf8PathBuf::from(synctex_path);
+    let Ok(database) = yaz_compile::synctex::SyncTex::load(&path) else {
+        // A missing or unreadable database means the last compile did not
+        // write one. Nothing to say, and nothing the user did wrong.
+        return Ok(None);
+    };
+
+    let Some(found) = database.locate(page, x, y) else {
+        return Ok(None);
+    };
+
+    // The engine records absolute paths. The editor works in project-relative
+    // ones, and a file outside the project cannot be opened in it at all, so
+    // which of the two this is has to travel with the answer.
+    let root = Utf8PathBuf::from(root);
+    let absolute = if found.file.is_absolute() {
+        found.file.clone()
+    } else {
+        root.join(&found.file)
+    };
+    let relative = absolute.strip_prefix(&root).ok();
+
+    Ok(Some(SourceLocation {
+        path: relative
+            .map(|p| p.to_string())
+            .unwrap_or_else(|| absolute.to_string()),
+        in_project: relative.is_some(),
+        line: found.line,
+    }))
+}
+
+#[cfg(test)]
+mod file_kind_tests {
+    use super::FileKind;
+
+    #[test]
+    fn knows_the_files_an_author_works_on() {
+        assert_eq!(FileKind::of("main.tex"), FileKind::Tex);
+        assert_eq!(FileKind::of("BIMwissT.bib"), FileKind::Bib);
+        assert_eq!(FileKind::of("output/main.pdf"), FileKind::Pdf);
+        assert_eq!(FileKind::of("images/logo.png"), FileKind::Image);
+        assert_eq!(FileKind::of("thesis.cls"), FileKind::Style);
+    }
+
+    #[test]
+    fn calls_a_compiled_pdf_a_pdf() {
+        // It is an artefact, and it is also the thing the author double-clicks
+        // to read what they wrote. Dimming it with the `.aux` files would hide
+        // the one output anybody wants.
+        assert_eq!(FileKind::of("output/main.pdf"), FileKind::Pdf);
+    }
+
+    #[test]
+    fn gathers_what_a_compile_leaves_behind() {
+        for name in [
+            "main.aux",
+            "main.log",
+            "main.toc",
+            "main.lof",
+            "main.bbl",
+            "main.bcf",
+            "main.glo",
+            "main.gls",
+            "main.ist",
+            "main.acn",
+            "main.fdb_latexmk",
+            "main.fls",
+            "main.out",
+        ] {
+            assert_eq!(FileKind::of(name), FileKind::Build, "{name}");
+        }
+    }
+
+    #[test]
+    fn sees_through_the_compression_on_a_synctex() {
+        // `main.synctex.gz` has the extension `gz`, and an archive that happens
+        // to be a build artefact should not read as a generic file.
+        assert_eq!(FileKind::of("output/main.synctex.gz"), FileKind::Build);
+    }
+
+    #[test]
+    fn does_not_guess_at_what_it_does_not_know() {
+        // A generic icon is honest; classifying by hope is not.
+        assert_eq!(FileKind::of("README.md"), FileKind::Other);
+        assert_eq!(FileKind::of("indent.yaml"), FileKind::Other);
+        assert_eq!(FileKind::of("Makefile"), FileKind::Other);
+        assert_eq!(FileKind::of("no-extension"), FileKind::Other);
+    }
+
+    #[test]
+    fn ignores_the_case_of_an_extension() {
+        // Windows hands these back however they were typed.
+        assert_eq!(FileKind::of("Figure.PNG"), FileKind::Image);
+        assert_eq!(FileKind::of("MAIN.TEX"), FileKind::Tex);
+    }
 }

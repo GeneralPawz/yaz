@@ -13,7 +13,13 @@
 #![deny(unsafe_code)]
 #![warn(clippy::all)]
 
+mod appearance;
 mod commands;
+mod mcp;
+mod mcp_commands;
+mod plugin_host;
+mod plugin_updates;
+mod vcs_commands;
 
 /// True when running in development mode.
 ///
@@ -54,6 +60,11 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(clock)
+        .manage(plugin_host::PluginHost::new())
+        // Off until asked: the server is not started here, only made
+        // available to the command that starts it (ADR-0022).
+        .manage(mcp::McpState::default())
+        .manage(mcp::OpenProject::default())
         .invoke_handler(tauri::generate_handler![
             commands::open_project,
             commands::read_file,
@@ -62,8 +73,50 @@ fn main() {
             commands::list_engines,
             commands::get_project_settings,
             commands::set_project_engine,
+            commands::set_project_workspace,
+            commands::recent_projects,
+            appearance::get_appearance,
+            appearance::set_appearance,
+            appearance::list_themes,
+            appearance::theme_stylesheet,
+            appearance::export_theme,
+            appearance::install_theme,
+            appearance::save_theme,
+            appearance::get_key_preferences,
+            appearance::set_key_preferences,
+            appearance::get_format_preferences,
+            appearance::set_format_preferences,
+            appearance::get_development_plugin,
+            appearance::set_development_plugin,
+            mcp_commands::mcp_start,
+            mcp_commands::mcp_stop,
+            mcp_commands::mcp_status,
+            mcp_commands::mcp_set_project,
+            mcp_commands::mcp_set_plugin_tools,
+            mcp_commands::mcp_drop_plugin_tools,
+            mcp_commands::mcp_tool_result,
+            vcs_commands::vcs_backends,
+            vcs_commands::vcs_status,
+            vcs_commands::vcs_enable,
+            vcs_commands::vcs_disable,
+            vcs_commands::vcs_commit,
+            vcs_commands::vcs_history,
+            vcs_commands::vcs_restore,
+            commands::read_project_bytes,
+            commands::write_project_bytes,
             commands::read_artefact,
+            commands::locate_in_source,
             commands::report_ready,
+            plugin_host::plugin_zotero_status,
+            plugin_host::plugin_zotero_search,
+            plugin_host::plugin_zotero_annotations,
+            plugin_host::plugin_zotero_ensure_in_bibliography,
+            plugin_host::plugin_zotero_reconnect,
+            plugin_host::plugin_denials,
+            plugin_host::plugin_list,
+            plugin_updates::plugin_latest_release,
+            plugin_host::plugin_set_project,
+            plugin_host::plugin_set_zotero_data_dir,
         ])
         .setup(|_app| {
             if is_dev_mode() {

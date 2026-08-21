@@ -30,12 +30,58 @@
   interface Props {
     /** Raw PDF bytes, or null when nothing has been compiled yet. */
     data: Uint8Array | null;
+    /**
+     * Which file is being shown, when it is not the compile's own output.
+     *
+     * Named so the reader can tell: the same pane showing last term's version
+     * of a document and showing this morning's compile of it are two very
+     * different things, and they look identical.
+     */
+    name?: string | null;
+    /**
+     * A page was clicked.
+     *
+     * `x` and `y` are PDF points from the top left of that page — the
+     * coordinate system SyncTeX records in, converted here because this is the
+     * only place that knows the page's size and the scale it was drawn at.
+     */
+    onclickpoint?: ((page: number, x: number, y: number) => void) | undefined;
+    /** How many pages the document has, once it is known. */
+    onpages?: ((pages: number) => void) | undefined;
   }
 
-  let { data }: Props = $props();
+  let { data, name = null, onclickpoint, onpages }: Props = $props();
 
   let container: HTMLDivElement;
   let renderError = $state<string | null>(null);
+
+  /**
+   * Turn a click on a page into a point on that page.
+   *
+   * The canvas is drawn at a device scale and then laid out at whatever width
+   * the pane gives it, so neither the bitmap's size nor the scale it was drawn
+   * at is what the pointer landed on. The element's rendered box is, which is
+   * why the ratio is taken from `getBoundingClientRect` and multiplied by the
+   * page's size in points.
+   */
+  function onpageclick(event: MouseEvent) {
+    if (!onclickpoint) return;
+    const canvas = (event.target as HTMLElement | null)?.closest?.("canvas.page");
+    if (!(canvas instanceof HTMLCanvasElement)) return;
+
+    const page = Number(canvas.dataset.page);
+    const width = Number(canvas.dataset.width);
+    const height = Number(canvas.dataset.height);
+    if (!page || !width || !height) return;
+
+    const box = canvas.getBoundingClientRect();
+    if (box.width === 0 || box.height === 0) return;
+    onclickpoint(
+      page,
+      ((event.clientX - box.left) / box.width) * width,
+      ((event.clientY - box.top) / box.height) * height,
+    );
+  }
 
   $effect(() => {
     if (!container) return;
@@ -68,6 +114,14 @@
           canvas.width = viewport.width;
           canvas.height = viewport.height;
           canvas.className = "page";
+          // The page's own size, which is what a click has to be expressed in.
+          // Taken from the unscaled viewport rather than divided out of the
+          // scaled one, so a change to how the page is drawn cannot silently
+          // move where a click lands.
+          const unscaled = page.getViewport({ scale: 1 });
+          canvas.dataset.page = String(n);
+          canvas.dataset.width = String(unscaled.width);
+          canvas.dataset.height = String(unscaled.height);
           const ctx = canvas.getContext("2d");
           if (!ctx) continue;
           // pdf.js wants the canvas itself from 5.x onward, not only its 2D
@@ -79,6 +133,7 @@
         }
 
         container.replaceChildren(...rendered);
+        onpages?.(doc.numPages);
       } catch (error) {
         if (!cancelled) renderError = String(error);
       }
@@ -91,12 +146,24 @@
 </script>
 
 <div class="pdf">
+  <!--
+    Named when it is not the compile's own output.
+
+    The same pane showing last term's version of a document and showing this
+    morning's compile of it look identical, and only one of them is what the
+    author is about to submit — so the one that is not says which it is.
+  -->
+  {#if name}
+    <p class="opened">{t("pdf-showing", { file: name })}</p>
+  {/if}
   {#if renderError}
     <p class="notice error">{renderError}</p>
   {:else if !data}
     <p class="notice">{t("pdf-empty")}</p>
   {/if}
-  <div class="pages" bind:this={container}></div>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div class="pages" bind:this={container} onclick={onpageclick}></div>
 </div>
 
 <style>
@@ -114,11 +181,25 @@
     gap: var(--yaz-space-4);
   }
 
+  /* The pages answer a click by moving the cursor in the source, so they read
+     as something to point at. */
   .pdf :global(.page) {
+    cursor: pointer;
     max-inline-size: 100%;
     block-size: auto;
     box-shadow: 0 2px 12px var(--yaz-pdf-page-shadow);
     background: var(--yaz-bg-primary);
+  }
+
+  .opened {
+    margin: 0 0 var(--yaz-space-3);
+    padding: var(--yaz-space-2) var(--yaz-space-4);
+    background: var(--yaz-bg-secondary);
+    border-block-end: 1px solid var(--yaz-border);
+    color: var(--yaz-text-secondary);
+    font-family: var(--yaz-font-ui);
+    font-size: var(--yaz-font-size-sm);
+    text-align: center;
   }
 
   .notice {

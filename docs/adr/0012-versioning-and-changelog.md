@@ -30,7 +30,7 @@ changelog generation via release-please.**
 `BREAKING CHANGE:` footer. Scopes match the workspace: `core`, `latex`,
 `compile`, `plugin`, `zotero`, `obsidian`, `api`, `ui`, `docs`.
 
-Enforced by commitlint in a git hook *and* in CI, because a hook can be skipped.
+Enforced by commitlint in a git hook _and_ in CI, because a hook can be skipped.
 
 ### Versioning
 

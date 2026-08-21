@@ -27,5 +27,6 @@ pub mod broker;
 pub mod capability;
 pub mod manifest;
 
+pub use broker::{Broker, DenialRecord, Denied, Request};
 pub use capability::Capability;
-pub use manifest::Manifest;
+pub use manifest::{Manifest, Provides, ToolDeclaration, UpdateChannel, UpdateSource, Updates};

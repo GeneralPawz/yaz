@@ -19,11 +19,22 @@ camino.workspace = true
 tracing.workspace = true
 reqwest.workspace = true
 
-# NOTE(phase-5): rusqlite is added for the offline source. It must be built with
-# the bundled feature so it links natively on aarch64 (ADR-0014), and opened
-# read-only on a copy, never against the live zotero.sqlite.
+# The offline source. `bundled` compiles SQLite from source with cc rather than
+# linking a system library, which is what gives it a native aarch64 build with no
+# system dependency at all (ADR-0014) — the same reason the Typst engine is
+# preferable to a vcpkg tree. Opened read-only on a copy, never against the live
+# zotero.sqlite; see the module docs in src/sqlite.rs.
+rusqlite = { workspace = true }
+# For OnceCell: the offline library is opened on first query rather than at
+# connect, so startup never pays for copying a large database.
+tokio.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true
 tempfile.workspace = true
 insta.workspace = true
+# Integration tests build a real database with Zotero's table shapes, because
+# unit tests over pure functions would pass against wrong SQL.
+rusqlite = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+yaz-core = { workspace = true }

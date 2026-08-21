@@ -1,0 +1,20 @@
+[package]
+name = "yaz-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "yaz as an MCP server: an agent can drive the editor."
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+# `net` and `io-util` on top of the workspace set: this crate listens on a
+# socket, which nothing else in the workspace does.
+tokio = { workspace = true, features = ["net", "io-util"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["net", "io-util", "macros", "rt-multi-thread"] }

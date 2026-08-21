@@ -110,6 +110,28 @@ pub struct ProjectSettings {
     /// The language the document is written in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub document_locale: Option<String>,
+
+    /// Which version-control backend records this project, if any.
+    ///
+    /// Absent means yaz is not recording versions. It deliberately does **not**
+    /// mean there is no history: switching version control off leaves the
+    /// repository and everything in it alone, so switching it back on finds the
+    /// history where it was left.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version_control: Option<String>,
+
+    /// The pane arrangement, as the frontend serialises it.
+    ///
+    /// Stored opaquely on purpose. The layout tree is a interface concern —
+    /// which views are open, in what splits, at what sizes — and giving the
+    /// domain layer a parallel definition of it would mean two schemas to keep
+    /// in step for no gain here. This crate's interest is only that it round
+    /// trips.
+    ///
+    /// Per project rather than global: a thesis and a conference paper want
+    /// different arrangements, and the engine choice already lives here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
 }
 
 impl ProjectSettings {
@@ -179,6 +201,8 @@ mod tests {
                 engine: "lualatex".to_owned(),
             }),
             document_locale: Some("de-DE".to_owned()),
+            version_control: Some("git".to_owned()),
+            workspace: Some(r#"{"kind":"leaf","tabs":["editor"]}"#.to_owned()),
         };
         let text = toml::to_string_pretty(&settings).expect("serialises");
         // The flat form is what makes the file pleasant to hand-edit.
@@ -186,6 +210,17 @@ mod tests {
         let parsed: ProjectSettings = toml::from_str(&text).expect("parses");
         assert_eq!(parsed.engine, settings.engine);
         assert_eq!(parsed.entry, settings.entry);
+        // Opaque to this layer, so the only requirement is that it survives.
+        assert_eq!(parsed.workspace, settings.workspace);
+    }
+
+    #[test]
+    fn a_project_without_a_stored_layout_still_loads() {
+        // Every project that predates the workspace has no `workspace` key, and
+        // must open rather than fail to parse.
+        let text = "entry = \"main.tex\"\nengine = \"tectonic\"\n";
+        let parsed: ProjectSettings = toml::from_str(text).expect("parses");
+        assert_eq!(parsed.workspace, None);
     }
 
     #[test]

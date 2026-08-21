@@ -77,6 +77,75 @@ export abstract class Plugin {
     throw new Error("not implemented");
   }
 
+  /**
+   * Teach the editor a text format.
+   *
+   * The editor opens any text file with line numbers, wrapping, Vim and
+   * search whether or not a plugin knows the format; what this adds is
+   * highlighting and whatever else the format wants. So registering is
+   * additive and failing to register is not fatal — a format nobody
+   * contributes is a file that still opens.
+   *
+   * @since 0.3.0
+   */
+  registerFormat(_format: FormatContribution): void {
+    throw new Error("not implemented");
+  }
+
+  /**
+   * Teach the preview what a package's commands mean.
+   *
+   * yaz knows LaTeX itself — the kernel and the standard classes — and nothing
+   * else. `\gls` is glossaries, `\parencite` is biblatex, `\enquote` is
+   * csquotes: each is somebody's package, each could be replaced by another
+   * doing the same job, and there is no end to the list. So they arrive from
+   * here.
+   *
+   * # This is a declaration, not a scanner
+   *
+   * A plugin never walks the document. yaz walks it once per keystroke and a
+   * second walk costs more than everything else in the pass put together — so
+   * a contribution says *what a name means*, and yaz does the finding. A
+   * plugin never sees an offset.
+   *
+   * A contribution may not claim a name LaTeX itself defines. `\section` means
+   * what LaTeX says it means, and a preview that depended on which plugins were
+   * installed would be a preview of something other than the document.
+   *
+   * \since 0.3.0
+   */
+  registerLatexVocabulary(_vocabulary: LatexVocabulary): void {
+    throw new Error("not implemented");
+  }
+
+  /**
+   * Offer a tool to whatever agent is driving yaz over MCP.
+   *
+   * A tool is a **declaration, not a capability**. It can do nothing the
+   * plugin could not already do — it runs the plugin's own code, inside the
+   * plugin's own grants — so it is not something the broker has to allow. What
+   * it is, is something a future registry must be able to read off a manifest
+   * without running anything: *what does this plugin add to yaz?*
+   * ([ADR-0022](https://texyaz.github.io/yaz/adr/0022-mcp-and-tool-declaration).)
+   *
+   * That is why the manifest has to say so first:
+   *
+   * ```json
+   * "provides": { "tools": [
+   *   { "name": "search-library", "descriptionKey": "zotero-tool-search" }
+   * ] }
+   * ```
+   *
+   * A tool the manifest did not declare is **refused**. Without that the
+   * declaration would be a comment, free to drift out of date, and the answer
+   * to "what does this plugin add" would be "run it and see".
+   *
+   * \since 0.3.0
+   */
+  registerTool(_tool: ToolContribution): void {
+    throw new Error("not implemented");
+  }
+
   /** Read this plugin's persisted settings. */
   loadData<T>(): Promise<T | null> {
     throw new Error("not implemented");
@@ -106,6 +175,8 @@ export interface App {
   readonly i18n: I18nApi;
   /** Transient user-facing messages. */
   readonly notices: NoticeApi;
+  /** Chooser dialogs. */
+  readonly ui: UiApi;
   /** Zotero library access. Requires the `zotero` capability. */
   readonly zotero: ZoteroApi;
   /** Obsidian vault access. Requires the `obsidian` capability. */
@@ -157,8 +228,24 @@ export interface EditorApi {
   replaceRange(from: number, to: number, text: string): void;
   /** Current selection as byte offsets. */
   getSelection(): { from: number; to: number };
+  /**
+   * Replace the selection with `text`, or insert at the cursor when nothing is
+   * selected.
+   *
+   * Equivalent to `replaceRange(...getSelection(), text)`, which is what every
+   * plugin that inserts anything would otherwise write.
+   */
+  insertAtCursor(text: string): void;
   /** Which rendering mode is active. Does not affect the buffer contents. */
   getMode(): "source" | "visual";
+  /**
+   * Select a range and scroll it into view.
+   *
+   * For navigating to something the plugin found — an outline entry, a search
+   * result, a diagnostic. Offsets address the raw source in both modes, because
+   * there is only one buffer (ADR-0004).
+   */
+  revealRange(from: number, to: number): void;
 }
 
 /**
@@ -184,6 +271,18 @@ export interface FileSystemApi {
    * @throws {CapabilityError} if the path is outside the granted capabilities.
    */
   writeText(path: string, contents: string): Promise<void>;
+
+  /**
+   * Write a file as bytes, creating the folders above it.
+   *
+   * For what is not text: an image, a generated figure. Same capability check
+   * as {@link FileSystemApi.writeText} — the bytes make no difference to
+   * *where* a plugin may write.
+   *
+   * @throws {CapabilityError} if the path is outside the granted capabilities.
+   * @since 0.3.0
+   */
+  writeBytes(path: string, contents: Uint8Array): Promise<void>;
 
   /** List a directory. */
   list(path: string): Promise<string[]>;
@@ -233,7 +332,10 @@ export interface WorkspaceApi {
    * The factory is handed a plain `HTMLElement` to render into — deliberately,
    * so that the plugin contract does not depend on the shell's framework.
    */
-  registerView(type: string, factory: (container: HTMLElement) => ViewHandle): void;
+  registerView(
+    type: string,
+    factory: (container: HTMLElement) => ViewHandle,
+  ): void;
 }
 
 /** Handle returned by a view factory. @since 0.1.0 */
@@ -271,9 +373,9 @@ export interface CompileDiagnostic {
   /** The engine's own message text. */
   message: string;
   /** Source file, when the log attributes one. */
-  file?: string;
+  file?: string | undefined;
   /** 1-based line number, when the log attributes one. */
-  line?: number;
+  line?: number | undefined;
 }
 
 /**
@@ -287,24 +389,212 @@ export interface CompileDiagnostic {
  * @since 0.1.0
  */
 export interface ZoteroApi {
-  /** Which source is currently serving queries, and whether it is live. */
-  readonly source: {
-    kind: "better-bibtex" | "local-api" | "exported-bib" | "sqlite" | "none";
-    isLive: boolean;
-  };
-  /** Search the library. */
-  search(query: string): Promise<ZoteroItem[]>;
-  /** Ensure an item exists in the project `.bib` and return its citation key. */
-  ensureInBibliography(itemKey: string): Promise<string>;
+  /**
+   * Which source is answering, and whether it is current.
+   *
+   * Asynchronous because connecting is deferred until something actually asks:
+   * probing a closed Zotero costs a connection timeout, and paying it during
+   * startup would slow launch for every user including those who never open the
+   * citation picker.
+   */
+  status(): Promise<ZoteroStatus>;
+
+  /** Search the library. An empty query lists recent items. */
+  search(query: string, limit?: number): Promise<ZoteroItem[]>;
+
+  /**
+   * Every passage a reader marked in an item.
+   *
+   * Note that not all of them are quotable — see
+   * {@link ZoteroAnnotation.isQuotable}.
+   */
+  listAnnotations(itemKey: string): Promise<ZoteroAnnotation[]>;
+
+  /**
+   * Ensure an item exists in the project `.bib` and return its citation key.
+   *
+   * The project `.bib` is the compile-time source of truth, so this copies the
+   * entry in rather than pointing at the library: a document has to build on a
+   * co-author's machine that has never had Zotero installed.
+   *
+   * Calling this twice for the same item does not append a duplicate.
+   */
+  ensureInBibliography(
+    itemKey: string,
+    bibliography?: string,
+  ): Promise<CitationKey>;
+
+  /** Re-probe the sources, e.g. after the user starts Zotero. */
+  refresh(): Promise<void>;
+}
+
+/**
+ * Which source is serving library queries.
+ *
+ * Exposed deliberately: silently serving results from a stale exported `.bib`
+ * while presenting them as the live library would be a correctness problem in a
+ * citation tool.
+ *
+ * @since 0.1.0
+ */
+export interface ZoteroStatus {
+  kind: "better-bibtex" | "local-api" | "exported-bib" | "sqlite" | "none";
+  /** Message key naming the source, for display. */
+  sourceKey: string;
+  /** Whether the source reflects the library as it is right now. */
+  isLive: boolean;
+  /**
+   * Whether citation keys come from a source that owns them.
+   *
+   * `false` means keys are generated locally and **may not match** what a
+   * collaborator's Better BibTeX produces. Worth surfacing rather than
+   * discovering later in someone else's document.
+   */
+  keysAreAuthoritative: boolean;
+  /** The data directory in use, when reading offline. */
+  dataDir: string | null;
+  /** Diagnostic text when no source is available. */
+  detail: string | null;
 }
 
 /** A Zotero library item. @since 0.1.0 */
 export interface ZoteroItem {
   key: string;
   citationKey: string | null;
+  /** Zotero's item type, e.g. `journalArticle`. */
+  itemType: string;
   title: string;
   creators: string[];
   year: number | null;
+  /** Journal, proceedings or book title, when the item has one. */
+  container: string | null;
+}
+
+/**
+ * A passage a reader marked in an attachment.
+ *
+ * Zotero anchors these to an attachment and the attachment to an item; that
+ * indirection is resolved before it reaches a plugin, so `itemKey` is the
+ * citable work rather than the PDF.
+ *
+ * @since 0.1.0
+ */
+export interface ZoteroAnnotation {
+  key: string;
+  /** The citable item this belongs to. */
+  itemKey: string;
+  kind: "highlight" | "note" | "image" | "ink" | "underline" | "other";
+  /** Message key naming the kind. */
+  kindKey: string;
+  /** The marked text. Empty for kinds that mark a region rather than text. */
+  text: string;
+  /** The reader's own comment, which is not the source's words. */
+  comment: string | null;
+  /**
+   * Highlight colour as Zotero records it, e.g. `#ffd400`.
+   *
+   * Readers encode meaning in colour — one for claims, another for method — so
+   * a picker that discards it throws away the only organisation many libraries
+   * have.
+   */
+  color: string | null;
+  /**
+   * The page label as the document assigns it, which is not always a number.
+   *
+   * `null` when the attachment has no pagination, rather than the placeholder
+   * Zotero stores — citing page "-" is worse than citing no page.
+   */
+  pageLabel: string | null;
+  /**
+   * Whether this marks text worth offering as a quotation.
+   *
+   * `false` for ink and image marks, which cover a region and have no text, and
+   * for notes, which are the reader's words rather than the source's — quoting
+   * one as the source would misattribute it.
+   */
+  isQuotable: boolean;
+}
+
+/** The outcome of ensuring an item is citable from this project. @since 0.1.0 */
+export interface CitationKey {
+  /** The key to use in `\cite{...}`. */
+  key: string;
+  /** Whether this call appended the entry. */
+  added: boolean;
+  /** The bibliography file, relative to the project root. */
+  bibliography: string;
+  /** Whether the key came from a source that owns citation keys. */
+  isAuthoritative: boolean;
+}
+
+/**
+ * Chooser dialogs.
+ *
+ * A plugin could build one out of raw DOM — it has the access — but then every
+ * plugin's picker would look and behave differently, and none of them would
+ * follow the theme or the keyboard conventions. This is the shared one.
+ *
+ * @since 0.1.0
+ */
+export interface UiApi {
+  /**
+   * Present a list and resolve with the chosen value, or `null` if dismissed.
+   *
+   * @typeParam T - the value carried by each row, returned as chosen.
+   */
+  pick<T>(options: PickerOptions<T>): Promise<T | null>;
+}
+
+/** Configuration for {@link UiApi.pick}. @since 0.1.0 */
+export interface PickerOptions<T> {
+  /** Message key for the dialog title. */
+  titleKey: string;
+  /** Message key for the filter field's placeholder. */
+  placeholderKey?: string | undefined;
+  /** Message key shown when there is nothing to choose from. */
+  emptyKey?: string | undefined;
+  /**
+   * The rows.
+   *
+   * A function is called on every keystroke and is how a picker searches a
+   * library too large to send at once; an array is filtered locally.
+   */
+  items: PickerItem<T>[] | ((query: string) => Promise<PickerItem<T>[]>);
+}
+
+/**
+ * One row in a picker.
+ *
+ * The text fields here are **data, not interface copy** — a paper's title, an
+ * author's name, a highlighted sentence — so they are strings rather than
+ * message keys. This is the one place that distinction matters: a title must not
+ * be translated, and there is no catalogue that could contain it.
+ *
+ * @since 0.1.0
+ */
+export interface PickerItem<T> {
+  /** Returned by {@link UiApi.pick} when this row is chosen. */
+  value: T;
+  /** Primary text. */
+  label: string;
+  /**
+   * Secondary text, shown beside the label.
+   *
+   * Written `| undefined` rather than plain optional so that a caller under
+   * `exactOptionalPropertyTypes` can pass a value that may be absent — which is
+   * what building a row from library data always looks like.
+   */
+  description?: string | undefined;
+  /** Longer text, shown beneath. */
+  detail?: string | undefined;
+  /**
+   * A colour to accent the row with, e.g. a highlight's own colour.
+   *
+   * The one sanctioned exception to "no literal colours" (ADR-0010): this is a
+   * value that came out of the user's data, not a design decision, and no theme
+   * token could represent it.
+   */
+  accentColor?: string | undefined;
 }
 
 /**
@@ -321,6 +611,37 @@ export interface ObsidianApi {
   translate(notePath: string): Promise<string>;
 }
 
+/**
+ * A text format a plugin teaches the editor about.
+ *
+ * # Why the language is loaded rather than given
+ *
+ * `load` is called the first time a file of this format is opened, and not
+ * before. A plugin that handed over its language at registration would have
+ * that language in the startup bundle for every user who never opens the
+ * format — which is the whole cost the plugin system exists to avoid, paid at
+ * the moment a plugin is installed rather than the moment it is used.
+ *
+ * @since 0.3.0
+ */
+export interface FormatContribution {
+  /** Stable identifier, e.g. `markdown`. Unique across plugins. */
+  id: string;
+  /** Extensions that name it, without the dot. Matched case-insensitively. */
+  extensions: string[];
+  /** Message key for the format's name, as settings lists it. */
+  nameKey: string;
+  /**
+   * Load the language support, once, when it is first needed.
+   *
+   * Returns a CodeMirror `Extension`. Typed as `unknown` here for the same
+   * reason {@link EditorExtension} is: the API does not make CodeMirror part
+   * of its own public contract, so that a later editor core is a change to
+   * yaz rather than a break for every plugin.
+   */
+  load(): Promise<unknown>;
+}
+
 /** An editor extension: a completion source, decoration, or diagnostic provider. @since 0.1.0 */
 export interface EditorExtension {
   kind: "completion" | "decoration" | "diagnostic";
@@ -328,7 +649,106 @@ export interface EditorExtension {
   provider: unknown;
 }
 
-/** A settings tab contributed by a plugin. @since 0.1.0 */
+/**
+ * What a package's commands and environments mean.
+ *
+ * The shapes are deliberately a small closed vocabulary rather than a callback
+ * that draws: yaz owns the drawing, and a rendering it does not recognise is
+ * ignored rather than trusted. That is what keeps one plugin from making the
+ * preview slow or wrong for the whole document.
+ *
+ * \since 0.3.0
+ */
+export interface LatexVocabulary {
+  /** Commands, by name without the backslash. */
+  commands?: Record<string, LatexRendering>;
+  /** Environments, by the name in `\begin{...}`. */
+  environments?: Record<string, LatexEnvironmentRendering>;
+}
+
+/** How one command is drawn. \since 0.3.0 */
+export type LatexRendering =
+  /** As the number or title of what it names. */
+  | { kind: "reference" }
+  /** As the bibliography's short form. */
+  | { kind: "citation" }
+  /** As the glossary entry it names. */
+  | { kind: "glossary"; plural?: boolean; capital?: boolean; long?: boolean }
+  /** Wrapped in the document language's quotation marks. */
+  | { kind: "quotation" }
+  /** With its letters spaced out. */
+  | { kind: "tracking" }
+  /** Styled, with the markup hidden. */
+  | { kind: "inline"; className: string }
+  /** Hidden: it produces no words. */
+  | { kind: "silent" }
+  /** Hidden, along with the arguments it takes. */
+  | { kind: "setting"; braces: number }
+  /** Standing in for a generated list. */
+  | { kind: "listing"; listing: LatexListing; braces?: number }
+  /** Ending the page. */
+  | { kind: "pagebreak" };
+
+/** The generated lists a command can stand for. \since 0.3.0 */
+export type LatexListing =
+  "contents" | "figures" | "tables" | "glossary" | "bibliography" | "index";
+
+/** How one environment is drawn. \since 0.3.0 */
+export type LatexEnvironmentRendering =
+  /** Arrangement only: its `\begin` and `\end` lines are hidden. */
+  | { kind: "structural" }
+  /** A list, whose items get markers. */
+  | { kind: "list" }
+  /** A table, drawn from its source. `columnArguments` come before the spec. */
+  | { kind: "table"; columnArguments: number }
+  /** Mathematics, typeset whole. */
+  | { kind: "math" }
+  /** A float, which carries a number and a caption. */
+  | { kind: "float"; counts: "figure" | "table" }
+  /** Turns the paper it sits on. */
+  | { kind: "turned" }
+  /** Sets its contents apart as quoted. */
+  | { kind: "quote" }
+  /**
+   * Set exactly as written, markup and all. \since 0.3.0
+   *
+   * The one environment where *not* rendering is the rendering: inside
+   * `lstlisting` a backslash is a backslash, and a preview that drew
+   * `	extbf` as bold there would show something the compiler will not print.
+   */
+  | { kind: "verbatim" };
+
+/**
+ * A tool an agent can call. \since 0.3.0
+ *
+ * The name must match one in the manifest's `provides.tools`.
+ */
+export interface ToolContribution {
+  /** Unqualified — `search`, not `zotero.search`. yaz namespaces it. */
+  name: string;
+  /**
+   * Message key for what the tool does.
+   *
+   * Read by a person deciding whether to switch MCP on, and by the agent
+   * deciding whether to call it — so it is a sentence, not a label.
+   */
+  descriptionKey: string;
+  /**
+   * JSON Schema for the arguments, as an agent will be shown it.
+   *
+   * Omitted means a tool that takes none.
+   */
+  schema?: Record<string, unknown>;
+  /**
+   * Do the thing, and return what the agent should see.
+   *
+   * Throwing is how a tool reports failure: the message reaches the agent as
+   * an error rather than as a result that happens to say "error".
+   */
+  run(argumentsGiven: Record<string, unknown>): Promise<unknown> | unknown;
+}
+
+/** A settings tab contributed by a plugin. \since 0.1.0 */
 export interface SettingsTab {
   /** Message key for the tab title. */
   titleKey: string;

@@ -16,7 +16,7 @@ do not silently deviate.
 The load-bearing ones:
 
 - **0004** — There is ONE CodeMirror buffer holding the raw `.tex`. Visual mode
-  is *decorations over that buffer*, never a second document model. Do not
+  is _decorations over that buffer_, never a second document model. Do not
   introduce ProseMirror or a LaTeX↔document converter.
 - **0005** — Three tiers: core / core plugins / community plugins. Core plugins
   (`plugins/`) use only the public `@yaz/api`. **Never add a privileged back door
@@ -29,6 +29,13 @@ The load-bearing ones:
   equivalent. No ARM64EC.
 - **0015** — Performance budgets fail the build. Keystroke latency (<16 ms p99)
   is the one that matters most; **do not put IPC on the keystroke path.**
+- **0023** — The preview knows **LaTeX itself** (kernel + standard classes) and
+  nothing else. Anything a `\usepackage` adds goes in `yaz-latex-packages`, not
+  in `vocabulary.ts`. The test is "does `\documentclass{article}` alone define
+  it", never "does a real thesis use it".
+- **0024** — The page view's sheet is a **fixed box painted behind the text**,
+  never built from the content. Do not go back to counting rows to decide where
+  a page ends: a page made of content can stretch, and four attempts proved it.
 
 ## Environment (this machine)
 
@@ -48,7 +55,7 @@ The load-bearing ones:
 crates/     Rust workspace. yaz-app is THIN — wiring only, no domain logic.
 apps/       desktop/ = Svelte frontend
 packages/   api/ = @yaz/api, the public plugin contract (MIT, semver-strict)
-plugins/    Core plugins — structurally identical to community plugins
+plugins/    Submodules: texyaz/yaz-{zotero,obsidian,formats,learn} (ADR-0021)
 docs/       VitePress site + ADRs
 locales/    Message catalogues (root-level: both Rust and TS consume them)
 themes/     yaz-light, yaz-dark
@@ -67,6 +74,8 @@ themes/     yaz-light, yaz-dark
 ## Commands
 
 ```bash
+git submodule update --init --recursive   # the bundled plugins; the Rust
+                                          # build fails without them
 pnpm install          # workspace deps
 pnpm dev              # run the app (dev mode: no updater, no live registry)
 pnpm app:build        # release binary + installer

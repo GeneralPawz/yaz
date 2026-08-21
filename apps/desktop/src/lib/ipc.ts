@@ -11,10 +11,16 @@ import { invoke } from "@tauri-apps/api/core";
 
 /** A file inside the open project. */
 export interface ProjectFile {
-  /** Path relative to the project root, using forward slashes. */
   relativePath: string;
-  /** True for the file the compiler is pointed at. */
   isEntry: boolean;
+  /**
+   * What sort of file it is, as the scan classified it.
+   *
+   * Sent rather than worked out here so that the extension lists live in one
+   * place — the walk already has the name in hand, and a second list in the
+   * frontend would be a second list to keep right.
+   */
+  kind: "tex" | "bib" | "style" | "pdf" | "image" | "build" | "other";
 }
 
 /** The open project, as the backend sees it. */
@@ -41,6 +47,8 @@ export interface CompileResult {
   succeeded: boolean;
   /** Absolute path to the PDF, when one was produced. */
   pdfPath: string | null;
+  /** Absolute path to the SyncTeX database, which inverse search reads. */
+  synctexPath: string | null;
   diagnostics: CompileDiagnostic[];
   /** Which engine ran, e.g. `tectonic` or `system:pdflatex`. */
   engineId: string;
@@ -58,7 +66,11 @@ export function readFile(root: string, relativePath: string): Promise<string> {
 }
 
 /** Write a project-relative file. */
-export function writeFile(root: string, relativePath: string, contents: string): Promise<void> {
+export function writeFile(
+  root: string,
+  relativePath: string,
+  contents: string,
+): Promise<void> {
   return invoke<void>("write_file", { root, relativePath, contents });
 }
 
@@ -82,6 +94,8 @@ export interface EngineInfo {
 export interface ProjectSettings {
   engineId: string | null;
   entry: string | null;
+  /** The stored pane arrangement, or null for a project not yet arranged. */
+  workspace: string | null;
 }
 
 /**
@@ -100,7 +114,10 @@ export function getProjectSettings(root: string): Promise<ProjectSettings> {
 }
 
 /** Persist the engine choice, writing `yaz.toml` into the project. */
-export function setProjectEngine(root: string, engineId: string): Promise<void> {
+export function setProjectEngine(
+  root: string,
+  engineId: string,
+): Promise<void> {
   return invoke<void>("set_project_engine", { root, engineId });
 }
 
@@ -116,7 +133,557 @@ export function reportReady(): Promise<number> {
 }
 
 /** Read a produced artefact as bytes — used to hand the PDF to pdf.js. */
+/** Where in the source a point in the PDF came from. */
+export interface SourceLocation {
+  /** Project-relative when `inProject`, absolute otherwise. */
+  path: string;
+  inProject: boolean;
+  /** One-based. */
+  line: number;
+}
+
+/**
+ * Inverse search: which source line produced a point in the PDF.
+ *
+ * `x` and `y` are PDF points from the top left of the page. Resolves to `null`
+ * when the database has nothing to say, which is what a click on a blank part
+ * of a page is.
+ */
+export async function locateInSource(
+  root: string,
+  synctexPath: string,
+  page: number,
+  x: number,
+  y: number,
+): Promise<SourceLocation | null> {
+  return invoke<SourceLocation | null>("locate_in_source", {
+    root,
+    synctexPath,
+    page,
+    x,
+    y,
+  });
+}
+
+/**
+ * Read a project-relative file as bytes.
+ *
+ * For the things that are not text — a PDF the author wants to look at. Scoped
+ * to the project in the Rust process, which is where the boundary is
+ * (ADR-0006): composing a path here and handing it to an unscoped reader would
+ * put the check in the webview, where it is not a check.
+ */
+export async function readProjectBytes(
+  root: string,
+  relativePath: string,
+): Promise<Uint8Array> {
+  const bytes = await invoke<number[]>("read_project_bytes", {
+    root,
+    relativePath,
+  });
+  return new Uint8Array(bytes);
+}
+
+/** Write a project-relative file as bytes, creating its folders. */
+export async function writeProjectBytes(
+  root: string,
+  relativePath: string,
+  contents: Uint8Array,
+): Promise<void> {
+  return invoke("write_project_bytes", {
+    root,
+    relativePath,
+    // Tauri's IPC carries JSON, so the bytes cross as numbers. Fine for the
+    // images this exists for; a video of any length would want a stream.
+    contents: Array.from(contents),
+  });
+}
+
 export async function readArtefact(path: string): Promise<Uint8Array> {
   const bytes = await invoke<number[]>("read_artefact", { path });
   return new Uint8Array(bytes);
+}
+
+// ---------------------------------------------------------------------------
+// The brokered plugin surface.
+//
+// Every one of these takes a `pluginId` and is refused by the capability broker
+// in the Rust process before it does any work (ADR-0006). They are the only way
+// a plugin reaches Zotero — there is no unbrokered path, which is what makes the
+// Zotero bridge a genuine test of the plugin API rather than a privileged
+// insider (ADR-0005).
+// ---------------------------------------------------------------------------
+
+/** Which Zotero source is answering, and whether it is current. */
+export interface ZoteroStatus {
+  source: "better-bibtex" | "local-api" | "exported-bib" | "sqlite" | "none";
+  sourceKey: string;
+  isLive: boolean;
+  keysAreAuthoritative: boolean;
+  dataDir: string | null;
+  detail: string | null;
+  /**
+   * What probing the live source found, whatever the outcome.
+   *
+   * Separate from `source` because "Zotero is running but its local API is
+   * switched off" is fixable in half a minute, and invisible if the user is
+   * only told the library is being read offline.
+   */
+  liveStatusKey: string;
+  /** Whether a live source was tried and then demoted after failing. */
+  wasDemoted: boolean;
+  /**
+   * Whether Zotero is running and answering.
+   *
+   * Separate from `isLive`: queries read a copy of the database, because that
+   * is far faster and covers group libraries too. So the source is offline
+   * while the data is current, and this is what says so.
+   */
+  zoteroRunning: boolean;
+  /** Libraries the live API reported — personal plus groups. */
+  libraryCount: number;
+}
+
+/** A library item. */
+export interface ZoteroItem {
+  key: string;
+  citationKey: string | null;
+  itemType: string;
+  title: string;
+  creators: string[];
+  year: number | null;
+  container: string | null;
+}
+
+/** A passage a reader marked in an attachment. */
+export interface ZoteroAnnotation {
+  key: string;
+  itemKey: string;
+  kind: "highlight" | "note" | "image" | "ink" | "underline" | "other";
+  kindKey: string;
+  text: string;
+  comment: string | null;
+  color: string | null;
+  /** Null when the attachment has no pagination. */
+  pageLabel: string | null;
+  isQuotable: boolean;
+}
+
+/** The outcome of ensuring an item is citable from this project. */
+export interface CitationKey {
+  key: string;
+  added: boolean;
+  bibliography: string;
+  isAuthoritative: boolean;
+}
+
+/** Which source is serving library queries. */
+export function zoteroStatus(pluginId: string): Promise<ZoteroStatus> {
+  return invoke<ZoteroStatus>("plugin_zotero_status", { pluginId });
+}
+
+/** Search the library. An empty query lists recent items. */
+export function zoteroSearch(
+  pluginId: string,
+  query: string,
+  limit = 50,
+): Promise<ZoteroItem[]> {
+  return invoke<ZoteroItem[]>("plugin_zotero_search", {
+    pluginId,
+    query,
+    limit,
+  });
+}
+
+/** Every passage a reader marked in an item. */
+export function zoteroAnnotations(
+  pluginId: string,
+  itemKey: string,
+): Promise<ZoteroAnnotation[]> {
+  return invoke<ZoteroAnnotation[]>("plugin_zotero_annotations", {
+    pluginId,
+    itemKey,
+  });
+}
+
+/** Ensure an item is in the project bibliography and return its citation key. */
+export function zoteroEnsureInBibliography(
+  pluginId: string,
+  root: string,
+  itemKey: string,
+  bibliography?: string,
+): Promise<CitationKey> {
+  return invoke<CitationKey>("plugin_zotero_ensure_in_bibliography", {
+    pluginId,
+    root,
+    itemKey,
+    bibliography: bibliography ?? null,
+  });
+}
+
+/** Re-probe the Zotero sources, e.g. after the user starts Zotero. */
+export function zoteroReconnect(pluginId: string): Promise<void> {
+  return invoke<void>("plugin_zotero_reconnect", { pluginId });
+}
+
+/** A bundled core plugin, as the Rust side reports it. */
+export interface CorePlugin {
+  id: string;
+  name: string;
+  description: string;
+  /** Capability identifiers its manifest declares. */
+  capabilities: string[];
+  /**
+   * Tool names its manifest declares under `provides.tools`.
+   *
+   * Sent so the runtime can refuse a registration the manifest never mentioned
+   * at the call site, where a plugin author will see it. Rust refuses it again
+   * on the way to the server; this is the friendly copy, not the enforcing one
+   * (ADR-0022).
+   */
+  tools: string[];
+  /** Where its updates come from, or `null` if it does not take any. */
+  updates: PluginUpdates | null;
+  /** What it says it is, so an update can be compared against it. */
+  version: string;
+}
+
+/** A plugin's update arrangements, as its manifest declares them. */
+export interface PluginUpdates {
+  /** `github`, or another source somebody has written. */
+  source: string;
+  /** `owner/name` for GitHub. */
+  repository: string;
+  /** `stable` or `prerelease`. */
+  channel: string;
+}
+
+/** One tool, on its way to the MCP server. */
+export interface OutgoingTool {
+  pluginId: string;
+  name: string;
+  /** Already resolved against the active locale. */
+  description: string;
+  schema: Record<string, unknown> | null;
+}
+
+/** The MCP server's state, as Rust reports it. */
+export interface McpStatus {
+  running: boolean;
+  /** `127.0.0.1:PORT`, once it is listening. */
+  address: string | null;
+  /** What a client must send. Shown so it can be pasted into a config. */
+  token: string | null;
+  /** How many tools an agent can reach right now. */
+  tools: number;
+}
+
+/** Start answering MCP, on a port or on whichever one is free. */
+export function mcpStart(port?: number): Promise<McpStatus> {
+  return invoke<McpStatus>("mcp_start", { port: port ?? null });
+}
+
+/** Stop answering. */
+export function mcpStop(): Promise<McpStatus> {
+  return invoke<McpStatus>("mcp_stop");
+}
+
+/** Whether it is answering, and where. */
+export function mcpStatus(): Promise<McpStatus> {
+  return invoke<McpStatus>("mcp_status");
+}
+
+/**
+ * Replace the tools a plugin provides.
+ *
+ * Rust checks each against the plugin's manifest and drops what it did not
+ * declare, so this is a request rather than an instruction.
+ */
+export function mcpSetPluginTools(
+  pluginId: string,
+  tools: OutgoingTool[],
+): Promise<McpStatus> {
+  return invoke<McpStatus>("mcp_set_plugin_tools", { pluginId, tools });
+}
+
+/** Answer a call that came in over `mcp://invoke`. */
+export function mcpToolResult(
+  id: string,
+  result: unknown,
+  error: string | null,
+): Promise<void> {
+  return invoke<void>("mcp_tool_result", { id, result, error });
+}
+
+/**
+ * The newest version a plugin's own repository offers.
+ *
+ * `null` covers "takes no updates", "no releases" and "only drafts" — three
+ * situations a person reads the same way.
+ */
+export function pluginLatestRelease(pluginId: string): Promise<string | null> {
+  return invoke<string | null>("plugin_latest_release", { pluginId });
+}
+
+/** The directory a plugin is being developed in, if one is set. */
+export function getDevelopmentPlugin(): Promise<string | null> {
+  return invoke<string | null>("get_development_plugin");
+}
+
+/**
+ * Point yaz at a directory a plugin is being written in, or stop.
+ *
+ * Rust reads and parses the manifest before storing the path, so a directory
+ * that is not a plugin is refused while the person is still looking at the
+ * dialog.
+ */
+export function setDevelopmentPlugin(
+  path: string | null,
+): Promise<string | null> {
+  return invoke<string | null>("set_development_plugin", { path });
+}
+
+/** Tell an agent which project it is looking at. */
+export function mcpSetProject(root: string | null): Promise<void> {
+  return invoke<void>("mcp_set_project", { root });
+}
+
+/** Withdraw a plugin's tools, because it was switched off or reloaded. */
+export function mcpDropPluginTools(pluginId: string): Promise<McpStatus> {
+  return invoke<McpStatus>("mcp_drop_plugin_tools", { pluginId });
+}
+
+/**
+ * Load the bundled core plugins and report what was granted.
+ *
+ * Note what is missing: there is no way to *request* a capability from here.
+ * The Rust side reads each plugin's manifest and grants from that, because a
+ * capability list supplied by the webview would make the broker decorative.
+ */
+export function pluginList(): Promise<CorePlugin[]> {
+  return invoke<CorePlugin[]>("plugin_list");
+}
+
+/** Rescope plugin filesystem capabilities to the open project. */
+export function pluginSetProject(root: string | null): Promise<void> {
+  return invoke<void>("plugin_set_project", { root });
+}
+
+/**
+ * Point the Zotero bridge at a specific data directory, or `null` to rediscover.
+ *
+ * Needed because a machine can hold several Zotero profiles pointing at
+ * different libraries, and picking the wrong one does not fail — it succeeds
+ * against an empty database and looks like "Zotero isn't set up".
+ */
+export function zoteroSetDataDir(
+  pluginId: string,
+  path: string | null,
+): Promise<ZoteroStatus> {
+  return invoke<ZoteroStatus>("plugin_set_zotero_data_dir", { pluginId, path });
+}
+
+/** Persist the pane arrangement for a project. */
+export function setProjectWorkspace(
+  root: string,
+  workspace: string,
+): Promise<void> {
+  return invoke<void>("set_project_workspace", { root, workspace });
+}
+
+/** A project opened before. */
+export interface RecentProject {
+  /** Folder name, which is what a menu shows. */
+  name: string;
+  /** Full path, used to reopen and as the tooltip. */
+  root: string;
+}
+
+/**
+ * Projects opened before, most recent first.
+ *
+ * Folders that have since gone are filtered out by the backend: a menu entry
+ * that always fails is worse than one that is not there.
+ */
+export function recentProjects(): Promise<RecentProject[]> {
+  return invoke<RecentProject[]>("recent_projects");
+}
+
+// ---------------------------------------------------------------------------
+// Version control.
+//
+// Switching it off is a settings line, never a deletion: there is deliberately
+// no command that removes a repository. See crates/yaz-app/src/vcs_commands.rs.
+// ---------------------------------------------------------------------------
+
+/** One recorded version. */
+export interface Commit {
+  id: string;
+  shortId: string;
+  summary: string;
+  author: string;
+  /** ISO-8601, formatted by the backend. */
+  timestamp: string;
+}
+
+/** A version-control backend the user could choose. */
+export interface VcsBackend {
+  id: string;
+  labelKey: string;
+  available: boolean;
+}
+
+/** Whether a project is being recorded, and the state of its history. */
+export interface VcsStatus {
+  /** Whether yaz is recording versions for this project. */
+  enabled: boolean;
+  backend: string;
+  /** Whether that backend works on this machine. */
+  available: boolean;
+  /** Whether the project has a history at all. */
+  initialised: boolean;
+  /** Whether anything differs from the last recorded version. */
+  dirty: boolean;
+  head: Commit | null;
+}
+
+/** Every backend, whether or not it works here. */
+export function vcsBackends(): Promise<VcsBackend[]> {
+  return invoke<VcsBackend[]>("vcs_backends");
+}
+
+/** Whether a project is being recorded. */
+export function vcsStatus(root: string): Promise<VcsStatus> {
+  return invoke<VcsStatus>("vcs_status", { root });
+}
+
+/** Start recording versions, creating the repository if there is none. */
+export function vcsEnable(root: string, backend: string): Promise<VcsStatus> {
+  return invoke<VcsStatus>("vcs_enable", { root, backend });
+}
+
+/** Stop recording. Leaves the repository and every version untouched. */
+export function vcsDisable(root: string): Promise<VcsStatus> {
+  return invoke<VcsStatus>("vcs_disable", { root });
+}
+
+/**
+ * Record a version.
+ *
+ * Omit `message` to have one generated from what changed. A message the author
+ * wrote always wins; the backend never overrules it.
+ */
+export function vcsCommit(
+  root: string,
+  message?: string,
+): Promise<Commit | null> {
+  return invoke<Commit | null>("vcs_commit", {
+    root,
+    message: message ?? null,
+  });
+}
+
+/** Recorded versions, most recent first. */
+export function vcsHistory(root: string): Promise<Commit[]> {
+  return invoke<Commit[]>("vcs_history", { root });
+}
+
+/** Put the project back to a recorded version. */
+export function vcsRestore(root: string, commit: string): Promise<void> {
+  return invoke<void>("vcs_restore", { root, commit });
+}
+
+// ---------------------------------------------------------------------------
+// Appearance: themes, colour mode, interface language.
+
+/** A theme that can be chosen. */
+export interface ThemeInfo {
+  id: string;
+  /** The author's own name for it, so it is data rather than a message key. */
+  name: string;
+  author: string;
+  version: string;
+  description: string;
+  /** Whether it ships with the application. */
+  bundled: boolean;
+}
+
+/** What the interface looks like and speaks. */
+export interface Appearance {
+  theme: string;
+  colourMode: "system" | "light" | "dark";
+  interfaceLocale: string;
+}
+
+export async function getAppearance(): Promise<Appearance> {
+  return invoke<Appearance>("get_appearance");
+}
+
+export async function setAppearance(appearance: Appearance): Promise<void> {
+  return invoke("set_appearance", { appearance });
+}
+
+export async function listThemes(): Promise<ThemeInfo[]> {
+  return invoke<ThemeInfo[]>("list_themes");
+}
+
+/** The stylesheet of an installed theme; empty for the bundled one. */
+export async function themeStylesheet(id: string): Promise<string> {
+  return invoke<string>("theme_stylesheet", { id });
+}
+
+/** Write a theme bundle into a folder. Resolves to where it was written. */
+export async function exportTheme(
+  directory: string,
+  manifest: string,
+  css: string,
+): Promise<string> {
+  return invoke<string>("export_theme", { directory, manifest, css });
+}
+
+/** Write a theme bundle into the themes folder, ready to be chosen. */
+export async function saveTheme(
+  manifest: string,
+  css: string,
+): Promise<ThemeInfo> {
+  return invoke<ThemeInfo>("save_theme", { manifest, css });
+}
+
+/** Copy a theme bundle into the themes folder. */
+export async function installTheme(source: string): Promise<ThemeInfo> {
+  return invoke<ThemeInfo>("install_theme", { source });
+}
+
+// ---------------------------------------------------------------------------
+// The keyboard.
+
+/** What the user changed about the shortcuts. */
+export interface KeyPreferencesDto {
+  disabledSuites: string[];
+  overrides: Record<string, string>;
+}
+
+/** Which optional text formats have their own support switched off. */
+export interface FormatPreferencesDto {
+  disabled: string[];
+}
+
+export async function getFormatPreferences(): Promise<FormatPreferencesDto> {
+  return invoke<FormatPreferencesDto>("get_format_preferences");
+}
+
+export async function setFormatPreferences(
+  preferences: FormatPreferencesDto,
+): Promise<void> {
+  return invoke("set_format_preferences", { preferences });
+}
+
+export async function getKeyPreferences(): Promise<KeyPreferencesDto> {
+  return invoke<KeyPreferencesDto>("get_key_preferences");
+}
+
+export async function setKeyPreferences(
+  preferences: KeyPreferencesDto,
+): Promise<void> {
+  return invoke("set_key_preferences", { preferences });
 }

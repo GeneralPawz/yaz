@@ -18,6 +18,7 @@
 
 pub mod diagnostics;
 pub mod engine;
+pub mod synctex;
 pub mod system_engine;
 
 #[cfg(feature = "tectonic-engine")]

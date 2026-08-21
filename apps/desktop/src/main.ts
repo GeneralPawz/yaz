@@ -5,8 +5,15 @@ import { mount } from "svelte";
 // a plugin can style its own UI in terms of the tokens and inherit whatever
 // theme is active.
 import "../../../themes/tokens.css";
-import "../../../themes/yaz-dark/theme.css";
+// The bundled theme carries both modes; which one shows is `data-yaz-mode` on
+// the root, set from the stored setting before the first paint.
+import "../../../themes/yaz/theme.css";
 import "./app.css";
+
+// KaTeX ships its own stylesheet and fonts, which the rich-text view needs in
+// order to typeset mathematics (ADR-0004). Bundled, never fetched: the app has
+// to work with no network at all.
+import "katex/dist/katex.min.css";
 
 import App from "./App.svelte";
 

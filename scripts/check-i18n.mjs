@@ -43,7 +43,12 @@ function* walk(dir, exts) {
   // A missing one is not an error.
   if (!existsSync(dir)) return;
   for (const name of readdirSync(dir)) {
-    if (name === "node_modules" || name === "target" || name === "dist" || name.startsWith(".")) {
+    if (
+      name === "node_modules" ||
+      name === "target" ||
+      name === "dist" ||
+      name.startsWith(".")
+    ) {
       continue;
     }
     const full = join(dir, name);
@@ -88,10 +93,37 @@ function referencedKeys() {
   };
 
   // Frontend and plugins: t("key") / t('key'), argument possibly wrapped.
+  //
+  // Tests are excluded. A test of message resolution has to ask for a key that
+  // is deliberately absent — that is how "a missing key renders as itself, not
+  // as an empty string" gets checked — and reading those as real call sites
+  // makes the one file that verifies this machinery the one file that fails it.
   for (const dir of ["apps", "plugins", "packages"]) {
     for (const file of walk(join(root, dir), [".ts", ".svelte"])) {
+      if (/\.(test|spec)\.[jt]s$/.test(file)) continue;
       const text = readFileSync(file, "utf8");
-      collect(file, text, new RegExp(String.raw`\bt\(\s*["'](${KEY})["']`, "gs"));
+      collect(
+        file,
+        text,
+        new RegExp(String.raw`\bt\(\s*["'](${KEY})["']`, "gs"),
+      );
+
+      // A plugin almost never calls `t` itself. It names keys declaratively —
+      // `nameKey` on a command, `titleKey` on a picker — and hands them to the
+      // API, which resolves them. Matching only `t(...)` therefore validated
+      // none of a plugin's user-facing strings, which is most of them.
+      collect(
+        file,
+        text,
+        new RegExp(String.raw`\b\w*[kK]ey:\s*["'](${KEY})["']`, "gs"),
+      );
+
+      // Notices take a key directly, for the same reason.
+      collect(
+        file,
+        text,
+        new RegExp(String.raw`\bnotices\.show\(\s*["'](${KEY})["']`, "gs"),
+      );
     }
   }
 
@@ -99,7 +131,11 @@ function referencedKeys() {
   // functions that exist precisely to return message keys.
   for (const file of walk(join(root, "crates"), [".rs"])) {
     const text = readFileSync(file, "utf8");
-    collect(file, text, new RegExp(String.raw`CommandError::new\(\s*"(${KEY})"`, "gs"));
+    collect(
+      file,
+      text,
+      new RegExp(String.raw`CommandError::new\(\s*"(${KEY})"`, "gs"),
+    );
     if (/fn\s+\w*_key\s*\(/.test(text)) {
       collect(file, text, new RegExp(String.raw`=>\s*"(${KEY})"`, "gs"));
     }
@@ -108,7 +144,55 @@ function referencedKeys() {
   return found;
 }
 
+/**
+ * Keys defined in a translation, for the parity check below.
+ *
+ * A translation missing a key is not fatal — the runtime falls back to en-US,
+ * which is why that fallback exists. It is reported, because a locale that has
+ * quietly stopped keeping up is invisible otherwise: the interface still reads
+ * correctly, in the wrong language, and only a speaker of that language would
+ * notice.
+ *
+ * A key a translation has and en-US does not *is* fatal. It is either a typo or
+ * a message that was removed, and both mean the translation is describing an
+ * interface that no longer exists.
+ */
+function translations() {
+  const dir = join(root, "locales");
+  const found = new Map();
+  for (const name of readdirSync(dir)) {
+    if (!name.endsWith(".ftl") || name === "en-US.ftl") continue;
+    const keys = new Set();
+    for (const line of readFileSync(join(dir, name), "utf8").split(/\r?\n/)) {
+      const match = /^([a-zA-Z][\w-]*)\s*=/.exec(line);
+      if (match) keys.add(match[1]);
+    }
+    found.set(name, keys);
+  }
+  return found;
+}
+
 const defined = definedKeys();
+
+let stale = false;
+for (const [name, keys] of translations()) {
+  const missing = [...defined].filter((key) => !keys.has(key));
+  const extra = [...keys].filter((key) => !defined.has(key));
+  if (missing.length > 0) {
+    console.warn(
+      `\n${name} is missing ${missing.length} of ${defined.size} keys; they fall back to en-US:`,
+    );
+    for (const key of missing) console.warn(`  ${key}`);
+  }
+  if (extra.length > 0) {
+    stale = true;
+    console.error(
+      `\n${name} defines ${extra.length} keys that en-US.ftl does not:`,
+    );
+    for (const key of extra) console.error(`  ${key}`);
+  }
+}
+
 const referenced = referencedKeys();
 
 const missing = [...referenced].filter(([key]) => !defined.has(key));
@@ -119,13 +203,24 @@ if (unused.length > 0) {
   for (const key of unused) console.warn(`  ${key}`);
 }
 
+if (stale) {
+  console.error(
+    "\nRemove them, or add them to locales/en-US.ftl if they are real messages.\n",
+  );
+  process.exit(1);
+}
+
 if (missing.length > 0) {
-  console.error(`\n${missing.length} message keys are used in code but missing from locales/en-US.ftl:\n`);
+  console.error(
+    `\n${missing.length} message keys are used in code but missing from locales/en-US.ftl:\n`,
+  );
   for (const [key, places] of missing) {
     console.error(`  ${key}`);
     for (const place of places) console.error(`      ${place}`);
   }
-  console.error("\nAdd them to locales/en-US.ftl. See docs/adr/0011-localisation.md.\n");
+  console.error(
+    "\nAdd them to locales/en-US.ftl. See docs/adr/0011-localisation.md.\n",
+  );
   process.exit(1);
 }
 

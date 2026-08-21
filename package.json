@@ -23,7 +23,7 @@
     "web:dev": "pnpm --filter @yaz/desktop dev",
     "web:build": "pnpm --filter @yaz/desktop build",
     "check": "pnpm -r check",
-    "lint": "pnpm -r lint",
+    "lint": "node scripts/check-plugin-imports.mjs && pnpm -r lint",
     "format": "prettier --write . && cargo fmt --all",
     "format:check": "prettier --check . && cargo fmt --all --check",
     "test": "pnpm -r test",
@@ -34,6 +34,7 @@
     "docs:build": "pnpm --filter @yaz/docs build",
     "docs:generate": "node scripts/generate-docs.mjs",
     "i18n:check": "node scripts/check-i18n.mjs",
+    "lint:plugins": "node scripts/check-plugin-imports.mjs",
     "prepare": "husky"
   },
   "devDependencies": {

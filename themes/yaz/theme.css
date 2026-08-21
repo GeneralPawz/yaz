@@ -1,0 +1,139 @@
+/*
+ * yaz — the bundled theme.
+ *
+ * # One theme, both modes
+ *
+ * A theme provides light *and* dark. That is a rule, not a convention
+ * (ADR-0010): a theme that provides one mode would either force the whole
+ * application to that mode or leave the other looking like something else, and
+ * "your theme does not do dark" is not a state a user should be able to reach
+ * by installing something.
+ *
+ * So each mode is a block, selected by `data-yaz-mode` on the root. `system`
+ * is not a third block — it resolves to one of these two before it reaches the
+ * document.
+ *
+ * # Written against the same contract a stranger gets
+ *
+ * Every value here is a token from themes/tokens.css and nothing else. Same
+ * forcing function as core plugins in ADR-0005: if the vocabulary cannot
+ * express our own theme, it is not good enough for anyone else's.
+ *
+ * Contrast in both modes meets WCAG AA.
+ */
+
+/* ============================================================ Light ======= */
+
+[data-yaz-theme="yaz"][data-yaz-mode="light"] {
+  /* ---- Surfaces --------------------------------------------------------- */
+  --yaz-bg-primary: #ffffff;
+  --yaz-bg-secondary: #f7f7f5;
+  --yaz-bg-tertiary: #eeeeea;
+  --yaz-bg-overlay: #ffffff;
+  --yaz-bg-hover: rgba(0, 0, 0, 0.04);
+  --yaz-bg-active: rgba(0, 0, 0, 0.08);
+  --yaz-bg-selection: rgba(47, 108, 226, 0.18);
+  /* The dimming behind a modal, distinct from the modal's own surface. */
+  --yaz-scrim: rgba(0, 0, 0, 0.32);
+
+  /* ---- Text ------------------------------------------------------------- */
+  --yaz-text-primary: #1a1d21;
+  --yaz-text-secondary: #4a5058;
+  --yaz-text-muted: #767d87;
+  --yaz-text-on-accent: #ffffff;
+
+  /* ---- Accent and state ------------------------------------------------- */
+  --yaz-accent: #2f6ce2;
+  --yaz-accent-hover: #2559c4;
+  --yaz-success: #1f8b4c;
+  --yaz-warning: #b8770b;
+  --yaz-error: #c1322b;
+  --yaz-info: #2f6ce2;
+
+  /* ---- Borders and separation ------------------------------------------- */
+  --yaz-border: #d8dce1;
+  --yaz-border-strong: #b9bfc7;
+  --yaz-focus-ring: var(--yaz-accent);
+
+  /* ---- Editor -----------------------------------------------------------
+   * Syntax tokens are separate from interface tokens so a theme can restyle
+   * one without touching the other.
+   */
+  --yaz-editor-bg: var(--yaz-bg-primary);
+  --yaz-editor-text: var(--yaz-text-primary);
+  --yaz-editor-gutter-bg: var(--yaz-bg-secondary);
+  --yaz-editor-gutter-text: var(--yaz-text-muted);
+  --yaz-editor-cursor: var(--yaz-accent);
+  --yaz-editor-active-line: rgba(0, 0, 0, 0.03);
+
+  --yaz-syntax-command: #8250df;
+  --yaz-syntax-environment: #0550ae;
+  --yaz-syntax-math: #0f7b6c;
+  --yaz-syntax-comment: #767d87;
+  --yaz-syntax-string: #b8770b;
+  --yaz-syntax-reference: #2f6ce2;
+  --yaz-syntax-error: var(--yaz-error);
+
+  /* ---- PDF viewer ------------------------------------------------------- */
+  --yaz-pdf-bg: #61635f;
+  --yaz-pdf-page-shadow: rgba(0, 0, 0, 0.3);
+
+  --yaz-shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.16);
+}
+
+/* ============================================================= Dark ======= */
+
+[data-yaz-theme="yaz"][data-yaz-mode="dark"] {
+  /* ---- Surfaces --------------------------------------------------------- */
+  --yaz-bg-primary: #16181c;
+  --yaz-bg-secondary: #1d2025;
+  --yaz-bg-tertiary: #24282e;
+  --yaz-bg-overlay: #24282e;
+  --yaz-bg-hover: rgba(255, 255, 255, 0.05);
+  --yaz-bg-active: rgba(255, 255, 255, 0.09);
+  --yaz-bg-selection: rgba(97, 155, 255, 0.24);
+  /* Darker than light's scrim: the same alpha over a dark ground barely
+     separates the modal from the page behind it. */
+  --yaz-scrim: rgba(0, 0, 0, 0.55);
+
+  /* ---- Text ------------------------------------------------------------- */
+  --yaz-text-primary: #e6e9ee;
+  --yaz-text-secondary: #b3bac4;
+  --yaz-text-muted: #838c99;
+  --yaz-text-on-accent: #0d1117;
+
+  /* ---- Accent and state ------------------------------------------------- */
+  --yaz-accent: #619bff;
+  --yaz-accent-hover: #7bacff;
+  --yaz-success: #4cc27b;
+  --yaz-warning: #e0a230;
+  --yaz-error: #f2665e;
+  --yaz-info: #619bff;
+
+  /* ---- Borders and separation ------------------------------------------- */
+  --yaz-border: #2c313a;
+  --yaz-border-strong: #3d444f;
+  --yaz-focus-ring: var(--yaz-accent);
+
+  /* ---- Editor ----------------------------------------------------------- */
+  --yaz-editor-bg: var(--yaz-bg-primary);
+  --yaz-editor-text: var(--yaz-text-primary);
+  --yaz-editor-gutter-bg: var(--yaz-bg-secondary);
+  --yaz-editor-gutter-text: var(--yaz-text-muted);
+  --yaz-editor-cursor: var(--yaz-accent);
+  --yaz-editor-active-line: rgba(255, 255, 255, 0.035);
+
+  --yaz-syntax-command: #c99bff;
+  --yaz-syntax-environment: #7bacff;
+  --yaz-syntax-math: #4fd0b8;
+  --yaz-syntax-comment: #6f7885;
+  --yaz-syntax-string: #e0a230;
+  --yaz-syntax-reference: #619bff;
+  --yaz-syntax-error: var(--yaz-error);
+
+  /* ---- PDF viewer ------------------------------------------------------- */
+  --yaz-pdf-bg: #0e1013;
+  --yaz-pdf-page-shadow: rgba(0, 0, 0, 0.6);
+
+  --yaz-shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
