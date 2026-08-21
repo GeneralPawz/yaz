@@ -47,10 +47,8 @@
   import { lineNumbering } from "./editor/lineNumbers";
   import type { LineNumbering } from "./editor/lineNumbers";
   import {
-    linesPerLandscapePage,
-    charactersPerLine,
-    linesPerPage,
     paginated,
+    paper,
     pagination,
   } from "./editor/pagination";
   import { editorKeymap } from "./keys/editorKeys";
@@ -453,9 +451,7 @@
       pagination(),
       pageCompartment.of([
         paginated.of(false),
-        linesPerPage.of(0),
-        charactersPerLine.of(0),
-        linesPerLandscapePage.of(0),
+        paper.of(null),
       ]),
       // Both are inert until they are given something: stitched mode refuses
       // nothing without a segment map, and a document with no `\\include` in it
@@ -640,66 +636,36 @@
     const instance = view;
     if (!instance) return;
 
-    // Read here so the effect re-runs when any of them changes, and use these
-    // values inside the measurement rather than reading them again there: by
-    // the time it runs, a later change may have moved them.
-    const magnified = zoom;
-    const paper = { width: page.width, height: page.height };
-    const paged = pageView;
-    const wrapping = wrap;
-
-    // Measured *after* the browser has laid out, not during the effect.
+    // Arithmetic, not measurement. A sheet of A4 is 297 mm tall whatever the
+    // font is doing, and the magnification is a number we already have — so
+    // there is nothing here to read back from the browser, and nothing that
+    // can be read before the browser has caught up.
     //
-    // The zoom is a CSS custom property, and changing it here does not resize
-    // anything until the browser gets a turn. Reading `defaultLineHeight`
-    // straight away paired the *old* line height with the *new* zoom, so every
-    // change of magnification computed a sheet holding the wrong number of
-    // rows — pages long or short for no reason anyone could see, until some
-    // later edit happened to recompute it correctly.
-    instance.requestMeasure({
-      read: (measuring) => ({
-        lineHeight: measuring.defaultLineHeight * (100 / magnified),
-        characterWidth: measuring.defaultCharacterWidth * (100 / magnified),
-      }),
-      write: ({ lineHeight, characterWidth }, writing) => {
-        const fits = (millimetres: number) =>
-          paged && lineHeight > 0
-            ? Math.max(
-                1,
-                Math.floor(
-                  ((millimetres - 2 * PAGE_MARGIN_MM) * PIXELS_PER_MM) /
-                    lineHeight,
-                ),
-              )
-            : 0;
+    // Measuring this is what broke it: the zoom is a CSS custom property, so
+    // reading a line height straight after changing it paired the old height
+    // with the new zoom. How tall the *content* turned out is still measured,
+    // in `pagination.ts`, which is where a measurement belongs.
+    const magnified = zoom / 100;
+    const sheet = pageView
+      ? {
+          height: page.height * PIXELS_PER_MM * magnified,
+          width: page.width * PIXELS_PER_MM * magnified,
+          margin: PAGE_MARGIN_MM * PIXELS_PER_MM * magnified,
+          gap: PAGE_GAP_MM * PIXELS_PER_MM * magnified,
+          turnedHeight: page.width * PIXELS_PER_MM * magnified,
+        }
+      : null;
 
-        // How many characters lie across the measure. Only meaningful when
-        // lines wrap: without wrapping a line is one row however long it is,
-        // because it runs off the side rather than down the page.
-        const across =
-          wrapping && paged && characterWidth > 0
-            ? Math.max(
-                1,
-                Math.floor(
-                  ((paper.width - 2 * PAGE_MARGIN_MM) * PIXELS_PER_MM) /
-                    characterWidth,
-                ),
-              )
-            : 0;
-
-        writing.dispatch({
-          effects: pageCompartment.reconfigure([
-            paginated.of(paged),
-            linesPerPage.of(fits(paper.height)),
-            // A turned sheet is as tall as the paper is wide, so it holds
-            // fewer.
-            linesPerLandscapePage.of(fits(paper.width)),
-            charactersPerLine.of(across),
-          ]),
-        });
-      },
+    instance.dispatch({
+      effects: pageCompartment.reconfigure([
+        paginated.of(pageView),
+        paper.of(sheet),
+      ]),
     });
   });
+
+  /** What separates one sheet from the next. */
+  const PAGE_GAP_MM = 8;
 
   /** What a page leaves around its text. Kept in step with the stylesheet. */
   const PAGE_MARGIN_MM = 25;
@@ -794,21 +760,25 @@
     justify-content: center;
   }
 
-  /* The content box is the width of the paper and nothing else: the paper
-     itself is drawn per line, because that is the only way one continuous
-     document can be shown as a stack of separate sheets.
+  /* The content box *is* the stack of paper.
 
-     The margin is a custom property rather than a literal because three other
-     things have to undo exactly it — the front-matter band, the fill below a
-     short page, and the line count that decides where a sheet ends — and
-     numbers that must agree should be one number. */
+     The sheets are painted on it as a repeating gradient rather than drawn per
+     line, which is the whole of the current design: a gradient is the page
+     size and the gap and knows nothing about the content, so no arrangement of
+     text can make one sheet taller than another. What the text does instead is
+     get pushed past each boundary by a gap of exactly the right height
+     (`pagination.ts`).
+
+     The horizontal margins are padding here, once, rather than on every line —
+     lines, widgets and gaps all sit inside them without each having to know. */
   .editor.paged :global(.cm-content) {
     inline-size: calc(var(--yaz-page-width) * var(--yaz-zoom, 1));
     max-inline-size: calc(var(--yaz-page-width) * var(--yaz-zoom, 1));
     box-sizing: border-box;
-    padding: 0;
+    padding-inline: var(--yaz-page-margin);
+    padding-block: 0;
     margin-block: var(--yaz-space-4);
-    background: transparent;
+    background-color: transparent;
   }
 
   .editor.paged :global(.cm-gutters) {
@@ -822,20 +792,9 @@
      produces the document — so in the view that shows the paper it is drawn
      as a strip across it rather than as text set in the measure. One row when
      it is closed, a band of rows when it is opened. */
-  /* Everything on the page sits on the paper.
-
-     Every direct child, not every line: the marks that open and close the text
-     are block widgets, and CodeMirror puts a block widget beside the lines
-     rather than inside one. Selecting lines alone left those marks off the
-     sheet and against the left edge of the pane, which is what they were doing
-     until this rule replaced it. */
-  .editor.paged :global(.cm-content > *) {
-    box-sizing: border-box;
-    inline-size: calc(var(--yaz-page-width) * var(--yaz-zoom, 1));
-    margin-inline: auto;
-    padding-inline: var(--yaz-page-margin);
-    background: var(--yaz-bg-primary);
-  }
+  /* Nothing on the page needs its own paper any more: the paper is painted
+     once, on the content box. A child that drew its own would be a second
+     opinion about where a sheet is. */
 
   /* Turned: as wide as the paper is tall, which is the point of turning it —
      a table that did not fit across the measure fits across this one. */

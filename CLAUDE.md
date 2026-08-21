@@ -33,6 +33,9 @@ The load-bearing ones:
   nothing else. Anything a `\usepackage` adds goes in `yaz-latex-packages`, not
   in `vocabulary.ts`. The test is "does `\documentclass{article}` alone define
   it", never "does a real thesis use it".
+- **0024** — The page view's sheet is a **fixed box painted behind the text**,
+  never built from the content. Do not go back to counting rows to decide where
+  a page ends: a page made of content can stretch, and four attempts proved it.
 
 ## Environment (this machine)
 

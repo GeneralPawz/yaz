@@ -1,62 +1,72 @@
 /**
- * Pages that actually separate.
+ * Pages that are the size of the paper, always.
  *
- * # What these page breaks are, and what they are not
+ * # The mistake this replaces
  *
- * They are not LaTeX's. LaTeX breaks pages by typesetting the document — line
- * by line, with penalties, widow and orphan control, and floats moved around
- * the text — and reproducing that in an editor would mean writing a second
- * typesetter that agreed with the first. It would not agree, and two different
- * sets of page breaks in front of one author is worse than one honest set.
+ * Every earlier version built a page *out of the content*: count the rows a
+ * line takes, put so many rows on a sheet, and pad the bottom of a sheet that
+ * came up short. Every one of them had the same failure, and no amount of
+ * improving the count fixed it — because the count was never the problem. A
+ * page made of content can *stretch*. Guess low about one image and the sheet
+ * grows to hold it, and a sheet that grows is not a sheet.
  *
- * So a break here happens where the *document* says it does — `\clearpage`,
- * `\newpage`, `\pagebreak`, and the start of every `\chapter`, which begins a
- * page in every class that has chapters — and otherwise every `linesPerPage`
- * lines, which is the sheet filling up. That is deterministic, it is arithmetic
- * over the source rather than measurement of the screen, and it does not move
- * while you scroll.
+ * # The shape of this one
  *
- * The consequence worth stating: page 14 here is not page 14 in the PDF. What
- * the page view is for is *shape* — the measure, the proportions of the sheet,
- * where a chapter opens, how much of a page a table takes — and shape is right
- * long before the numbering is.
+ * **The page is not made of content.** It is a fixed box painted behind the
+ * text — a repeating gradient with the paper's height, the gap, and nothing
+ * to do with what is written on it. It cannot stretch because there is nothing
+ * in it to push.
  *
- * # Why the count and not the height
+ * **Content is pushed through it.** A view plugin measures where each block
+ * actually sits and, wherever one would cross the bottom margin, inserts a
+ * spacer of exactly the height needed to carry it to the top of the next
+ * sheet. Nothing is padded and nothing is estimated: the spacer is the
+ * difference between two measured numbers.
  *
- * Measuring is the obvious alternative and it is worse. CodeMirror knows the
- * height of the lines it has rendered and estimates the rest, so breaks derived
- * from measurement would land in one place and then move as the reader scrolled
- * past them. A count is stable, and a wrapped line making a sheet a little long
- * is a smaller lie than a break that will not hold still.
+ * The two halves never argue, because only one of them decides where a page
+ * is. The other one just gets out of its way.
+ *
+ * # Why it settles
+ *
+ * Inserting a spacer moves everything below it, which changes what needs a
+ * spacer. That is a loop, and it closes because every spacer moves content
+ * *down* and onto a sheet where it fits — so each pass has strictly less to
+ * do than the last, and a block that has been carried to the top of a sheet is
+ * never carried again.
+ *
+ * A block taller than the usable page is the exception: it cannot be made to
+ * fit and is left where it is, overflowing, exactly as LaTeX would leave an
+ * oversized image sticking off the paper.
  */
 
-import { RangeSetBuilder, StateField } from "@codemirror/state";
+import { RangeSetBuilder, StateEffect, StateField } from "@codemirror/state";
 import type { EditorState, Extension } from "@codemirror/state";
-import { Decoration, EditorView, WidgetType } from "@codemirror/view";
-import type { DecorationSet } from "@codemirror/view";
+import {
+  Decoration,
+  EditorView,
+  ViewPlugin,
+  WidgetType,
+} from "@codemirror/view";
+import type { DecorationSet, ViewUpdate } from "@codemirror/view";
 
 import {
-  charactersPerLine,
-  linesPerLandscapePage,
-  linesPerPage,
+  charactersPerRow,
   paginated,
+  paper,
+  rowsPerPage,
+  setCharactersPerRow,
+  setRowsPerPage,
+  sheetAt,
+  textBounds,
 } from "./geometry";
+import type { Paper } from "./geometry";
 import { listings, pageBreaks } from "./generated";
-import { measuredHeights, measuredRows } from "./measured";
 import { layoutOf } from "./richText";
-import type { Layout } from "./pass";
-import { emptyLayout } from "./pass";
 import { environments, headings } from "./structure";
 import { environmentsOfKind } from "./vocabulary";
 
-// Re-exported so a caller configures the page view from the module that draws
-// it, without having to know the facets live one file over.
-export {
-  charactersPerLine,
-  linesPerLandscapePage,
-  linesPerPage,
-  paginated,
-} from "./geometry";
+export { charactersPerRow, paginated, paper, rowsPerPage } from "./geometry";
+export type { Paper } from "./geometry";
 
 /**
  * Where the paper is turned, as ranges of the document.
@@ -73,270 +83,137 @@ export function turnedRegions(text: string): { from: number; to: number }[] {
   }));
 }
 
-/** Whether an offset falls inside a turned region. */
-function isTurned(
-  regions: readonly { from: number; to: number }[],
-  offset: number,
-): boolean {
-  return regions.some((region) => offset >= region.from && offset < region.to);
-}
-
 /**
- * Whether a chapter begins a page.
+ * Offsets the document itself says must begin a page.
  *
- * True for `report` and `book`, false for `article`, which has no `\chapter` at
- * all. Read from the document rather than assumed, because opening every
- * section on a new page would shred an article into a page per heading.
+ * Separate from where a page *runs out*, which is arithmetic about heights.
+ * These are instructions an author wrote, and they hold whatever the geometry
+ * says: `\clearpage` means begin a page even one line in.
  */
-function chaptersOpenPages(text: string): boolean {
-  return /\\documentclass[^{]*\{(report|book|scrreprt|scrbook)\}/.test(text);
-}
-
-/**
- * How many rows each line of the document is drawn as.
- *
- * The number that makes a page a page. A line of source is not a row on the
- * paper: a folded preamble is eighty lines and no rows, a paragraph is one
- * line and eight rows once it wraps, a glossary is one line and two hundred
- * rows. Counting source lines gives sheets that stretch to any length, which
- * is the complaint the page view exists to answer.
- *
- * Everything here comes from the pass that already drew it
- * ([`pass.ts`](./pass.ts)); nothing is measured and nothing is walked twice.
- */
-function rowsOf(
-  state: EditorState,
-  layout: Layout,
-  measure: number,
-): (line: number) => number {
-  // What the browser has already worked out, for the lines it has drawn.
-  // Everything below is the answer for lines it has not.
-  const drawn = state.field(measuredRows, false);
-
-  return (number) => {
-    if (layout.skipped.has(number)) return 0;
-
-    // Measured wins, always. An image is one line of source and four hundred
-    // pixels of paper; a glossary entry is one entry and three rows once its
-    // definition wraps. Guessing either low does not make the sheet short — it
-    // makes it overflow, and nothing can shrink a sheet that has run over.
-    const actual = drawn?.get(number);
-    if (actual !== undefined) return actual;
-
-    const line = state.doc.line(number);
-    const visible = line.length - (layout.hiddenChars.get(number) ?? 0);
-    // A line that wraps takes as many rows as it has measures. Without
-    // wrapping it takes one however long it is, because it runs off the side.
-    const wrapped =
-      measure > 0 ? Math.max(1, Math.ceil(Math.max(visible, 0) / measure)) : 1;
-    return wrapped + (layout.widgetRows.get(number) ?? 0);
-  };
-}
-
-/**
- * Whether an offset is inside the front or back matter.
- *
- * That matter gets a sheet to itself — see {@link pageStarts} — so the sheet
- * it is on must not also be filled by the text that follows it.
- */
-function isMatter(layout: Layout, line: number): boolean {
-  return layout.matter.some((range) => line >= range.from && line <= range.to);
-}
-
-/**
- * Where each sheet begins, as offsets into the document.
- *
- * Always includes 0: the document starts on a page.
- */
-export function pageStarts(
-  state: EditorState,
-  perPage: number,
-  perTurnedPage = perPage,
-  layout: Layout = emptyLayout(),
-  measure = 0,
-): number[] {
+export function forcedBreaks(state: EditorState): Set<number> {
   const text = state.doc.toString();
-  const starts = new Set<number>([0]);
-  const turned = turnedRegions(text);
+  const at = new Set<number>();
 
-  const startOfLine = (number: number): void => {
-    if (number >= 1 && number <= state.doc.lines) {
-      starts.add(state.doc.line(number).from);
+  const startOfLine = (offset: number): void => {
+    if (offset >= 0 && offset <= state.doc.length) {
+      at.add(state.doc.lineAt(offset).from);
+    }
+  };
+  const lineAfter = (offset: number): void => {
+    const line = state.doc.lineAt(Math.min(offset, state.doc.length));
+    if (line.number < state.doc.lines) {
+      at.add(state.doc.line(line.number + 1).from);
     }
   };
 
-  // A turned page begins and ends where the turn does — which is what
-  // `pdflscape` itself does, because a sheet cannot be half turned.
-  for (const region of turned) {
-    starts.add(state.doc.lineAt(region.from).from);
-    startOfLine(state.doc.lineAt(region.to).number + 1);
-  }
+  // `\clearpage` and friends end the page they are on.
+  for (const found of pageBreaks(text)) lineAfter(found.to);
 
-  // The document's own breaks. `\clearpage` and friends end the page they are
-  // on, so the next line begins the next one.
-  for (const found of pageBreaks(text)) {
-    startOfLine(state.doc.lineAt(found.to).number + 1);
-  }
-
-  // `\end{titlepage}` clears the page in LaTeX itself — a title page is a
-  // page, and nothing may follow it onto the sheet. Without this the table of
-  // contents is drawn underneath the title, which is not what the document
-  // says and not what the PDF does.
+  // `\end{titlepage}` clears the page in LaTeX itself — nothing may follow the
+  // title onto its sheet.
   for (const found of environments(text, ["titlepage"])) {
-    starts.add(state.doc.lineAt(found.from).from);
-    startOfLine(state.doc.lineAt(found.to).number + 1);
+    startOfLine(found.from);
+    lineAfter(found.to);
   }
 
-  // A generated list is pages of content standing on one line of source, so it
-  // opens a sheet and the text after it opens another.
+  // A generated list is pages of content standing on one line of source.
   for (const listing of listings(text)) {
-    starts.add(state.doc.lineAt(listing.from).from);
-    startOfLine(state.doc.lineAt(listing.to).number + 1);
+    startOfLine(listing.from);
+    lineAfter(listing.to);
   }
 
-  if (chaptersOpenPages(text)) {
+  // A turned sheet begins and ends where the turn does: a sheet cannot be half
+  // turned, which is what `pdflscape` itself does.
+  for (const region of turnedRegions(text)) {
+    startOfLine(region.from);
+    lineAfter(region.to);
+  }
+
+  // `\chapter` opens a page in every class that has chapters.
+  if (/\\documentclass[^{]*\{(report|book|scrreprt|scrbook)\}/.test(text)) {
     for (const heading of headings(text)) {
-      if (heading.level !== 1) continue;
-      starts.add(state.doc.lineAt(heading.from).from);
+      if (heading.level === 1) startOfLine(heading.from);
     }
   }
 
-  // The front and back matter stand apart from the paper entirely: they are
-  // what the file wraps the document in, not anything that is printed. Each
-  // gets a sheet, and the text resumes on a fresh one after it.
-  for (const range of layout.matter) {
-    startOfLine(range.from);
-    startOfLine(range.to + 1);
-  }
-
-  const rows = rowsOf(state, layout, measure);
-  const ordered = withoutBlanks(
-    state,
-    [...starts].sort((a, b) => a - b),
-    rows,
-  );
-  if (perPage <= 0) return ordered;
-
-  // And the sheet simply filling up. Walked rather than computed per break, so
-  // a long stretch between two of the document's own breaks is divided evenly
-  // instead of the remainder landing on the last sheet.
-  const filled: number[] = [];
-  for (let index = 0; index < ordered.length; index += 1) {
-    const from = ordered[index]!;
-    const until = ordered[index + 1] ?? Number.MAX_SAFE_INTEGER;
-    filled.push(from);
-
-    const firstLine = state.doc.lineAt(from).number;
-    // Matter is its own short sheet however many lines it runs to. It is not
-    // paper, so it does not fill paper.
-    if (isMatter(layout, firstLine)) continue;
-
-    // A turned sheet holds fewer rows, because it is as tall as the paper is
-    // wide. Chosen per stretch rather than per row: a turn always begins a
-    // sheet, so a stretch is entirely turned or entirely not.
-    const fits = isTurned(turned, from) ? perTurnedPage : perPage;
-    if (fits <= 0) continue;
-
-    let used = 0;
-    for (
-      let number = firstLine;
-      number <= state.doc.lines && state.doc.line(number).from < until;
-      number += 1
-    ) {
-      const height = rows(number);
-      // A single line taller than the sheet — a long table, a wide formula —
-      // still starts one sheet rather than none. Breaking before it would put
-      // an empty sheet in front of it every time.
-      if (used > 0 && used + height > fits) {
-        filled.push(state.doc.line(number).from);
-        used = height;
-        continue;
-      }
-      used += height;
+  // The front and back matter are not pages of the document — they are what
+  // the file wraps it in — so the paper starts after them.
+  for (const range of layoutOf(state).matter) {
+    if (range.from >= 1 && range.from <= state.doc.lines) {
+      at.add(state.doc.line(range.from).from);
+    }
+    if (range.to + 1 <= state.doc.lines) {
+      at.add(state.doc.line(range.to + 1).from);
     }
   }
 
-  return withoutBlanks(state, filled, rows);
+  return at;
 }
 
-/**
- * Drop the sheets that would come out blank.
- *
- * Several things start a page — `\clearpage`, the end of a title page, a
- * generated list, the front matter — and where two of them meet, the sheet
- * between them holds nothing. That is a blank sheet of paper in the middle of
- * the document, which is not what any of those instructions meant: they each
- * mean *begin* a page, and beginning a page that has already begun is nothing
- * at all.
- *
- * The last start is kept whatever it holds, because the document ends there and
- * a page that runs out of text still ends on a sheet.
- */
-function withoutBlanks(
-  state: EditorState,
-  starts: readonly number[],
-  rows: (line: number) => number,
-): number[] {
-  const kept: number[] = [];
-  for (let index = 0; index < starts.length; index += 1) {
-    const from = starts[index]!;
-    if (index === starts.length - 1) {
-      kept.push(from);
-      break;
-    }
-
-    const until = starts[index + 1]!;
-    let drawn = 0;
-    for (
-      let number = state.doc.lineAt(from).number;
-      number <= state.doc.lines && state.doc.line(number).from < until;
-      number += 1
-    ) {
-      drawn += rows(number);
-      if (drawn > 0) break;
-    }
-    if (drawn > 0) kept.push(from);
-  }
-  // A document that draws nothing at all still starts somewhere.
-  return kept.length > 0 ? kept : [0];
+/** A gap inserted to carry what follows it onto the next sheet. */
+export interface Spacer {
+  /** The document offset the gap goes in front of. */
+  at: number;
+  /** Exactly how tall, in pixels. */
+  height: number;
+  /** The sheet this closes, counting from one, or zero for the matter. */
+  folio: number;
 }
 
+/** Replace the gaps. */
+export const setSpacers = StateEffect.define<Spacer[]>();
+
 /**
- * The blank part of a sheet that the text did not reach.
+ * The gaps that carry content from one sheet to the next.
  *
- * A chapter that ends a third of the way down still ends on a whole sheet of
- * paper, and drawing it as a third of a sheet would make the page view lie
- * about the one thing it is for.
+ * Held as state rather than worked out while drawing, because working them out
+ * needs measurements and drawing must not measure.
  */
-class FillWidget extends WidgetType {
+export const spacers = StateField.define<Spacer[]>({
+  create: () => [],
+  update(value, transaction) {
+    let next = value;
+    for (const effect of transaction.effects) {
+      if (effect.is(setSpacers)) next = effect.value;
+    }
+    // An edit moves every offset after it. Mapped rather than dropped, so the
+    // page does not collapse and rebuild itself on every keystroke — the
+    // plugin corrects them within the frame.
+    if (transaction.docChanged && next === value) {
+      return value
+        .map((spacer) => ({
+          ...spacer,
+          at: transaction.changes.mapPos(spacer.at, 1),
+        }))
+        .filter((spacer) => spacer.at <= transaction.newDoc.length);
+    }
+    return next;
+  },
+  provide: (field) =>
+    EditorView.decorations.from(field, (found) => drawSpacers(found)),
+});
+
+/** The gap at the foot of a sheet, carrying its number. */
+class SpacerWidget extends WidgetType {
   constructor(
-    readonly lines: number,
-    readonly turned: boolean,
-    /** Which sheet this closes, or zero for one that carries no folio. */
+    readonly height: number,
     readonly folio: number,
   ) {
     super();
   }
 
-  override eq(other: FillWidget): boolean {
-    return (
-      other.lines === this.lines &&
-      other.turned === this.turned &&
-      other.folio === this.folio
-    );
+  override eq(other: SpacerWidget): boolean {
+    // To the pixel: a spacer that compared equal at a different height would
+    // leave the sheet below it in the wrong place.
+    return other.height === this.height && other.folio === this.folio;
   }
 
   override toDOM(): HTMLElement {
     const node = document.createElement("div");
-    node.className = this.turned
-      ? "cm-yaz-page-fill cm-yaz-page-fill-turned"
-      : "cm-yaz-page-fill";
-    node.style.blockSize = `calc(${this.lines} * var(--yaz-line-height, 1.6) * 1em)`;
+    node.className = "cm-yaz-page-gap";
+    node.style.blockSize = `${this.height}px`;
 
     if (this.folio > 0) {
-      // The number goes here rather than on the last line of text, because a
-      // folio sits at the foot of the *paper* — and the foot of the paper is
-      // the bottom of this, whatever the text did.
       const number = document.createElement("span");
       number.className = "cm-yaz-folio";
       number.textContent = String(this.folio);
@@ -351,221 +228,253 @@ class FillWidget extends WidgetType {
   }
 }
 
-/** Draw the sheets. */
-function sheets(state: EditorState): DecorationSet {
-  if (!state.facet(paginated)) return Decoration.none;
-
-  const perPage = state.facet(linesPerPage);
-  const perTurned = state.facet(linesPerLandscapePage) || perPage;
-  const layout = layoutOf(state);
-  const measure = state.facet(charactersPerLine);
-  const starts = pageStarts(state, perPage, perTurned, layout, measure);
-  const rows = rowsOf(state, layout, measure);
+/** The gaps, as decorations. */
+function drawSpacers(found: readonly Spacer[]): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
-  const startLines = new Set(
-    starts.map((offset) => state.doc.lineAt(offset).number),
-  );
-  const turned = turnedRegions(state.doc.toString());
-
-  let onThisSheet = 0;
-  let sheetTurned = false;
-  let sheetIsMatter = false;
-  // Counted rather than derived, because the matter takes a sheet and does not
-  // take a number: it is not a page of the document.
-  let folio = 0;
-  for (let number = 1; number <= state.doc.lines; number += 1) {
-    const line = state.doc.line(number);
-    const first = startLines.has(number);
-    const last = startLines.has(number + 1) || number === state.doc.lines;
-
-    if (first) {
-      onThisSheet = 0;
-      sheetTurned = isTurned(turned, line.from);
-      sheetIsMatter = isMatter(layout, number);
-      if (!sheetIsMatter) folio += 1;
-    }
-    onThisSheet += rows(number);
-
-    const classes = [
-      "cm-yaz-sheet",
-      sheetTurned ? "cm-yaz-sheet-turned" : "",
-      sheetIsMatter ? "cm-yaz-sheet-matter" : "",
-      first ? "cm-yaz-sheet-first" : "",
-      last ? "cm-yaz-sheet-last" : "",
-    ]
-      .filter(Boolean)
-      .join(" ");
-    builder.add(line.from, line.from, Decoration.line({ class: classes }));
-
-    // The rest of the sheet, where the text stopped short of the bottom. The
-    // matter has no rest: it is a label on the file rather than a page of it,
-    // and padding it out to a full sheet would say it was a page.
-    const fits = sheetTurned ? perTurned : perPage;
-    if (last && !sheetIsMatter && fits > 0) {
-      builder.add(
-        line.to,
-        line.to,
-        Decoration.widget({
-          // Always, even when the text reached the bottom: this is the foot of
-          // the page and it carries the number, so a full page that skipped it
-          // would be the one page in the document with no folio on it.
-          widget: new FillWidget(
-            Math.max(0, fits - onThisSheet),
-            sheetTurned,
-            folio,
-          ),
-          block: true,
-          side: 1,
-        }),
-      );
-    }
+  for (const spacer of [...found].sort((a, b) => a.at - b.at)) {
+    if (spacer.height <= 0) continue;
+    builder.add(
+      spacer.at,
+      spacer.at,
+      Decoration.widget({
+        widget: new SpacerWidget(spacer.height, spacer.folio),
+        block: true,
+        side: -1,
+      }),
+    );
   }
-
   return builder.finish();
 }
 
 /**
- * The sheets, as editor state.
+ * How close two heights have to be to count as the same.
  *
- * A state field rather than a view plugin, because block widgets and line
- * decorations that change the document's line structure may only come from one
- * — the same reason rich text lives in a field.
+ * Sub-pixel differences arrive constantly from rounding and font loading, and
+ * rewriting the spacers for those would be a transaction a frame forever.
  */
-const decorations = StateField.define<DecorationSet>({
-  create: (state) => sheets(state),
-  update(value, transaction) {
-    const before = transaction.startState;
-    const now = transaction.state;
+const CLOSE_ENOUGH = 0.5;
 
-    const reconfigured =
-      before.facet(paginated) !== now.facet(paginated) ||
-      before.facet(linesPerPage) !== now.facet(linesPerPage) ||
-      before.facet(linesPerLandscapePage) !==
-        now.facet(linesPerLandscapePage) ||
-      // Wrapping decides how many rows a paragraph takes, which is most of
-      // what decides where a sheet ends. Leaving this out is why switching
-      // "wrap long lines" on left the sheets exactly as they were.
-      before.facet(charactersPerLine) !== now.facet(charactersPerLine);
-
-    // The sheets are a function of what the rich-text pass drew, so they have
-    // to be redrawn when it draws something different — which is not only when
-    // the document changes. Rich text is *switched on* by an effect carrying no
-    // edit at all, and moving the caret reveals markup that was hidden a moment
-    // ago. Without this the page view paginated an empty layout, once, and
-    // never looked again: every line one row, nothing folded, nothing tall.
-    const relaid = layoutOf(before) !== layoutOf(now);
-
-    // And when the browser has told us how tall something actually is. That is
-    // a transaction of its own carrying no edit, so nothing else here notices
-    // it — and it is the transaction that turns a stretched sheet back into a
-    // page.
-    const remeasured =
-      before.field(measuredRows, false) !== now.field(measuredRows, false);
-
-    if (transaction.docChanged || reconfigured || relaid || remeasured) {
-      return sheets(now);
+/** Work out where the gaps go, from where the blocks actually are. */
+const paginator = ViewPlugin.fromClass(
+  class {
+    constructor(private readonly view: EditorView) {
+      this.schedule();
     }
-    return value;
+
+    update(update: ViewUpdate): void {
+      if (
+        update.docChanged ||
+        update.geometryChanged ||
+        update.viewportChanged ||
+        update.startState.facet(paper) !== update.state.facet(paper) ||
+        update.startState.facet(paginated) !== update.state.facet(paginated)
+      ) {
+        this.schedule();
+      }
+    }
+
+    private schedule(): void {
+      this.view.requestMeasure({
+        read: (view) => this.read(view),
+        write: (found, view) => {
+          if (found) view.dispatch({ effects: found });
+        },
+      });
+    }
+
+    /** What to change, or `null` when nothing has. */
+    private read(view: EditorView): StateEffect<unknown>[] | null {
+      const sheet = view.state.facet(paper);
+      const on = view.state.facet(paginated);
+      const effects: StateEffect<unknown>[] = [];
+
+      // How many rows fit, for the listings that divide themselves.
+      const rowHeight = view.defaultLineHeight;
+      const rows =
+        on && sheet && rowHeight > 0
+          ? Math.max(
+              1,
+              Math.floor((sheet.height - 2 * sheet.margin) / rowHeight),
+            )
+          : 0;
+      if (rows !== view.state.field(rowsPerPage, false)) {
+        effects.push(setRowsPerPage.of(rows));
+      }
+
+      const characterWidth = view.defaultCharacterWidth;
+      const across =
+        on && sheet && characterWidth > 0
+          ? Math.max(
+              1,
+              Math.floor((sheet.width - 2 * sheet.margin) / characterWidth),
+            )
+          : 0;
+      if (across !== view.state.field(charactersPerRow, false)) {
+        effects.push(setCharactersPerRow.of(across));
+      }
+
+      const wanted = on && sheet ? this.spacersFor(view, sheet) : [];
+      if (this.differs(wanted, view.state.field(spacers, false) ?? [])) {
+        effects.push(setSpacers.of(wanted));
+      }
+
+      return effects.length > 0 ? effects : null;
+    }
+
+    /** Whether the gaps we want differ from the ones that are there. */
+    private differs(wanted: Spacer[], have: readonly Spacer[]): boolean {
+      if (wanted.length !== have.length) return true;
+      return wanted.some((spacer, index) => {
+        const other = have[index]!;
+        return (
+          spacer.at !== other.at ||
+          spacer.folio !== other.folio ||
+          Math.abs(spacer.height - other.height) > CLOSE_ENOUGH
+        );
+      });
+    }
+
+    /**
+     * The gaps the blocks on screen call for.
+     *
+     * Only the blocks on screen: the rest of a hundred-page document has never
+     * been laid out and has no honest height. What is off screen keeps the gaps
+     * it already had, and gets them corrected when it arrives — which is
+     * invisible, because it happens before it is drawn.
+     */
+    private spacersFor(view: EditorView, sheet: Paper): Spacer[] {
+      const forced = forcedBreaks(view.state);
+      const kept = new Map<number, Spacer>();
+      for (const spacer of view.state.field(spacers, false) ?? []) {
+        kept.set(spacer.at, spacer);
+      }
+
+      const usable = sheet.height - 2 * sheet.margin;
+
+      // Document lines, not every block: `viewportLineBlocks` includes the
+      // gaps themselves, and a gap asking whether it needs a gap is how a
+      // page view ends up pushing itself down the document.
+      let line = view.state.doc.lineAt(view.viewport.from);
+      for (;;) {
+        const block = view.lineBlockAt(line.from);
+        // Its own gap is already part of where it sits, so take it back off:
+        // the question is where this text *would* be without one.
+        const own = kept.get(line.from);
+        const top = block.top - (own?.height ?? 0);
+        const index = sheetAt(sheet, top);
+        const bounds = textBounds(sheet, index);
+
+        const mustStart = forced.has(block.from);
+        const overruns = top + block.height > bounds.to + CLOSE_ENOUGH;
+        const alreadyAtTop = Math.abs(top - bounds.from) <= CLOSE_ENOUGH;
+
+        const settle = (): void => {
+          if (!mustStart && !overruns) {
+            kept.delete(line.from);
+            return;
+          }
+          if (mustStart && alreadyAtTop) {
+            kept.delete(line.from);
+            return;
+          }
+          // Taller than any sheet: it can never be made to fit, so carrying it
+          // would only put an empty page in front of it every time.
+          if (!mustStart && block.height > usable) {
+            kept.delete(line.from);
+            return;
+          }
+          const next = textBounds(sheet, index + 1);
+          kept.set(line.from, {
+            at: line.from,
+            height: next.from - top,
+            folio: index + 1,
+          });
+        };
+        settle();
+
+        if (
+          line.to >= view.viewport.to ||
+          line.number >= view.state.doc.lines
+        ) {
+          break;
+        }
+        line = view.state.doc.line(line.number + 1);
+      }
+
+      return [...kept.values()].sort((a, b) => a.at - b.at);
+    }
   },
-  provide: (field) => EditorView.decorations.from(field),
-});
+);
+
+/**
+ * The paper itself, painted behind the text.
+ *
+ * A repeating gradient rather than an element per sheet, which is the whole
+ * point: it is drawn from the page size and the gap and knows nothing about
+ * the content, so there is no way for the content to stretch it. Every sheet is
+ * the same height as every other sheet because they are the same gradient.
+ *
+ * The measurements arrive as custom properties on the content box rather than
+ * being baked in here, so that changing the paper or the magnification repaints
+ * without rebuilding anything.
+ */
+const paperAttributes = EditorView.contentAttributes.compute(
+  [paper, paginated],
+  (state) => {
+    const sheet = state.facet(paper);
+    if (!state.facet(paginated) || !sheet) return {};
+    return {
+      class: "cm-yaz-paper",
+      style:
+        `--yaz-sheet-height:${sheet.height}px;` +
+        `--yaz-sheet-pitch:${sheet.height + sheet.gap}px;` +
+        `--yaz-sheet-gap:${sheet.gap}px;` +
+        `--yaz-sheet-margin:${sheet.margin}px`,
+    };
+  },
+);
 
 const theme = EditorView.baseTheme({
-  // A sheet of paper: the page's own background, its margins, and a shadow at
-  // the edges where one sheet ends and the next begins.
-  /*
-   * The paper itself — its width, its margins, its centring — is *not* set
-   * here. It is set in `Editor.svelte` on every direct child of the content
-   * box, because a line is not the only thing on a page: the marks that open
-   * and close the text are block widgets, and CodeMirror puts a block widget
-   * beside the lines rather than inside one. Styling only the lines left those
-   * marks off the paper and hard against the left edge.
-   *
-   * What is left here is what only a line can know: which sheet it opens and
-   * which it closes.
-   */
-  /*
-   * The head of the sheet: the paper's top margin, and the shadow where one
-   * sheet begins.
-   */
-  ".cm-yaz-sheet-first": {
-    paddingBlockStart: "var(--yaz-page-margin, 25mm)",
-    marginBlockStart: "var(--yaz-space-6)",
-    borderStartStartRadius: "2px",
-    borderStartEndRadius: "2px",
-    // Upwards only. A sheet is a run of sibling elements sharing one
-    // background, so a shadow with room to spread paints *inside* the page as
-    // well as outside it — and inside the page it reads as a rule across the
-    // paper. The negative spread is what keeps it on the edge it belongs to.
-    boxShadow: "0 -3px 6px -3px var(--yaz-pdf-page-shadow)",
+  ".cm-content.cm-yaz-paper": {
+    backgroundImage:
+      "repeating-linear-gradient(to bottom," +
+      "var(--yaz-bg-primary) 0 var(--yaz-sheet-height)," +
+      "transparent var(--yaz-sheet-height) var(--yaz-sheet-pitch))",
+    // The paper's own top and bottom margins. The horizontal ones are padding
+    // on the content box; these cannot be, because they repeat.
+    paddingBlockStart: "var(--yaz-sheet-margin)",
   },
-  /*
-   * The foot of the sheet is the *filler*, not the last line of text.
-   *
-   * This was on `.cm-yaz-sheet-last`, and that is the line where the words
-   * stop — which is somewhere in the middle of the paper. So the sheet drew
-   * its bottom edge, its shadow and its rounded corners across the page at the
-   * point the text ran out, and then the filler carried on underneath in white
-   * with the page number at the very bottom of it. A rule across the middle of
-   * a page and a folio a long way below it: one sheet, drawn as though it were
-   * one and a half.
-   *
-   * The filler is the bottom of the paper, so the bottom of the paper is drawn
-   * on the filler.
-   */
-  ".cm-yaz-page-fill": {
-    paddingBlockEnd: "var(--yaz-page-margin, 25mm)",
-    marginBlockEnd: "var(--yaz-space-6)",
-    borderEndStartRadius: "2px",
-    borderEndEndRadius: "2px",
-    // Downwards only, for the reason above. This one was the visible fault:
-    // the filler begins where the words stop, so its shadow spreading upwards
-    // drew a line across the middle of every page that did not fill.
-    boxShadow: "0 3px 6px -3px var(--yaz-pdf-page-shadow)",
+  ".cm-yaz-page-gap": {
     position: "relative",
+    inlineSize: "100%",
   },
+  /*
+   * The folio, at the foot of the paper.
+   *
+   * Not the number the compiler will print — this measures the screen and
+   * LaTeX typesets — so it is set quietly, because a number that is not the
+   * printed one should not be read as if it were.
+   */
   ".cm-yaz-folio": {
     position: "absolute",
-    insetBlockEnd: "calc(var(--yaz-page-margin, 25mm) / 3)",
+    insetBlockEnd:
+      "calc(var(--yaz-sheet-gap, 1rem) + var(--yaz-sheet-margin, 1rem) / 3)",
     insetInline: "0",
     textAlign: "center",
     fontSize: "0.85em",
     color: "var(--yaz-text-muted)",
     userSelect: "none",
   },
-  /*
-   * The front and back matter: a short sheet rather than a sheet of paper.
-   *
-   * What it holds is not in the finished document — it is the LaTeX that wraps
-   * what is. Giving it a full sheet of A4 says it is a page of the paper, and
-   * the first thing the reader would see is a mostly-blank one.
-   */
-  ".cm-yaz-sheet-matter": {
-    paddingBlock: "var(--yaz-space-2)",
-    background: "none",
-    boxShadow: "none",
-  },
-  ".cm-yaz-sheet-matter.cm-yaz-sheet-first": {
-    paddingBlockStart: "var(--yaz-space-2)",
-    marginBlockStart: "var(--yaz-space-2)",
-    boxShadow: "none",
-  },
-  /*
-   * It carries no filler — it is not paper and has no foot — so the gap that
-   * separates it from the first real sheet has to be here. Without it the
-   * machinery sat directly on top of the title page with no seam, which read
-   * as the machinery being *on* the title page.
-   */
-  ".cm-yaz-sheet-matter.cm-yaz-sheet-last": {
-    paddingBlockEnd: "var(--yaz-space-2)",
-    marginBlockEnd: "var(--yaz-space-6)",
-    boxShadow: "none",
-  },
-  /* Sized with everything else on the page; see the note above. */
 });
 
 /** Everything the page view adds. */
 export function pagination(): Extension {
-  // The measurement first, so the field exists before the sheets read it.
-  return [measuredHeights(), decorations, theme];
+  return [
+    spacers,
+    rowsPerPage,
+    charactersPerRow,
+    paginator,
+    paperAttributes,
+    theme,
+  ];
 }

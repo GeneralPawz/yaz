@@ -39,3 +39,4 @@ useful than a tidy directory.
 | [0021 — Plugins are their own repositories, released and updated on their own](/adr/0021-plugin-distribution) | Accepted |
 | [0022 — MCP: calling out is a capability, exposing tools is a declaration](/adr/0022-mcp-and-tool-declaration) | Accepted |
 | [0023 — The preview knows LaTeX; packages are plugins](/adr/0023-latex-vocabulary-boundary) | Accepted |
+| [0024 — The page is a fixed box; content is pushed through it](/adr/0024-page-view-fixed-sheets) | Accepted |

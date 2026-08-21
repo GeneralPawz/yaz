@@ -77,12 +77,12 @@ import {
 import { semanticMarkup, semanticTheme } from "./semanticView";
 import type { Meaning } from "./semanticView";
 import { labelledMarker } from "./semantics";
-import type { Layout, Pass, Tall } from "./pass";
+import type { Layout, Pass } from "./pass";
 import { escapeHtml, inlineHtml } from "./inline";
 import { renderMath, renderMathEnvironment } from "./math";
 import { renderTable, tooComplexToDraw } from "./tabular";
 import { fillMetadata, metadata } from "./typography";
-import { charactersPerLine, linesPerPage } from "./geometry";
+import { charactersPerRow, rowsPerPage } from "./geometry";
 import { entriesFor, generatedIn, hasGenerated } from "./generated";
 import { readProperties } from "./properties";
 import { TableWidget, cellAt, tableTabKeymap } from "./tableWidget";
@@ -262,7 +262,7 @@ class RenderedWidget extends WidgetType {
  * Each line goes to the thing it names, which is what makes this a way of
  * moving around the document rather than a picture of one.
  */
-class ListingWidget extends WidgetType implements Tall {
+class ListingWidget extends WidgetType {
   constructor(
     readonly kind: ListingKind,
     readonly entries: Entry[],
@@ -436,7 +436,7 @@ class LiteralWidget extends WidgetType {
  * typesetting; what matters is that two centimetres reads as more room than
  * two millimetres, and that the page view counts the rows it takes.
  */
-class SpaceWidget extends WidgetType implements Tall {
+class SpaceWidget extends WidgetType {
   constructor(
     readonly axis: "block" | "inline",
     readonly ems: number,
@@ -988,8 +988,8 @@ function generated(pass: Pass): void {
  */
 function listed(pass: Pass, from: number, to: number, kind: ListingKind): void {
   const entries = entriesFor(kind, pass.text);
-  const perPage = pass.state.facet(linesPerPage);
-  const measure = pass.state.facet(charactersPerLine);
+  const perPage = pass.state.field(rowsPerPage, false) ?? 0;
+  const measure = pass.state.field(charactersPerRow, false) ?? 0;
   const sheets = intoSheets(entries, perPage - LISTING_HEADING_ROWS, measure);
 
   if (sheets.length <= 1) {
