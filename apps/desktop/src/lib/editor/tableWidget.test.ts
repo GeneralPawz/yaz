@@ -16,8 +16,8 @@ import {
   PACKAGE_COMMANDS,
   PACKAGE_ENVIRONMENTS,
 } from "../../../../../plugins/latex-packages/src/vocabulary";
-import { richText, setRichText } from "./richText";
-import { nextCell } from "./tableWidget";
+import { richText, setLockTables, setRichText } from "./richText";
+import { cellAt, nextCell } from "./tableWidget";
 import { setContributions } from "./vocabulary";
 
 const B = String.fromCharCode(92);
@@ -84,6 +84,21 @@ function press(view: EditorView, rail: string, index: number): void {
 }
 
 describe("the controls on a drawn table", () => {
+  it("offers a height handle on every row and a width handle on every column", () => {
+    // There is no per-row height in a `tabular`, so the row handle writes the
+    // space *after* a row — `\[2ex]`, which is what LaTeX has for this and
+    // what an author would have typed.
+    const view = mount();
+    expect(
+      view.contentDOM.querySelectorAll(".cm-yaz-table-handle-row"),
+    ).toHaveLength(2);
+    expect(
+      view.contentDOM.querySelectorAll(
+        ".cm-yaz-table-rail-columns .cm-yaz-table-handle",
+      ),
+    ).toHaveLength(2);
+  });
+
   it("draws a rail for every column and every row", () => {
     const view = mount();
     // Two columns and two rows, each with an add and a remove.
@@ -224,5 +239,104 @@ describe("moving from cell to cell", () => {
     expect(
       nextCell(escaped, 0, escaped.length, escaped.indexOf("Tom"), false),
     ).toBe(escaped.indexOf("2"));
+  });
+});
+
+/**
+ * Keeping a table drawn while the caret is in it.
+ *
+ * Everywhere else in the view, the caret reveals a construct's source: editing
+ * what you cannot read is worse than reading markup. A table is the case where
+ * that rule works against itself — what you clicked into *is* the table — so
+ * this is opt-in, and off leaves the old behaviour exactly as it was.
+ */
+describe("locking a table drawn", () => {
+  /** A view with the caret inside the table's first cell. */
+  function inTheTable(locked: boolean): EditorView {
+    const view = new EditorView({
+      state: EditorState.create({ doc: DOC, extensions: [richText()] }),
+      parent: globalThis.document.body,
+    });
+    views.push(view);
+    view.dispatch({ effects: setRichText.of(true) });
+    if (locked) view.dispatch({ effects: setLockTables.of(true) });
+    view.dispatch({
+      selection: EditorSelection.cursor(DOC.indexOf("Name")),
+      scrollIntoView: false,
+    });
+    return view;
+  }
+
+  it("shows the source when it is off, as everything else does", () => {
+    const view = inTheTable(false);
+    expect(view.contentDOM.querySelector("table")).toBeNull();
+    expect(view.contentDOM.textContent).toContain("tabular");
+  });
+
+  it("keeps the table when it is on", () => {
+    const view = inTheTable(true);
+    expect(view.contentDOM.querySelector("table")).not.toBeNull();
+    expect(view.contentDOM.textContent).not.toContain(`${B}begin{tabular}`);
+  });
+
+  it("marks the cell the caret is in", () => {
+    // A caret inside a widget is not drawn by the browser, so without this an
+    // author editing a locked table has no way of telling where they are.
+    const view = inTheTable(true);
+    const active = view.contentDOM.querySelector(".cm-yaz-cell-active");
+    expect(active).not.toBeNull();
+    expect(active?.textContent).toContain("Name");
+  });
+
+  it("moves the mark with the caret", () => {
+    const view = inTheTable(true);
+    view.dispatch({
+      selection: EditorSelection.cursor(DOC.indexOf("Menge")),
+      scrollIntoView: false,
+    });
+    expect(
+      view.contentDOM.querySelector(".cm-yaz-cell-active")?.textContent,
+    ).toContain("Menge");
+  });
+
+  it("marks nothing when the caret is outside", () => {
+    const view = inTheTable(true);
+    view.dispatch({
+      selection: EditorSelection.cursor(0),
+      scrollIntoView: false,
+    });
+    expect(view.contentDOM.querySelector(".cm-yaz-cell-active")).toBeNull();
+  });
+});
+
+describe("finding the cell an offset is in", () => {
+  const body = ` a & b ${BREAK} c & d ${BREAK} `;
+
+  it("counts rows and columns from the start of the body", () => {
+    expect(cellAt(body, 0, body.length, body.indexOf("a"))).toEqual({
+      row: 0,
+      column: 0,
+    });
+    expect(cellAt(body, 0, body.length, body.indexOf("b"))).toEqual({
+      row: 0,
+      column: 1,
+    });
+    expect(cellAt(body, 0, body.length, body.indexOf("d"))).toEqual({
+      row: 1,
+      column: 1,
+    });
+  });
+
+  it("does not count an escaped ampersand as a column", () => {
+    // A highlight on the wrong cell is worse than none: it says confidently
+    // where the caret is not.
+    const escaped = ` Tom ${B}& Jerry & 2 ${BREAK} `;
+    expect(
+      cellAt(escaped, 0, escaped.length, escaped.indexOf("Jerry")),
+    ).toEqual({ row: 0, column: 0 });
+  });
+
+  it("says nothing for an offset outside the body", () => {
+    expect(cellAt(body, 2, 6, 0)).toBeNull();
   });
 });

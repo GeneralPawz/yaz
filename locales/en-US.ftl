@@ -485,6 +485,7 @@ menu-view-wrap = Wrap long lines
 menu-view-comments = Comments
 menu-view-line-breaks = Explicit line breaks
 menu-view-machinery = Document machinery
+menu-view-lock-tables = Keep tables drawn
 menu-view-paper = White paper
 
 ## Ribbon command groups
@@ -643,3 +644,4 @@ table-column-remove = Remove this column
 table-column-width = Drag to set this column's width
 table-row-add = Add a row below this one
 table-row-remove = Remove this row
+table-row-height = Drag to set the space after this row

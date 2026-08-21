@@ -55,3 +55,36 @@ export const showMachinery = StateField.define<boolean>({
     return value;
   },
 });
+
+/** Keep a table drawn even while the caret is inside it. */
+export const setLockTables = StateEffect.define<boolean>();
+
+/**
+ * Whether a table stays drawn when you click into one of its cells.
+ *
+ * The rule everywhere else in the view is "what you are editing, you can see":
+ * put the caret in a construct and its source comes back, because editing what
+ * you cannot read is worse than reading markup. For a table that rule works
+ * against itself — the thing you clicked into *is* the table, and revealing the
+ * source takes it away at exactly the moment you wanted it.
+ *
+ * So this is opt-in and off by default. Nothing about the document changes:
+ * there is still one buffer holding the raw `.tex` and this is still
+ * decorations over it (ADR-0004). What changes is which decorations are drawn
+ * while the caret is where it is, and an author who has not asked for it gets
+ * the behaviour they had.
+ *
+ * The cell the caret is in is marked while this is on, because a caret inside
+ * a widget is not drawn by the browser — and a table you can edit without
+ * being able to see where you are would be worse than one that showed its
+ * source.
+ */
+export const lockTables = StateField.define<boolean>({
+  create: () => false,
+  update(value, transaction) {
+    for (const effect of transaction.effects) {
+      if (effect.is(setLockTables)) return effect.value;
+    }
+    return value;
+  },
+});

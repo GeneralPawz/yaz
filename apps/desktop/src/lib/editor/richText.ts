@@ -85,7 +85,7 @@ import { fillMetadata, metadata } from "./typography";
 import { charactersPerLine, linesPerPage } from "./geometry";
 import { entriesFor, generatedIn, hasGenerated } from "./generated";
 import { readProperties } from "./properties";
-import { TableWidget, tableTabKeymap } from "./tableWidget";
+import { TableWidget, cellAt, tableTabKeymap } from "./tableWidget";
 import type { BreakKind, Entry, ListingKind } from "./generated";
 import {
   commandsOfKind,
@@ -93,7 +93,12 @@ import {
   environmentsOfKind,
   renderingOf,
 } from "./vocabulary";
-import { setShowLineBreaks, showLineBreaks, showMachinery } from "./viewModes";
+import {
+  lockTables,
+  setShowLineBreaks,
+  showLineBreaks,
+  showMachinery,
+} from "./viewModes";
 import {
   braceCommands,
   commentRanges,
@@ -137,6 +142,8 @@ const LISTING_HEADING_ROWS = 2;
 // Re-exported so a caller reaches for one module to switch any part of the
 // view on or off, rather than having to know which file each flag lives in.
 export {
+  lockTables,
+  setLockTables,
   setShowLineBreaks,
   setShowMachinery,
   showLineBreaks,
@@ -1180,12 +1187,32 @@ function tables(pass: Pass): void {
 
     const html = renderTable(read.spec, body);
     if (html === null) continue;
-    if (touched(pass.state, table.from, table.to)) {
+
+    // View → Keep tables drawn. Off, the usual rule applies and the caret
+    // reveals the source. On, the table stays — because for a table the usual
+    // rule works against itself: what you clicked into *is* the table, and
+    // showing the source takes it away at the moment you wanted it.
+    const locked = pass.state.field(lockTables, false) === true;
+    const inside = touched(pass.state, table.from, table.to);
+    if (inside && !locked) {
       // Claimed even while revealed, so nothing else decorates the source the
       // author is currently editing.
       pass.covered.claim(table.from, table.to);
       continue;
     }
+
+    // Which cell the caret is in, so the widget can mark it. A caret inside a
+    // widget is not drawn by the browser, and a table you can edit without
+    // seeing where you are would be worse than one that showed its source.
+    const active =
+      inside && locked
+        ? cellAt(
+            pass.text,
+            read.bodyFrom,
+            table.bodyTo,
+            pass.state.selection.main.head,
+          )
+        : null;
 
     replace(
       pass,
@@ -1202,6 +1229,7 @@ function tables(pass: Pass): void {
         html,
         countColumns(read.spec),
         countRows(pass.text, read.bodyFrom, table.bodyTo),
+        active,
       ),
     );
   }
@@ -1727,6 +1755,7 @@ export function richText(): Extension {
     showComments,
     showLineBreaks,
     showMachinery,
+    lockTables,
     rendered,
     // Before the other keymaps, so Tab in a table means "next cell" rather
     // than an indent. It refuses everywhere else, so nothing else changes.
@@ -1809,6 +1838,17 @@ const theme = EditorView.baseTheme({
    * handles within reach. Absolutely positioned so that they take no room —
    * a rail in the flow would move the table every time it appeared.
    */
+  /*
+   * The cell the caret is in, while the table is locked drawn.
+   *
+   * A caret inside a widget is not drawn by the browser, so this is the only
+   * thing telling the author where they are. An outline rather than a fill:
+   * the cell still has to be readable.
+   */
+  ".cm-yaz-cell-active": {
+    outline: "2px solid var(--yaz-accent)",
+    outlineOffset: "-2px",
+  },
   ".cm-yaz-table-frame": {
     position: "relative",
   },
@@ -1869,6 +1909,15 @@ const theme = EditorView.baseTheme({
   },
   ".cm-yaz-table-handle:hover": {
     background: "var(--yaz-accent)",
+  },
+  /* The boundary a row shares with the one below it. */
+  ".cm-yaz-table-handle-row": {
+    insetInline: "0",
+    insetBlockEnd: "-0.15em",
+    insetBlockStart: "auto",
+    blockSize: "0.3em",
+    inlineSize: "auto",
+    cursor: "row-resize",
   },
   ".cm-yaz-listing-sheet": {
     paddingBlockEnd: "var(--yaz-page-margin, 25mm)",

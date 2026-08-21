@@ -261,6 +261,14 @@
    * would rather not put the whole view back to source.
    */
   let machinery = $state(false);
+
+  /**
+   * Whether a table stays drawn when the caret is inside it.
+   *
+   * Off by default, because everywhere else in the view the caret reveals the
+   * source and a table should not be the odd one out without being asked.
+   */
+  let tablesLocked = $state(false);
   /**
    * Whether the page is white paper whatever the interface is.
    *
@@ -1075,6 +1083,15 @@
           checked: machinery,
           action: () => {
             machinery = !machinery;
+          },
+        },
+        {
+          labelKey: "menu-view-lock-tables",
+          icon: "columns" as const,
+          group: "group-editing",
+          checked: tablesLocked,
+          action: () => {
+            tablesLocked = !tablesLocked;
           },
         },
         {
@@ -2505,6 +2522,7 @@
         {comments}
         {lineBreaks}
         {machinery}
+        {tablesLocked}
         {paperLight}
         {justified}
         {resolveImage}

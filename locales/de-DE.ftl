@@ -486,6 +486,7 @@ menu-view-wrap = Lange Zeilen umbrechen
 menu-view-comments = Kommentare
 menu-view-line-breaks = Explizite Zeilenumbrüche
 menu-view-machinery = Dokument-Innereien
+menu-view-lock-tables = Tabellen gezeichnet lassen
 menu-view-paper = Weißes Papier
 
 ## Befehlsgruppen im Menüband
@@ -644,3 +645,4 @@ table-column-remove = Diese Spalte entfernen
 table-column-width = Ziehen, um die Spaltenbreite zu setzen
 table-row-add = Zeile darunter einfügen
 table-row-remove = Diese Zeile entfernen
+table-row-height = Ziehen, um den Abstand nach dieser Zeile zu setzen

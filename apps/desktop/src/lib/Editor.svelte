@@ -37,6 +37,7 @@
     setRichText,
     setShowComments,
     setShowLineBreaks,
+    setLockTables,
     setShowMachinery,
   } from "./editor/richText";
   import { imageSource } from "./editor/semanticView";
@@ -119,6 +120,13 @@
      * is a view of the document rather than of the instructions for making it.
      */
     machinery?: boolean;
+    /**
+     * Whether a table stays drawn while the caret is inside it.
+     *
+     * Opt-in: the rest of the view reveals a construct's source when the caret
+     * arrives, and a table should not be the odd one out unless asked.
+     */
+    tablesLocked?: boolean;
     /**
      * Whether the page is drawn as white paper whatever the interface is.
      *
@@ -218,6 +226,7 @@
     comments = true,
     lineBreaks = false,
     machinery = false,
+    tablesLocked = false,
     paperLight = false,
     justified = true,
     shortcuts,
@@ -535,6 +544,10 @@
 
   $effect(() => {
     view?.dispatch({ effects: setShowMachinery.of(machinery) });
+  });
+
+  $effect(() => {
+    view?.dispatch({ effects: setLockTables.of(tablesLocked) });
   });
 
   $effect(() => {

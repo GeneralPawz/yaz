@@ -37,6 +37,7 @@ import {
   removeColumn,
   removeRow,
   setColumnWidth,
+  setRowHeight,
   writeGrid,
 } from "./tableEdit";
 
@@ -82,6 +83,15 @@ export class TableWidget extends WidgetType {
     /** How many columns and rows, so the rails know what to draw. */
     readonly columns: number,
     readonly rows: number,
+    /**
+     * The cell the caret is in, when the table is locked drawn.
+     *
+     * `null` when the caret is elsewhere, or when the table would have shown
+     * its source anyway. A caret inside a widget is not drawn by the browser,
+     * so without this an author editing a locked table has no way of telling
+     * where they are.
+     */
+    readonly active: { row: number; column: number } | null = null,
   ) {
     super();
   }
@@ -104,7 +114,9 @@ export class TableWidget extends WidgetType {
     return (
       other.html === this.html &&
       other.columns === this.columns &&
-      other.rows === this.rows
+      other.rows === this.rows &&
+      other.active?.row === this.active?.row &&
+      other.active?.column === this.active?.column
     );
   }
 
@@ -115,6 +127,7 @@ export class TableWidget extends WidgetType {
     const table = document.createElement("div");
     table.className = "cm-yaz-table-body";
     table.innerHTML = this.html;
+    this.mark(table);
 
     frame.append(
       this.columnRail(view, frame, table, this.columns),
@@ -195,6 +208,16 @@ export class TableWidget extends WidgetType {
     };
   }
 
+  /** Put a border round the cell the caret is in. */
+  private mark(table: HTMLElement): void {
+    if (!this.active) return;
+    const row = table.querySelectorAll("tr")[this.active.row];
+    const cell = row?.children[this.active.column];
+    if (cell instanceof HTMLElement) {
+      cell.classList.add("cm-yaz-cell-active");
+    }
+  }
+
   /** The strip above the table: one segment per column. */
   private columnRail(
     view: EditorView,
@@ -253,6 +276,16 @@ export class TableWidget extends WidgetType {
           this.change(view, frame, (grid) => removeRow(grid, index)),
         ),
       );
+
+      // The boundary this row shares with the one below it.
+      const handle = document.createElement("div");
+      handle.className = "cm-yaz-table-handle cm-yaz-table-handle-row";
+      handle.title = t("table-row-height");
+      handle.addEventListener("pointerdown", (event) =>
+        this.dragHeight(view, frame, event, index),
+      );
+      segment.append(handle);
+
       rail.append(segment);
     }
     return rail;
@@ -365,6 +398,47 @@ export class TableWidget extends WidgetType {
     };
 
     handle?.addEventListener("pointermove", preview);
+    handle?.addEventListener("pointerup", finish);
+  }
+
+  /**
+   * Drag a row's edge, and write the extra room it lands on.
+   *
+   * As `\[2ex]`, which is LaTeX's own way of asking for more space after a
+   * row — there is no per-row height in a `tabular`, and inventing one with a
+   * strut would be writing something the author did not ask for and would not
+   * recognise.
+   *
+   * Dragged *up* past the row's own height, the extra goes away entirely
+   * rather than going negative: negative space in LaTeX is legal and almost
+   * never meant.
+   */
+  private dragHeight(
+    view: EditorView,
+    frame: HTMLElement,
+    event: PointerEvent,
+    index: number,
+  ): void {
+    event.preventDefault();
+    const startY = event.clientY;
+    const handle = event.currentTarget;
+    if (handle instanceof HTMLElement)
+      handle.setPointerCapture(event.pointerId);
+
+    const finish = (moved: Event) => {
+      if (!(moved instanceof PointerEvent)) return;
+      handle?.removeEventListener("pointerup", finish);
+
+      const zoom = this.zoomOf(frame);
+      const grown = (moved.clientY - startY) / zoom;
+      // An ex is about half a line, which is the unit LaTeX uses for exactly
+      // this and the one an author would have typed.
+      const ex = Math.round((grown / (PX_PER_CM / 2.54 / 2)) * 2) / 2;
+      this.change(view, frame, (grid) =>
+        setRowHeight(grid, index, ex > 0 ? `${ex}ex` : ""),
+      );
+    };
+
     handle?.addEventListener("pointerup", finish);
   }
 
@@ -565,4 +639,44 @@ function tableAround(
 
   if (at < cursor || at > closed) return null;
   return { bodyFrom: cursor, bodyTo: closed };
+}
+
+/**
+ * Which cell of a table an offset falls in, as row and column.
+ *
+ * Counted the same way the cells are split, so that `\&` in a cell and a `&`
+ * inside `\multicolumn{2}{c}{a & b}` are not mistaken for boundaries — a
+ * highlight on the wrong cell is worse than none, because it says confidently
+ * where the caret is not.
+ */
+export function cellAt(
+  text: string,
+  bodyFrom: number,
+  bodyTo: number,
+  at: number,
+): { row: number; column: number } | null {
+  if (at < bodyFrom || at > bodyTo) return null;
+
+  let row = 0;
+  let column = 0;
+  let depth = 0;
+
+  for (let index = bodyFrom; index < Math.min(at, bodyTo); index += 1) {
+    const character = text[index]!;
+    if (character === "{") depth += 1;
+    else if (character === "}") depth -= 1;
+    else if (character === "\\") {
+      if (text[index + 1] === "\\" && depth === 0) {
+        row += 1;
+        column = 0;
+        index += 1;
+        continue;
+      }
+      index += 1;
+    } else if (character === "&" && depth === 0) {
+      column += 1;
+    }
+  }
+
+  return { row, column };
 }
