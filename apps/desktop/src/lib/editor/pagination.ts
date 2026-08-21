@@ -42,6 +42,7 @@ import {
   paginated,
 } from "./geometry";
 import { listings, pageBreaks } from "./generated";
+import { measuredHeights, measuredRows } from "./measured";
 import { layoutOf } from "./richText";
 import type { Layout } from "./pass";
 import { emptyLayout } from "./pass";
@@ -108,8 +109,20 @@ function rowsOf(
   layout: Layout,
   measure: number,
 ): (line: number) => number {
+  // What the browser has already worked out, for the lines it has drawn.
+  // Everything below is the answer for lines it has not.
+  const drawn = state.field(measuredRows, false);
+
   return (number) => {
     if (layout.skipped.has(number)) return 0;
+
+    // Measured wins, always. An image is one line of source and four hundred
+    // pixels of paper; a glossary entry is one entry and three rows once its
+    // definition wraps. Guessing either low does not make the sheet short — it
+    // makes it overflow, and nothing can shrink a sheet that has run over.
+    const actual = drawn?.get(number);
+    if (actual !== undefined) return actual;
+
     const line = state.doc.line(number);
     const visible = line.length - (layout.hiddenChars.get(number) ?? 0);
     // A line that wraps takes as many rows as it has measures. Without
@@ -442,7 +455,14 @@ const decorations = StateField.define<DecorationSet>({
     // never looked again: every line one row, nothing folded, nothing tall.
     const relaid = layoutOf(before) !== layoutOf(now);
 
-    if (transaction.docChanged || reconfigured || relaid) {
+    // And when the browser has told us how tall something actually is. That is
+    // a transaction of its own carrying no edit, so nothing else here notices
+    // it — and it is the transaction that turns a stretched sheet back into a
+    // page.
+    const remeasured =
+      before.field(measuredRows, false) !== now.field(measuredRows, false);
+
+    if (transaction.docChanged || reconfigured || relaid || remeasured) {
       return sheets(now);
     }
     return value;
@@ -464,6 +484,10 @@ const theme = EditorView.baseTheme({
    * What is left here is what only a line can know: which sheet it opens and
    * which it closes.
    */
+  /*
+   * The head of the sheet: the paper's top margin, and the shadow where one
+   * sheet begins.
+   */
   ".cm-yaz-sheet-first": {
     paddingBlockStart: "var(--yaz-page-margin, 25mm)",
     marginBlockStart: "var(--yaz-space-6)",
@@ -471,11 +495,36 @@ const theme = EditorView.baseTheme({
     borderStartEndRadius: "2px",
     boxShadow: "0 -1px 6px var(--yaz-pdf-page-shadow)",
   },
-  ".cm-yaz-sheet-last": {
+  /*
+   * The foot of the sheet is the *filler*, not the last line of text.
+   *
+   * This was on `.cm-yaz-sheet-last`, and that is the line where the words
+   * stop — which is somewhere in the middle of the paper. So the sheet drew
+   * its bottom edge, its shadow and its rounded corners across the page at the
+   * point the text ran out, and then the filler carried on underneath in white
+   * with the page number at the very bottom of it. A rule across the middle of
+   * a page and a folio a long way below it: one sheet, drawn as though it were
+   * one and a half.
+   *
+   * The filler is the bottom of the paper, so the bottom of the paper is drawn
+   * on the filler.
+   */
+  ".cm-yaz-page-fill": {
     paddingBlockEnd: "var(--yaz-page-margin, 25mm)",
+    marginBlockEnd: "var(--yaz-space-6)",
     borderEndStartRadius: "2px",
     borderEndEndRadius: "2px",
     boxShadow: "0 2px 8px var(--yaz-pdf-page-shadow)",
+    position: "relative",
+  },
+  ".cm-yaz-folio": {
+    position: "absolute",
+    insetBlockEnd: "calc(var(--yaz-page-margin, 25mm) / 3)",
+    insetInline: "0",
+    textAlign: "center",
+    fontSize: "0.85em",
+    color: "var(--yaz-text-muted)",
+    userSelect: "none",
   },
   /*
    * The front and back matter: a short sheet rather than a sheet of paper.
@@ -484,27 +533,6 @@ const theme = EditorView.baseTheme({
    * what is. Giving it a full sheet of A4 says it is a page of the paper, and
    * the first thing the reader would see is a mostly-blank one.
    */
-  /*
-   * The folio, at the foot of the paper.
-   *
-   * Not the number the compiler will print — this page view counts rows and
-   * LaTeX typesets, and the two do not agree (see the note at the top). It is
-   * the number of *this* sheet, which is what makes a long document navigable
-   * on screen. Quiet, because a number that is not the printed one should not
-   * be read as if it were.
-   */
-  ".cm-yaz-page-fill": {
-    position: "relative",
-  },
-  ".cm-yaz-folio": {
-    position: "absolute",
-    insetBlockEnd: "0",
-    insetInline: "0",
-    textAlign: "center",
-    fontSize: "0.85em",
-    color: "var(--yaz-text-muted)",
-    userSelect: "none",
-  },
   ".cm-yaz-sheet-matter": {
     paddingBlock: "var(--yaz-space-2)",
     background: "none",
@@ -515,8 +543,15 @@ const theme = EditorView.baseTheme({
     marginBlockStart: "var(--yaz-space-2)",
     boxShadow: "none",
   },
+  /*
+   * It carries no filler — it is not paper and has no foot — so the gap that
+   * separates it from the first real sheet has to be here. Without it the
+   * machinery sat directly on top of the title page with no seam, which read
+   * as the machinery being *on* the title page.
+   */
   ".cm-yaz-sheet-matter.cm-yaz-sheet-last": {
     paddingBlockEnd: "var(--yaz-space-2)",
+    marginBlockEnd: "var(--yaz-space-6)",
     boxShadow: "none",
   },
   /* Sized with everything else on the page; see the note above. */
@@ -524,5 +559,6 @@ const theme = EditorView.baseTheme({
 
 /** Everything the page view adds. */
 export function pagination(): Extension {
-  return [decorations, theme];
+  // The measurement first, so the field exists before the sheets read it.
+  return [measuredHeights(), decorations, theme];
 }

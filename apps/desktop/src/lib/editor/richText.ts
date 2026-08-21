@@ -82,7 +82,7 @@ import { escapeHtml, inlineHtml } from "./inline";
 import { renderMath, renderMathEnvironment } from "./math";
 import { renderTable, tooComplexToDraw } from "./tabular";
 import { fillMetadata, metadata } from "./typography";
-import { linesPerPage } from "./geometry";
+import { charactersPerLine, linesPerPage } from "./geometry";
 import { entriesFor, generatedIn, hasGenerated } from "./generated";
 import { readProperties } from "./properties";
 import type { BreakKind, Entry, ListingKind } from "./generated";
@@ -898,40 +898,87 @@ function generated(pass: Pass): void {
  */
 function listed(pass: Pass, from: number, to: number, kind: ListingKind): void {
   const entries = entriesFor(kind, pass.text);
-  const perSheet = pass.state.facet(linesPerPage) - LISTING_HEADING_ROWS;
+  const perPage = pass.state.facet(linesPerPage);
+  const measure = pass.state.facet(charactersPerLine);
+  const sheets = intoSheets(entries, perPage - LISTING_HEADING_ROWS, measure);
 
-  if (perSheet <= 0 || entries.length <= perSheet) {
+  if (sheets.length <= 1) {
     replace(pass, from, to, new ListingWidget(kind, entries));
     return;
   }
 
-  const sheets = Math.ceil(entries.length / perSheet);
   if (
     !replace(
       pass,
       from,
       to,
-      new ListingWidget(kind, entries.slice(0, perSheet), 1, sheets),
+      new ListingWidget(kind, sheets[0]!, 1, sheets.length),
     )
   ) {
     return;
   }
-  const perPage = pass.state.facet(linesPerPage);
 
   // The rest stand after it, in order. `side` keeps them in that order: two
   // block widgets at one position are otherwise drawn in an order CodeMirror
   // is free to choose.
   const at = pass.state.doc.lineAt(to).to;
-  for (let sheet = 2; sheet <= sheets; sheet += 1) {
-    const slice = entries.slice((sheet - 1) * perSheet, sheet * perSheet);
+  for (let sheet = 2; sheet <= sheets.length; sheet += 1) {
     pass.ranges.push(
       Decoration.widget({
-        widget: new ListingWidget(kind, slice, sheet, sheets, perPage),
+        widget: new ListingWidget(
+          kind,
+          sheets[sheet - 1]!,
+          sheet,
+          sheets.length,
+          perPage,
+        ),
         block: true,
         side: sheet,
       }).range(at),
     );
   }
+}
+
+/**
+ * Divide a listing into sheets, by how tall its entries are.
+ *
+ * By height and not by count, which is what it did. A glossary entry is a term
+ * and a definition — "AIA Auftraggeber-Informationsanforderungen — Anforderungen
+ * des Auftraggebers an die zu liefernden Informationen und Modelle im Rahmen
+ * eines BIM-Projekts" — and that is three rows of paper, not one. Cutting every
+ * sheet after the same *number* of them made the first sheet three times the
+ * height of the page and the ones after it whatever was left, which is what a
+ * glossary spread over pages of four different lengths looks like.
+ *
+ * The measure is an estimate, and this is the one place it has to stay one:
+ * the widget is being built, so there is nothing on screen to measure yet.
+ */
+function intoSheets(
+  entries: readonly Entry[],
+  perSheet: number,
+  measure: number,
+): Entry[][] {
+  if (perSheet <= 0) return [[...entries]];
+
+  const sheets: Entry[][] = [];
+  let current: Entry[] = [];
+  let used = 0;
+
+  for (const entry of entries) {
+    const written = entry.label.length + (entry.detail?.length ?? 0) + 2;
+    const rows = measure > 0 ? Math.max(1, Math.ceil(written / measure)) : 1;
+
+    // A single entry taller than the sheet still starts one rather than none.
+    if (used > 0 && used + rows > perSheet) {
+      sheets.push(current);
+      current = [];
+      used = 0;
+    }
+    current.push(entry);
+    used += rows;
+  }
+  if (current.length > 0) sheets.push(current);
+  return sheets;
 }
 
 /**
@@ -1640,6 +1687,20 @@ const theme = EditorView.baseTheme({
   ".cm-yaz-space-block": {
     display: "block",
     inlineSize: "100%",
+  },
+  /*
+   * A sheet of a divided listing has no filler after it, because it is not
+   * lines — it is one widget standing where a page would be. So it carries its
+   * own foot: the bottom margin of the paper, the shadow, and the gap that
+   * separates it from the sheet below.
+   */
+  ".cm-yaz-listing-sheet": {
+    paddingBlockEnd: "var(--yaz-page-margin, 25mm)",
+    marginBlockEnd: "var(--yaz-space-6)",
+    borderEndStartRadius: "2px",
+    borderEndEndRadius: "2px",
+    boxShadow:
+      "0 -1px 6px var(--yaz-pdf-page-shadow), 0 2px 8px var(--yaz-pdf-page-shadow)",
   },
   ".cm-yaz-listing-continued": {
     display: "block",

@@ -20,6 +20,7 @@ import {
 } from "./pagination";
 import type { Layout } from "./pass";
 import { layoutOf, richText, richTextEnabled, setRichText } from "./richText";
+import { measuredRows } from "./measured";
 import { EditorView } from "@codemirror/view";
 import {
   PACKAGE_COMMANDS,
@@ -607,5 +608,101 @@ describe("the sheets a running editor draws", () => {
     expect(first?.classList.contains("cm-yaz-sheet-matter")).toBe(true);
     // And it closes there: the text is on the next sheet, not underneath it.
     expect(first?.classList.contains("cm-yaz-sheet-last")).toBe(true);
+  });
+});
+
+/**
+ * Paginating from what was drawn, rather than from a guess about it.
+ *
+ * The count was always an estimate, and an estimate that comes in *low* does
+ * not make a sheet a little short — it makes it overflow, and there is nothing
+ * that can shrink a sheet which has run over. An image is the plain case: one
+ * line of source, four hundred pixels of paper.
+ */
+describe("measured heights", () => {
+  it("prefers what the browser measured to what the count guessed", () => {
+    const doc = [
+      `${B}begin{document}`,
+      "One.",
+      "Two.",
+      "Three.",
+      "Four.",
+      `${B}end{document}`,
+    ].join("\n");
+    const state = EditorState.create({
+      doc,
+      extensions: [
+        richText(),
+        richTextEnabled.init(() => true),
+        paginated.of(true),
+        linesPerPage.of(4),
+        // Line 3 turned out to be four rows tall — an image, or a formula, or
+        // a glossary entry whose definition wrapped.
+        measuredRows.init(() => new Map([[3, 4]])),
+      ],
+    });
+
+    const starts = pageStarts(state, 4, 4, layoutOf(state)).map(
+      (offset) => state.doc.lineAt(offset).number,
+    );
+    // Counted as lines, all six fit on two sheets. Measured, line 3 fills one
+    // by itself and what follows it has to begin another.
+    expect(starts).toContain(4);
+  });
+
+  it("keeps the guess for lines nothing has drawn yet", () => {
+    // Most of a hundred-page document has never been on screen, and the count
+    // is what it was always for: a sensible answer before the browser has one.
+    const doc = Array.from({ length: 10 }, (_, index) => `Line ${index}.`).join(
+      "\n",
+    );
+    const state = EditorState.create({
+      doc,
+      extensions: [
+        paginated.of(true),
+        linesPerPage.of(4),
+        measuredRows.init(() => new Map()),
+      ],
+    });
+    const starts = pageStarts(state, 4).map(
+      (offset) => state.doc.lineAt(offset).number,
+    );
+    expect(starts).toEqual([1, 5, 9]);
+  });
+
+  it("puts the foot of the sheet on the filler, not on the last line", () => {
+    // The filler *is* the bottom of the paper: it is what reaches down to the
+    // page margin. Drawing the sheet's bottom edge on the last line of text
+    // drew it wherever the words happened to stop — a rule across the middle
+    // of the page, with white and a page number below it.
+    const doc = [
+      `${B}begin{document}`,
+      "A short page.",
+      `${B}end{document}`,
+    ].join("\n");
+    const view = new EditorView({
+      state: EditorState.create({
+        doc,
+        extensions: [
+          richText(),
+          pagination(),
+          paginated.of(true),
+          linesPerPage.of(40),
+        ],
+      }),
+      parent: globalThis.document.body,
+    });
+    views.push(view);
+    view.dispatch({ effects: setRichText.of(true) });
+    view.dispatch({
+      selection: { anchor: view.state.doc.length },
+      scrollIntoView: false,
+    });
+
+    const fill = view.contentDOM.querySelector(".cm-yaz-page-fill");
+    expect(fill).not.toBeNull();
+    // And the folio is on it, because the folio belongs at the foot of the
+    // paper rather than under the last sentence.
+    expect(fill?.querySelector(".cm-yaz-folio")).not.toBeNull();
   });
 });
