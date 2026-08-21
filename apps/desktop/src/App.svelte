@@ -2527,6 +2527,7 @@
         {justified}
         {resolveImage}
         onCursor={(offset) => (cursor = offset)}
+        onZoom={(percent) => (zoom = percent)}
         onReady={(api) => {
           editorApi = api;
           refreshCommands();

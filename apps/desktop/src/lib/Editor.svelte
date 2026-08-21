@@ -200,6 +200,14 @@
     /** Caret moved, as an offset into the source. */
     onCursor?: ((offset: number) => void) | undefined;
     /**
+     * Asked for a different magnification, as a percentage.
+     *
+     * The editor does not hold the zoom — the shell does, because the status
+     * bar shows it — so Ctrl and the wheel report upwards rather than setting
+     * anything here.
+     */
+    onZoom?: ((percent: number) => void) | undefined;
+    /**
      * Handed an `EditorApi` when the view exists, and `null` when it goes away.
      *
      * This is how a plugin reaches the buffer. It is deliberately a callback
@@ -235,6 +243,7 @@
     onRefused,
     onOpenInclude,
     onCursor,
+    onZoom,
     onReady,
   }: Props = $props();
 
@@ -291,6 +300,46 @@
   }
 
   let host: HTMLDivElement;
+
+  /** The range the zoom is allowed to take, matching the status bar's slider. */
+  const SMALLEST_ZOOM = 10;
+  const LARGEST_ZOOM = 400;
+
+  /**
+   * Ctrl and the wheel, which is how every other document application zooms.
+   *
+   * Attached by hand rather than with `onwheel`, because it has to be
+   * non-passive: the browser will not let a passive listener call
+   * `preventDefault`, and without that Ctrl-wheel zooms the whole window
+   * instead of the page.
+   *
+   * Proportional rather than a fixed step, so that one notch feels the same at
+   * 25% as it does at 300% — a flat five points is a third of the way at the
+   * bottom of the range and barely visible at the top.
+   */
+  $effect(() => {
+    const element = host;
+    const report = onZoom;
+    if (!element || !report) return;
+
+    const wheeled = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1;
+      // `zoom` is read here rather than captured when the listener was
+      // attached: a destructured prop compiles to a getter, so this is the
+      // magnification now and not the one the effect last saw.
+      const now = zoom;
+      report(
+        Math.round(
+          Math.min(LARGEST_ZOOM, Math.max(SMALLEST_ZOOM, now * factor)),
+        ),
+      );
+    };
+
+    element.addEventListener("wheel", wheeled, { passive: false });
+    return () => element.removeEventListener("wheel", wheeled);
+  });
   let view: EditorView | undefined;
   let loadedDocId = "";
 
@@ -591,35 +640,64 @@
     const instance = view;
     if (!instance) return;
 
-    const lineHeight = instance.defaultLineHeight * (100 / zoom);
-    const fits = (millimetres: number) =>
-      pageView && lineHeight > 0
-        ? Math.max(
-            1,
-            Math.floor(((millimetres - 2 * PAGE_MARGIN_MM) * PIXELS_PER_MM) / lineHeight),
-          )
-        : 0;
+    // Read here so the effect re-runs when any of them changes, and use these
+    // values inside the measurement rather than reading them again there: by
+    // the time it runs, a later change may have moved them.
+    const magnified = zoom;
+    const paper = { width: page.width, height: page.height };
+    const paged = pageView;
+    const wrapping = wrap;
 
-    // How many characters lie across the measure. Only meaningful when lines
-    // wrap: without wrapping a line is one row however long it is, because it
-    // runs off the side rather than down the page.
-    const characterWidth = instance.defaultCharacterWidth * (100 / zoom);
-    const across =
-      wrap && pageView && characterWidth > 0
-        ? Math.max(
-            1,
-            Math.floor(((page.width - 2 * PAGE_MARGIN_MM) * PIXELS_PER_MM) / characterWidth),
-          )
-        : 0;
+    // Measured *after* the browser has laid out, not during the effect.
+    //
+    // The zoom is a CSS custom property, and changing it here does not resize
+    // anything until the browser gets a turn. Reading `defaultLineHeight`
+    // straight away paired the *old* line height with the *new* zoom, so every
+    // change of magnification computed a sheet holding the wrong number of
+    // rows — pages long or short for no reason anyone could see, until some
+    // later edit happened to recompute it correctly.
+    instance.requestMeasure({
+      read: (measuring) => ({
+        lineHeight: measuring.defaultLineHeight * (100 / magnified),
+        characterWidth: measuring.defaultCharacterWidth * (100 / magnified),
+      }),
+      write: ({ lineHeight, characterWidth }, writing) => {
+        const fits = (millimetres: number) =>
+          paged && lineHeight > 0
+            ? Math.max(
+                1,
+                Math.floor(
+                  ((millimetres - 2 * PAGE_MARGIN_MM) * PIXELS_PER_MM) /
+                    lineHeight,
+                ),
+              )
+            : 0;
 
-    instance.dispatch({
-      effects: pageCompartment.reconfigure([
-        paginated.of(pageView),
-        linesPerPage.of(fits(page.height)),
-        // A turned sheet is as tall as the paper is wide, so it holds fewer.
-        linesPerLandscapePage.of(fits(page.width)),
-        charactersPerLine.of(across),
-      ]),
+        // How many characters lie across the measure. Only meaningful when
+        // lines wrap: without wrapping a line is one row however long it is,
+        // because it runs off the side rather than down the page.
+        const across =
+          wrapping && paged && characterWidth > 0
+            ? Math.max(
+                1,
+                Math.floor(
+                  ((paper.width - 2 * PAGE_MARGIN_MM) * PIXELS_PER_MM) /
+                    characterWidth,
+                ),
+              )
+            : 0;
+
+        writing.dispatch({
+          effects: pageCompartment.reconfigure([
+            paginated.of(paged),
+            linesPerPage.of(fits(paper.height)),
+            // A turned sheet is as tall as the paper is wide, so it holds
+            // fewer.
+            linesPerLandscapePage.of(fits(paper.width)),
+            charactersPerLine.of(across),
+          ]),
+        });
+      },
     });
   });
 

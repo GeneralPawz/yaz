@@ -1924,8 +1924,11 @@ const theme = EditorView.baseTheme({
     marginBlockEnd: "var(--yaz-space-6)",
     borderEndStartRadius: "2px",
     borderEndEndRadius: "2px",
+    // One shadow per edge, each kept to its own edge by a negative spread —
+    // otherwise each paints into the sheet as well as out of it and reads as a
+    // rule across the paper.
     boxShadow:
-      "0 -1px 6px var(--yaz-pdf-page-shadow), 0 2px 8px var(--yaz-pdf-page-shadow)",
+      "0 -3px 6px -3px var(--yaz-pdf-page-shadow), 0 3px 6px -3px var(--yaz-pdf-page-shadow)",
   },
   ".cm-yaz-listing-continued": {
     display: "block",

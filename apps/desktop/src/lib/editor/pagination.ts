@@ -493,7 +493,11 @@ const theme = EditorView.baseTheme({
     marginBlockStart: "var(--yaz-space-6)",
     borderStartStartRadius: "2px",
     borderStartEndRadius: "2px",
-    boxShadow: "0 -1px 6px var(--yaz-pdf-page-shadow)",
+    // Upwards only. A sheet is a run of sibling elements sharing one
+    // background, so a shadow with room to spread paints *inside* the page as
+    // well as outside it — and inside the page it reads as a rule across the
+    // paper. The negative spread is what keeps it on the edge it belongs to.
+    boxShadow: "0 -3px 6px -3px var(--yaz-pdf-page-shadow)",
   },
   /*
    * The foot of the sheet is the *filler*, not the last line of text.
@@ -514,7 +518,10 @@ const theme = EditorView.baseTheme({
     marginBlockEnd: "var(--yaz-space-6)",
     borderEndStartRadius: "2px",
     borderEndEndRadius: "2px",
-    boxShadow: "0 2px 8px var(--yaz-pdf-page-shadow)",
+    // Downwards only, for the reason above. This one was the visible fault:
+    // the filler begins where the words stop, so its shadow spreading upwards
+    // drew a line across the middle of every page that did not fill.
+    boxShadow: "0 3px 6px -3px var(--yaz-pdf-page-shadow)",
     position: "relative",
   },
   ".cm-yaz-folio": {
