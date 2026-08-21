@@ -82,7 +82,7 @@ import { escapeHtml, inlineHtml } from "./inline";
 import { renderMath, renderMathEnvironment } from "./math";
 import { renderTable, tooComplexToDraw } from "./tabular";
 import { fillMetadata, metadata } from "./typography";
-import { charactersPerRow, rowsPerPage } from "./geometry";
+import { charactersPerRow, paper, rowsPerPage } from "./geometry";
 import { entriesFor, generatedIn, hasGenerated } from "./generated";
 import { readProperties } from "./properties";
 import { TableWidget, cellAt, tableTabKeymap } from "./tableWidget";
@@ -271,15 +271,13 @@ class ListingWidget extends WidgetType {
     /** How many sheets the whole listing runs to. */
     readonly sheets = 1,
     /**
-     * How many rows of paper this stands on, when it is its own sheet.
+     * The sheet this stands on, when the page view is drawing sheets.
      *
-     * Zero for the first sheet of a listing, which sits on a line and takes
-     * the sheet that line is on. The sheets after it are block widgets with no
-     * line of their own, so they have to be paper themselves — otherwise they
-     * come out as tall as their contents and with none of the margins, which
-     * is a page of glossary floating in the middle of the document.
+     * `null` in a continuous view, where the list is simply as long as it is.
+     * With a page, every sheet of a listing is exactly one page and the gap
+     * after it — which is what lets a divided list tile the paper on its own.
      */
-    readonly paperRows = 0,
+    readonly page: { pitch: number; margin: number } | null = null,
   ) {
     super();
   }
@@ -308,7 +306,8 @@ class ListingWidget extends WidgetType {
       other.kind === this.kind &&
       other.sheet === this.sheet &&
       other.sheets === this.sheets &&
-      other.paperRows === this.paperRows &&
+      other.page?.pitch === this.page?.pitch &&
+      other.page?.margin === this.page?.margin &&
       other.entries.length === this.entries.length &&
       other.entries.every(
         (entry, index) =>
@@ -323,17 +322,13 @@ class ListingWidget extends WidgetType {
     const box = document.createElement("div");
     box.className = "cm-yaz-listing";
 
-    if (this.paperRows > 0) {
-      // Its own sheet, and it has to say so: the classes that carry the
-      // margins and the shadow are put on lines by the page view, and this is
-      // not a line.
-      box.classList.add(
-        "cm-yaz-sheet",
-        "cm-yaz-sheet-first",
-        "cm-yaz-sheet-last",
-        "cm-yaz-listing-sheet",
-      );
-      box.style.minBlockSize = `calc(${this.paperRows} * var(--yaz-line-height, 1.6) * 1em)`;
+    if (this.page) {
+      // Exactly one sheet, including the gap after it, with the paper's own
+      // margins inside. Exactly, not at least: a sheet that grew would put
+      // every sheet below it out of step with the paper behind them.
+      box.classList.add("cm-yaz-listing-sheet");
+      box.style.blockSize = `${this.page.pitch}px`;
+      box.style.paddingBlock = `${this.page.margin}px`;
     }
 
     // Only the first sheet carries the heading, the way a contents list in a
@@ -990,41 +985,50 @@ function listed(pass: Pass, from: number, to: number, kind: ListingKind): void {
   const entries = entriesFor(kind, pass.text);
   const perPage = pass.state.field(rowsPerPage, false) ?? 0;
   const measure = pass.state.field(charactersPerRow, false) ?? 0;
+  const sheet = pass.state.facet(paper);
   const sheets = intoSheets(entries, perPage - LISTING_HEADING_ROWS, measure);
 
-  if (sheets.length <= 1) {
+  // Off the page view there is no sheet to fill, so the whole list is one —
+  // which is what a continuous view wants.
+  if (!sheet || sheets.length <= 1) {
     replace(pass, from, to, new ListingWidget(kind, entries));
     return;
   }
 
-  if (
-    !replace(
-      pass,
-      from,
-      to,
-      new ListingWidget(kind, sheets[0]!, 1, sheets.length),
-    )
-  ) {
-    return;
-  }
+  // Each sheet of the listing is *exactly* a sheet: one page and the gap after
+  // it. That is what lets a divided list tile the paper without any help — the
+  // gaps that carry ordinary text from one page to the next are keyed by
+  // document offset, and every sheet of a listing after the first stands at the
+  // same offset, so no gap could tell one from another.
+  const page = { pitch: sheet.height + sheet.gap, margin: sheet.margin };
+  const line = pass.state.doc.lineAt(from);
+
+  // A block replacement, so the first sheet is a sheet rather than something
+  // sitting inside a line of text.
+  if (!pass.covered.claim(line.from, line.to)) return;
+  pass.ranges.push(
+    Decoration.replace({
+      widget: new ListingWidget(kind, sheets[0]!, 1, sheets.length, page),
+      block: true,
+    }).range(line.from, line.to),
+  );
 
   // The rest stand after it, in order. `side` keeps them in that order: two
   // block widgets at one position are otherwise drawn in an order CodeMirror
   // is free to choose.
-  const at = pass.state.doc.lineAt(to).to;
-  for (let sheet = 2; sheet <= sheets.length; sheet += 1) {
+  for (let index = 2; index <= sheets.length; index += 1) {
     pass.ranges.push(
       Decoration.widget({
         widget: new ListingWidget(
           kind,
-          sheets[sheet - 1]!,
-          sheet,
+          sheets[index - 1]!,
+          index,
           sheets.length,
-          perPage,
+          page,
         ),
         block: true,
-        side: sheet,
-      }).range(at),
+        side: index,
+      }).range(line.to),
     );
   }
 }
@@ -1919,16 +1923,14 @@ const theme = EditorView.baseTheme({
     inlineSize: "auto",
     cursor: "row-resize",
   },
+  /*
+   * A sheet of a divided listing is a sheet: exactly one page tall, with the
+   * paper's own margins inside it, and no decoration of its own — the paper
+   * behind it is already drawn by the page view.
+   */
   ".cm-yaz-listing-sheet": {
-    paddingBlockEnd: "var(--yaz-page-margin, 25mm)",
-    marginBlockEnd: "var(--yaz-space-6)",
-    borderEndStartRadius: "2px",
-    borderEndEndRadius: "2px",
-    // One shadow per edge, each kept to its own edge by a negative spread —
-    // otherwise each paints into the sheet as well as out of it and reads as a
-    // rule across the paper.
-    boxShadow:
-      "0 -3px 6px -3px var(--yaz-pdf-page-shadow), 0 3px 6px -3px var(--yaz-pdf-page-shadow)",
+    boxSizing: "border-box",
+    overflow: "hidden",
   },
   ".cm-yaz-listing-continued": {
     display: "block",

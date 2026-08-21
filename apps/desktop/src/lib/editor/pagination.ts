@@ -51,15 +51,18 @@ import type { DecorationSet, ViewUpdate } from "@codemirror/view";
 
 import {
   charactersPerRow,
+  NO_EXTENT,
   paginated,
   paper,
+  paperExtent,
   rowsPerPage,
   setCharactersPerRow,
+  setExtent,
   setRowsPerPage,
   sheetAt,
   textBounds,
 } from "./geometry";
-import type { Paper } from "./geometry";
+import type { Extent, Paper } from "./geometry";
 import { listings, pageBreaks } from "./generated";
 import { layoutOf } from "./richText";
 import { environments, headings } from "./structure";
@@ -148,6 +151,22 @@ export function forcedBreaks(state: EditorState): Set<number> {
   }
 
   return at;
+}
+
+/**
+ * Every line that is the file's machinery rather than the document's paper.
+ *
+ * Asked per block while working out the gaps, so it is a set rather than the
+ * ranges it comes from.
+ */
+function matterLines(state: EditorState): Set<number> {
+  const lines = new Set<number>();
+  for (const range of layoutOf(state).matter) {
+    for (let number = range.from; number <= range.to; number += 1) {
+      lines.add(number);
+    }
+  }
+  return lines;
 }
 
 /** A gap inserted to carry what follows it onto the next sheet. */
@@ -313,7 +332,19 @@ const paginator = ViewPlugin.fromClass(
         effects.push(setCharactersPerRow.of(across));
       }
 
-      const wanted = on && sheet ? this.spacersFor(view, sheet) : [];
+      // Where the paper starts and stops, before anything is measured against
+      // it: the front matter is above the first sheet, not on it.
+      const had = view.state.field(paperExtent, false) ?? NO_EXTENT;
+      const extent = on && sheet ? this.extentOf(view, sheet, had) : NO_EXTENT;
+      if (
+        Math.abs(extent.offset - had.offset) > CLOSE_ENOUGH ||
+        Math.abs(extent.extent - had.extent) > CLOSE_ENOUGH
+      ) {
+        effects.push(setExtent.of(extent));
+      }
+
+      const wanted =
+        on && sheet ? this.spacersFor(view, sheet, extent.offset) : [];
       if (this.differs(wanted, view.state.field(spacers, false) ?? [])) {
         effects.push(setSpacers.of(wanted));
       }
@@ -337,71 +368,132 @@ const paginator = ViewPlugin.fromClass(
     /**
      * The gaps the blocks on screen call for.
      *
+     * Every block, not every *line*. A line is not the only thing that takes
+     * room: a divided glossary is a stack of block widgets, and the front
+     * matter's mark is one too. Walking lines meant those were never carried
+     * onto a fresh sheet — they simply ran off the bottom of one and into the
+     * space below it, which is what a glossary leaking between pages was.
+     *
      * Only the blocks on screen: the rest of a hundred-page document has never
      * been laid out and has no honest height. What is off screen keeps the gaps
-     * it already had, and gets them corrected when it arrives — which is
-     * invisible, because it happens before it is drawn.
+     * it already had, and gets them corrected when it arrives — before it is
+     * drawn, so the correction is not visible.
      */
-    private spacersFor(view: EditorView, sheet: Paper): Spacer[] {
+    private spacersFor(
+      view: EditorView,
+      sheet: Paper,
+      offset: number,
+    ): Spacer[] {
       const forced = forcedBreaks(view.state);
+      const matter = matterLines(view.state);
       const kept = new Map<number, Spacer>();
       for (const spacer of view.state.field(spacers, false) ?? []) {
         kept.set(spacer.at, spacer);
       }
 
       const usable = sheet.height - 2 * sheet.margin;
+      // A gap of our own belongs to the block after it, not to itself: the
+      // question is always where that block *would* be without one.
+      let gapAbove = 0;
 
-      // Document lines, not every block: `viewportLineBlocks` includes the
-      // gaps themselves, and a gap asking whether it needs a gap is how a
-      // page view ends up pushing itself down the document.
-      let line = view.state.doc.lineAt(view.viewport.from);
-      for (;;) {
-        const block = view.lineBlockAt(line.from);
-        // Its own gap is already part of where it sits, so take it back off:
-        // the question is where this text *would* be without one.
-        const own = kept.get(line.from);
-        const top = block.top - (own?.height ?? 0);
-        const index = sheetAt(sheet, top);
-        const bounds = textBounds(sheet, index);
-
-        const mustStart = forced.has(block.from);
-        const overruns = top + block.height > bounds.to + CLOSE_ENOUGH;
-        const alreadyAtTop = Math.abs(top - bounds.from) <= CLOSE_ENOUGH;
-
-        const settle = (): void => {
-          if (!mustStart && !overruns) {
-            kept.delete(line.from);
-            return;
-          }
-          if (mustStart && alreadyAtTop) {
-            kept.delete(line.from);
-            return;
-          }
-          // Taller than any sheet: it can never be made to fit, so carrying it
-          // would only put an empty page in front of it every time.
-          if (!mustStart && block.height > usable) {
-            kept.delete(line.from);
-            return;
-          }
-          const next = textBounds(sheet, index + 1);
-          kept.set(line.from, {
-            at: line.from,
-            height: next.from - top,
-            folio: index + 1,
-          });
-        };
-        settle();
-
-        if (
-          line.to >= view.viewport.to ||
-          line.number >= view.state.doc.lines
-        ) {
-          break;
+      for (const block of view.viewportLineBlocks) {
+        if (block.widget instanceof SpacerWidget) {
+          gapAbove += block.height;
+          continue;
         }
-        line = view.state.doc.line(line.number + 1);
+
+        const at = block.from;
+        const top = block.top - gapAbove;
+        gapAbove = 0;
+
+        // The matter is not on the paper at all — the paper begins below it —
+        // so it is never carried anywhere.
+        if (matter.has(view.state.doc.lineAt(at).number)) {
+          kept.delete(at);
+          continue;
+        }
+
+        const index = sheetAt(sheet, top, offset);
+        const bounds = textBounds(sheet, index, offset);
+        const mustStart = forced.has(at);
+        const overruns = top + block.height > bounds.to + CLOSE_ENOUGH;
+        const atTop = Math.abs(top - bounds.from) <= CLOSE_ENOUGH;
+
+        if (mustStart ? atTop : !overruns) {
+          kept.delete(at);
+          continue;
+        }
+        // Taller than any sheet: it can never be made to fit, so carrying it
+        // would only put an empty page in front of it every time.
+        if (!mustStart && block.height > usable) {
+          kept.delete(at);
+          continue;
+        }
+
+        // A block already above the first sheet is carried onto it rather than
+        // onto the one after: `sheetAt` floors at zero, so without this the
+        // first thing after the matter would skip a page.
+        const next = top < textBounds(sheet, 0, offset).from ? 0 : index + 1;
+        kept.set(at, {
+          at,
+          height: textBounds(sheet, next, offset).from - top,
+          folio: next,
+        });
       }
 
-      return [...kept.values()].sort((a, b) => a.at - b.at);
+      return [...kept.values()]
+        .filter((spacer) => spacer.height > CLOSE_ENOUGH)
+        .sort((a, b) => a.at - b.at);
+    }
+
+    /**
+     * Where the paper starts, and how far it runs.
+     *
+     * The paper begins *below* the front matter, so what the `.tex` wraps the
+     * document in — the class, the packages, the mark that opens them — sits on
+     * a strip of its own above the first sheet. It is not a page of the
+     * document, and putting it on one meant the title page opened with the
+     * document's machinery printed across the top of it.
+     *
+     * Measured as the bottom of the last matter block rather than from the
+     * lines it covers: when the matter is folded it *is* a block widget, and a
+     * line that has been replaced has no height to measure.
+     *
+     * Only re-measured while the relevant end of the document is on screen.
+     * Elsewhere the last answer stands, which is right — the matter does not
+     * change height while it is out of sight.
+     */
+    private extentOf(view: EditorView, sheet: Paper, before: Extent): Extent {
+      const matter = matterLines(view.state);
+      const pitch = sheet.height + sheet.gap;
+      let offset = before.offset;
+
+      if (view.viewport.from === 0) {
+        offset = 0;
+        let gap = 0;
+        for (const block of view.viewportLineBlocks) {
+          if (block.widget instanceof SpacerWidget) {
+            gap += block.height;
+            continue;
+          }
+          if (!matter.has(view.state.doc.lineAt(block.from).number)) break;
+          // The paper starts below it, with the same space between as there is
+          // between two sheets.
+          offset = Math.max(0, block.bottom - gap + sheet.gap);
+        }
+      }
+
+      let tail = 0;
+      if (view.viewport.to >= view.state.doc.length) {
+        const last = view.state.doc.lines;
+        if (matter.has(last)) {
+          const block = view.lineBlockAt(view.state.doc.line(last).from);
+          tail = Math.max(0, view.contentHeight - block.top);
+        }
+      }
+
+      const runs = Math.max(0, view.contentHeight - offset - tail);
+      return { offset, extent: Math.max(1, Math.ceil(runs / pitch)) * pitch };
     }
   },
 );
@@ -419,17 +511,22 @@ const paginator = ViewPlugin.fromClass(
  * without rebuilding anything.
  */
 const paperAttributes = EditorView.contentAttributes.compute(
-  [paper, paginated],
+  [paper, paginated, paperExtent],
   (state) => {
     const sheet = state.facet(paper);
     if (!state.facet(paginated) || !sheet) return {};
+    const reach = state.field(paperExtent, false) ?? NO_EXTENT;
     return {
       class: "cm-yaz-paper",
       style:
         `--yaz-sheet-height:${sheet.height}px;` +
         `--yaz-sheet-pitch:${sheet.height + sheet.gap}px;` +
         `--yaz-sheet-gap:${sheet.gap}px;` +
-        `--yaz-sheet-margin:${sheet.margin}px`,
+        `--yaz-sheet-margin:${sheet.margin}px;` +
+        // Where the paper begins and how far it runs, so the matter at either
+        // end of the file sits on a strip beside it rather than on a page.
+        `--yaz-paper-from:${reach.offset}px;` +
+        `--yaz-paper-extent:${reach.extent > 0 ? `${reach.extent}px` : "100%"}`,
     };
   },
 );
@@ -440,9 +537,12 @@ const theme = EditorView.baseTheme({
       "repeating-linear-gradient(to bottom," +
       "var(--yaz-bg-primary) 0 var(--yaz-sheet-height)," +
       "transparent var(--yaz-sheet-height) var(--yaz-sheet-pitch))",
-    // The paper's own top and bottom margins. The horizontal ones are padding
-    // on the content box; these cannot be, because they repeat.
-    paddingBlockStart: "var(--yaz-sheet-margin)",
+    // Painted once, over a stated extent, rather than repeated for ever: what
+    // is above the paper and what is below it are the file's machinery — the
+    // preamble and the closing line — and those are not pages of the document.
+    backgroundRepeat: "no-repeat",
+    backgroundSize: "100% var(--yaz-paper-extent)",
+    backgroundPosition: "0 var(--yaz-paper-from)",
   },
   ".cm-yaz-page-gap": {
     position: "relative",

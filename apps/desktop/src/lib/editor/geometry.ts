@@ -53,19 +53,53 @@ export function pitchOf(sheet: Paper): number {
   return sheet.height + sheet.gap;
 }
 
+/**
+ * Where the paper begins and how far it runs.
+ *
+ * `offset` is how far down the content the first sheet starts, which is the
+ * height of the front matter: what the `.tex` wraps the document in is not a
+ * page of the document, so it sits on a strip *above* the paper rather than on
+ * the first sheet of it.
+ *
+ * `extent` is how far the paper runs before it stops, so the closing matter
+ * sits on a strip below it in the same way.
+ */
+export interface Extent {
+  offset: number;
+  extent: number;
+}
+
+/** No matter measured yet: the paper starts at the top and runs on. */
+export const NO_EXTENT: Extent = { offset: 0, extent: 0 };
+
 /** Where the text may start and where it must stop, on sheet `index`. */
 export function textBounds(
   sheet: Paper,
   index: number,
+  offset = 0,
 ): { from: number; to: number } {
-  const top = index * pitchOf(sheet);
+  const top = offset + index * pitchOf(sheet);
   return { from: top + sheet.margin, to: top + sheet.height - sheet.margin };
 }
 
 /** Which sheet a position in the content falls on. */
-export function sheetAt(sheet: Paper, top: number): number {
-  return Math.max(0, Math.floor(top / pitchOf(sheet)));
+export function sheetAt(sheet: Paper, top: number, offset = 0): number {
+  return Math.max(0, Math.floor((top - offset) / pitchOf(sheet)));
 }
+
+/** Where the paper starts and stops. */
+export const setExtent = StateEffect.define<Extent>();
+
+/** See {@link Extent}. */
+export const paperExtent = StateField.define<Extent>({
+  create: () => NO_EXTENT,
+  update(value, transaction) {
+    for (const effect of transaction.effects) {
+      if (effect.is(setExtent)) return effect.value;
+    }
+    return value;
+  },
+});
 
 /**
  * How many rows of text fit on a sheet, and how many characters across it.

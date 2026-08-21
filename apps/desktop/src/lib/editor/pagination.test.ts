@@ -97,6 +97,39 @@ describe("the shape of the paper", () => {
   });
 });
 
+describe("where the paper begins", () => {
+  it("starts below the front matter, not at the top of the document", () => {
+    // What the `.tex` wraps the document in is not a page of the document. On
+    // the first sheet it printed the machinery across the top of the title
+    // page, which is what an author sees and what a compiler never produces.
+    const stub = 60;
+    const bounds = textBounds(A4, 0, stub);
+    expect(bounds.from).toBe(stub + A4.margin);
+    expect(bounds.to).toBe(stub + A4.height - A4.margin);
+  });
+
+  it("keeps every sheet the same height whatever the stub is", () => {
+    // The stub moves the paper down; it does not change it. Two sheets are the
+    // same height as each other at any offset, which is the property the whole
+    // design exists for.
+    for (const stub of [0, 12, 240]) {
+      const first = textBounds(A4, 0, stub);
+      const second = textBounds(A4, 1, stub);
+      expect(second.from - first.from).toBe(pitchOf(A4));
+      expect(second.to - second.from).toBe(first.to - first.from);
+    }
+  });
+
+  it("counts sheets from where the paper starts", () => {
+    const stub = 100;
+    expect(sheetAt(A4, stub, stub)).toBe(0);
+    expect(sheetAt(A4, stub + pitchOf(A4), stub)).toBe(1);
+    // Above the paper is still the first sheet rather than a negative one:
+    // that is the matter, and it is not on a sheet at all.
+    expect(sheetAt(A4, 0, stub)).toBe(0);
+  });
+});
+
 describe("the breaks a document asks for", () => {
   it("begins a page after a page break", () => {
     const doc = [
